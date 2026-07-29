@@ -1,6 +1,5 @@
 package com.gios.lightsports.ui
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,20 +32,20 @@ import com.gios.lightsports.ui.theme.Faint
 
 /**
  * Pick teams. A league is chosen first, then its clubs — 13 leagues and roughly 500
- * teams is far too many to put in one alphabetical list.
+ * teams is far too many for one alphabetical list.
+ *
+ * Which league is open lives in the caller, so the top bar can own the back button the
+ * way every LightOS screen does.
  */
 @Composable
 fun FollowScreen(
+    openLeague: League?,
     teamsByLeague: Map<String, List<TeamRef>>,
     follows: Set<String>,
-    onLeagueOpened: (League) -> Unit,
+    onOpenLeague: (League) -> Unit,
     onToggle: (String) -> Unit,
 ) {
-    var openLeague by remember { mutableStateOf<League?>(null) }
-    var query by remember { mutableStateOf("") }
-
-    val league = openLeague
-    if (league == null) {
+    if (openLeague == null) {
         LazyColumn(Modifier.fillMaxSize()) {
             item { FollowSummary(follows, teamsByLeague, onToggle) }
             for ((sectionTitle, leagues) in Leagues.sections) {
@@ -58,17 +57,12 @@ fun FollowScreen(
                             label = l.short,
                             sub = l.name,
                             detail = if (l.isRacing) {
-                                if ("${l.id}:series" in follows) "ON" else "OFF"
+                                if ("${l.id}:series" in follows) "[ ON ]" else "OFF"
                             } else if (count > 0) "$count" else null,
                             onClick = {
                                 // Racing has no clubs to choose between; following the
                                 // series is the whole interaction.
-                                if (l.isRacing) onToggle("${l.id}:series")
-                                else {
-                                    query = ""
-                                    openLeague = l
-                                    onLeagueOpened(l)
-                                }
+                                if (l.isRacing) onToggle("${l.id}:series") else onOpenLeague(l)
                             },
                         )
                         Rule()
@@ -80,21 +74,10 @@ fun FollowScreen(
         return
     }
 
-    val teams = teamsByLeague[league.id]
+    var query by remember(openLeague.id) { mutableStateOf("") }
+    val teams = teamsByLeague[openLeague.id]
+
     Column(Modifier.fillMaxSize()) {
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "< ${league.short}",
-                style = MaterialTheme.typography.labelLarge,
-                color = Color.White,
-                modifier = Modifier.clickable { openLeague = null },
-            )
-            Spacer(Modifier.height(0.dp))
-        }
-        Rule()
         SearchField(query) { query = it }
         Rule()
         when {
@@ -104,20 +87,24 @@ fun FollowScreen(
                 val filtered = if (query.isBlank()) teams else teams.filter {
                     it.displayName.contains(query, true) || it.abbrev.contains(query, true)
                 }
-                LazyColumn(Modifier.fillMaxSize()) {
-                    for (team in filtered) {
-                        item(key = team.key) {
-                            val on = team.key in follows
-                            MenuRow(
-                                label = team.displayName,
-                                detail = if (on) "[ ON ]" else null,
-                                dim = !on,
-                                onClick = { onToggle(team.key) },
-                            )
-                            Rule()
+                if (filtered.isEmpty()) {
+                    EmptyState("No team matches “$query”.")
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        for (team in filtered) {
+                            item(key = team.key) {
+                                val on = team.key in follows
+                                MenuRow(
+                                    label = team.displayName,
+                                    detail = if (on) "[ ON ]" else null,
+                                    dim = !on,
+                                    onClick = { onToggle(team.key) },
+                                )
+                                Rule()
+                            }
                         }
+                        item { Spacer(Modifier.height(28.dp)) }
                     }
-                    item { Spacer(Modifier.height(28.dp)) }
                 }
             }
         }

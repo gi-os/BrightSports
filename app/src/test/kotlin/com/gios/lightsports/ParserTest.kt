@@ -19,6 +19,9 @@ import org.junit.Test
  */
 class ParserTest {
 
+    /** 2026-07-29, so the 2026 F1 calendar splits into raced and unraced either side. */
+    private val NOW_JULY_2026 = 1_785_000_000_000L
+
     // ------------------------------------------------------------------- ESPN
 
     private val espnScoreboard = """
@@ -147,6 +150,66 @@ class ParserTest {
         val race = races.single()
         assertEquals(GameState.FINAL, race.state)
         assertEquals(listOf("L. Norris", "C. Leclerc", "K. Antonelli"), race.podium)
+    }
+
+    @Test
+    fun `a finished weekend that espn never marked completed is not live`() {
+        // Bahrain and Saudi Arabia 2026 both come back with every session at
+        // state "post" and completed:false. Keying off the flag pinned them to LIVE at
+        // the top of the feed for the rest of the season.
+        val body = """
+        {"events":[{"id":"1","date":"2026-04-10T11:30Z","endDate":"2026-04-12T15:00Z",
+          "name":"Gulf Air Bahrain GP","shortName":"Bahrain GP",
+          "competitions":[
+            {"date":"2026-04-10T11:30Z","type":{"abbreviation":"FP1"},
+             "status":{"type":{"state":"post","completed":false}},"competitors":[]},
+            {"date":"2026-04-12T15:00Z","type":{"abbreviation":"Race"},
+             "status":{"type":{"state":"post","completed":false}},
+             "competitors":[{"order":1,"athlete":{"shortName":"M. Verstappen"}}]}]}]}
+        """.trimIndent()
+        val race = EspnParser.parseRaces(Leagues.F1, body, nowMillis = NOW_JULY_2026).single()
+        assertEquals(GameState.FINAL, race.state)
+        assertEquals(listOf("M. Verstappen"), race.podium)
+    }
+
+    @Test
+    fun `a weekend under way is live only while a session is running`() {
+        fun weekend(raceState: String) = """
+        {"events":[{"id":"1","date":"2026-07-24T11:30Z","endDate":"2026-07-26T13:00Z",
+          "name":"AWS Hungarian GP","shortName":"Hungarian GP",
+          "competitions":[
+            {"date":"2026-07-24T11:30Z","type":{"abbreviation":"FP1"},
+             "status":{"type":{"state":"post","completed":true}},"competitors":[]},
+            {"date":"2026-07-26T13:00Z","type":{"abbreviation":"Race"},
+             "status":{"type":{"state":"$raceState","completed":false}},"competitors":[]}]}]}
+        """.trimIndent()
+
+        // Mid-weekend, race under way.
+        val duringRace = 1_784_000_000_000L // 2026-07-25
+        assertEquals(
+            GameState.LIVE,
+            EspnParser.parseRaces(Leagues.F1, weekend("in"), duringRace).single().state,
+        )
+        // Same weekend, sitting between sessions: upcoming, not live.
+        assertEquals(
+            GameState.PRE,
+            EspnParser.parseRaces(Leagues.F1, weekend("pre"), duringRace).single().state,
+        )
+    }
+
+    @Test
+    fun `a future grand prix stays upcoming`() {
+        val body = """
+        {"events":[{"id":"1","date":"2026-12-04T09:30Z","endDate":"2026-12-06T13:00Z",
+          "name":"Etihad Airways Abu Dhabi GP","shortName":"Abu Dhabi GP",
+          "competitions":[
+            {"date":"2026-12-04T09:30Z","type":{"abbreviation":"FP1"},
+             "status":{"type":{"state":"pre","completed":false}},"competitors":[]}]}]}
+        """.trimIndent()
+        val race = EspnParser.parseRaces(Leagues.F1, body, NOW_JULY_2026).single()
+        assertEquals(GameState.PRE, race.state)
+        assertEquals("FP1", race.sessionLabel)
+        assertTrue(race.podium.isEmpty())
     }
 
     // -------------------------------------------------------------- StatsAPI

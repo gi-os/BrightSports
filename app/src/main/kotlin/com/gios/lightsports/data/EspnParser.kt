@@ -151,10 +151,22 @@ object EspnParser {
             val comps = e.optJSONArray("competitions")?.objects() ?: emptyList()
             val race = comps.lastOrNull()
             val next = comps.firstOrNull { Iso.millis(it.optString("date")) > nowMillis }
-            val weekendDone = comps.isNotEmpty() && comps.all {
-                it.optJSONObject("status")?.optJSONObject("type")?.optBoolean("completed") == true
-            }
-            val podium = if (race != null && weekendDone) {
+
+            fun sessionState(c: JSONObject): String? =
+                c.optJSONObject("status")?.optJSONObject("type")?.optString("state")
+                    ?.takeIf { it.isNotEmpty() }
+
+            // State comes from the session `state` strings, never from `completed`.
+            // ESPN leaves `completed:false` on whole finished weekends — Bahrain and
+            // Saudi Arabia 2026 both do — and keying off that flag left those races
+            // pinned to LIVE in the feed for the rest of the season.
+            val anyLive = comps.any { sessionState(it) == "in" }
+            val allPost = comps.isNotEmpty() && comps.all { sessionState(it) == "post" }
+            val startMillis = Iso.millis(e.optString("date"))
+            val endMillis = Iso.millis(e.optString("endDate")).takeIf { it > 0 } ?: startMillis
+            val finished = allPost || endMillis < nowMillis
+
+            val podium = if (race != null && finished) {
                 race.optJSONArray("competitors")?.objects()
                     ?.sortedBy { it.optInt("order", 99) }
                     ?.take(3)
@@ -162,16 +174,16 @@ object EspnParser {
                     .orEmpty()
             } else emptyList()
 
-            val startMillis = Iso.millis(e.optString("date"))
             out += RaceEvent(
                 id = e.optString("id"),
                 leagueId = league.id,
                 name = e.optString("name"),
                 shortName = e.optString("shortName").ifEmpty { e.optString("name") },
                 state = when {
-                    weekendDone -> GameState.FINAL
-                    next == null && startMillis <= nowMillis -> GameState.LIVE
-                    startMillis <= nowMillis -> GameState.LIVE
+                    finished -> GameState.FINAL
+                    anyLive -> GameState.LIVE
+                    // Includes mid-weekend gaps: practice is over, the race has not
+                    // started, so the card counts down to the next session.
                     else -> GameState.PRE
                 },
                 startMillis = startMillis,

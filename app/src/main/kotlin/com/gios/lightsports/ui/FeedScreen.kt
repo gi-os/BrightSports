@@ -75,6 +75,17 @@ fun FeedScreen(
     }
 
     LazyColumn(Modifier.fillMaxSize()) {
+        // The refresh control is an icon in the top bar now, so this line is the only
+        // thing saying whether the screen can be trusted.
+        item(key = "stamp") {
+            Text(
+                if (state.loading) "REFRESHING…"
+                else "UPDATED ${Fmt.ago(state.updatedAt, System.currentTimeMillis()).uppercase()}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Faint,
+                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp),
+            )
+        }
         for (section in state.sections) {
             item(key = "h-${section.title}") { SectionHeader(section.title) }
             for (item in section.items) {

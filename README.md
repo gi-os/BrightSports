@@ -29,13 +29,24 @@ Two provider quirks are worth knowing before touching the parsers: MLB's standin
 endpoint silently ignores `sportId` and has to be asked by `leagueId`, and HockeyTech
 returns its standings wrapped in a bare pair of parentheses left over from JSONP.
 
+A third one bites in F1: ESPN leaves `completed:false` on sessions of weekends that
+finished months ago (Bahrain and Saudi Arabia 2026 both do), so race state is read from
+each session's `state` string and the event `endDate`, never from that flag.
+
 ## Screens
 
-- **SCORES** — one feed, followed teams only, grouped Live / Today / Tomorrow /
+Navigation follows the LightOS bar idiom: a top bar carrying the title and a back
+chevron, and a four-icon action bar along the bottom. `ui/LightBars.kt` rebuilds
+`LightTopBar` and `LightBottomBar` from Light's own `sdk/ui` library — same 27-column
+grid, same 3- and 4-unit bar heights, same slot rules, same LightOS icon drawables. They
+are reimplemented rather than imported because the SDK artifacts sit on GitHub Packages
+behind a token and this ships as a plain APK; if that ever opens up, delete that file.
+
+- **Scores** — one feed, followed teams only, grouped Live / Today / Tomorrow /
   Upcoming / Recent. Finished games dim the loser, since colour is not available.
-- **TEAMS** — league, then club. Search within a league. F1 is followed as a series.
-- **TABLE** — standings for followed leagues only. Your team's row inverts.
-- **MORE** — notification settings.
+- **My teams** — league, then club. Search within a league. F1 is followed as a series.
+- **Standings** — followed leagues only. Your team's row inverts.
+- **Settings** — notifications and the spoiler delay.
 
 ## Notifications
 
