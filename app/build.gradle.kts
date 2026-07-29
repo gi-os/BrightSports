@@ -13,9 +13,11 @@ android {
         applicationId = "com.gios.lightsports"
         minSdk = 29
         targetSdk = 35
-        // CI overwrites both from the workflow run number; see .github/workflows/build.yml
+        // CI stamps versionCode from the workflow run number and appends it to the
+        // major.minor below, so the release tag is <major>.<minor>.<run>. Bump this by
+        // hand for anything Obtainium should treat as a new version.
         versionCode = 1
-        versionName = "1.0.0"
+        versionName = "1.2.0"
 
         // The LPIII is arm64 only; shipping four ABIs tripled the APK for nothing.
         ndk { abiFilters += "arm64-v8a" }
