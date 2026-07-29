@@ -1,0 +1,167 @@
+package com.gios.lightsports.data
+
+import android.content.Context
+import com.gios.lightsports.model.Game
+import com.gios.lightsports.model.League
+import com.gios.lightsports.model.Provider
+import com.gios.lightsports.model.RaceEvent
+import com.gios.lightsports.model.StandingsGroup
+import com.gios.lightsports.model.TeamRef
+import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+
+/**
+ * The one place that knows which provider serves which league. Everything above this
+ * line works in [Game] and [TeamRef] and never sees a URL.
+ */
+class SportsRepository(context: Context) {
+
+    private val cacheDir: File = File(context.filesDir, "cache").apply { mkdirs() }
+    private val prefs = Prefs(context)
+
+    private val ymd = DateTimeFormatter.ofPattern("yyyyMMdd")
+    private val dashed = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+    // ---------------------------------------------------------------- teams
+
+    /**
+     * Team lists change once a year at most, so they are cached for a week and served
+     * stale on a network failure. Without that the follow picker would be empty in a
+     * subway, which is exactly where someone edits their teams.
+     */
+    fun teams(league: League): List<TeamRef> {
+        val body = when (league.provider) {
+            Provider.ESPN -> Http.cached(
+                cacheDir, "teams-${league.id}.json",
+                EspnParser.teamsUrl(league), TEAM_CACHE_MILLIS,
+            )
+            Provider.STATSAPI -> Http.cached(
+                cacheDir, "teams-${league.id}.json",
+                StatsApiParser.teamsUrl(league), TEAM_CACHE_MILLIS,
+            )
+            Provider.HOCKEYTECH -> Http.cached(
+                cacheDir, "teams-${league.id}.json",
+                HockeyTechParser.teamsUrl(league), TEAM_CACHE_MILLIS,
+            )
+        } ?: return emptyList()
+
+        return runCatching {
+            when (league.provider) {
+                Provider.ESPN -> EspnParser.parseTeams(league.id, body)
+                Provider.STATSAPI -> StatsApiParser.parseTeams(league.id, body)
+                Provider.HOCKEYTECH -> HockeyTechParser.parseTeams(league.id, body)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    /** Racing has no followable clubs; the series itself is the thing to follow. */
+    fun isFollowableAsWhole(league: League): Boolean = league.isRacing
+
+    // ---------------------------------------------------------------- games
+
+    /**
+     * Games for one league across a date window. Not cached — a scoreboard is stale
+     * the moment it lands.
+     */
+    fun games(league: League, nowMillis: Long, zone: ZoneId): List<Game> {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+        val from = today.minusDays(BACK_DAYS)
+        val to = today.plusDays(AHEAD_DAYS)
+        val body = when (league.provider) {
+            Provider.ESPN -> Http.get(
+                EspnParser.scoreboardUrl(league, from.format(ymd), to.format(ymd)),
+            )
+            Provider.STATSAPI -> Http.get(
+                StatsApiParser.scheduleUrl(league, from.format(dashed), to.format(dashed)),
+            )
+            Provider.HOCKEYTECH -> Http.get(
+                HockeyTechParser.scorebarUrl(league, BACK_DAYS.toInt(), AHEAD_DAYS.toInt()),
+            )
+        } ?: return emptyList()
+
+        return runCatching {
+            when (league.provider) {
+                Provider.ESPN -> EspnParser.parseScoreboard(league, body)
+                Provider.STATSAPI -> StatsApiParser.parseSchedule(league, body)
+                Provider.HOCKEYTECH -> HockeyTechParser.parseScorebar(league, body)
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    fun races(league: League, nowMillis: Long, zone: ZoneId): List<RaceEvent> {
+        val year = Instant.ofEpochMilli(nowMillis).atZone(zone).year
+        val body = Http.get(EspnParser.raceUrl(league, year)) ?: return emptyList()
+        return runCatching { EspnParser.parseRaces(league, body, nowMillis) }
+            .getOrDefault(emptyList())
+    }
+
+    /**
+     * Everything the followed teams are involved in, across every league they span.
+     * Leagues are fetched one at a time on purpose: a followed set usually touches two
+     * or three leagues, and serialising them keeps the Doze allowlist window short.
+     */
+    fun followedGames(nowMillis: Long, zone: ZoneId): Pair<List<Game>, List<RaceEvent>> {
+        val follows = prefs.follows
+        if (follows.isEmpty()) return emptyList<Game>() to emptyList()
+        val gameOut = mutableListOf<Game>()
+        val raceOut = mutableListOf<RaceEvent>()
+        for (leagueId in prefs.followedLeagueIds()) {
+            val league = Leagues.byId(leagueId) ?: continue
+            if (league.isRacing) {
+                raceOut += races(league, nowMillis, zone)
+            } else {
+                gameOut += games(league, nowMillis, zone).filter { it.involves(follows) }
+            }
+        }
+        return gameOut to raceOut
+    }
+
+    // ------------------------------------------------------------- standings
+
+    fun standings(league: League, nowMillis: Long, zone: ZoneId): List<StandingsGroup> {
+        val season = Instant.ofEpochMilli(nowMillis).atZone(zone).year
+        return runCatching {
+            when (league.provider) {
+                Provider.ESPN -> {
+                    val body = Http.get(EspnParser.standingsUrl(league)) ?: return emptyList()
+                    if (league.isRacing) EspnParser.parseRacingStandings(body)
+                    else EspnParser.parseStandings(league, body)
+                }
+                Provider.STATSAPI -> {
+                    val leagueIds = Http.cached(
+                        cacheDir, "leagues-${league.id}.json",
+                        StatsApiParser.leaguesUrl(league), TEAM_CACHE_MILLIS,
+                    )?.let { StatsApiParser.parseLeagueIds(it) }.orEmpty()
+                    if (leagueIds.isEmpty()) return emptyList()
+                    val divisions = Http.cached(
+                        cacheDir, "divisions-${league.id}.json",
+                        StatsApiParser.divisionsUrl(league), TEAM_CACHE_MILLIS,
+                    )?.let { StatsApiParser.parseDivisions(it) }.orEmpty()
+                    val body = Http.get(StatsApiParser.standingsUrl(leagueIds, season))
+                        ?: return emptyList()
+                    StatsApiParser.parseStandings(body, divisions)
+                }
+                Provider.HOCKEYTECH -> {
+                    val seasonId = Http.cached(
+                        cacheDir, "seasons-${league.id}.json",
+                        HockeyTechParser.seasonsUrl(league), SEASON_CACHE_MILLIS,
+                    )?.let { HockeyTechParser.parseLatestSeasonId(it) } ?: return emptyList()
+                    val body = Http.get(HockeyTechParser.standingsUrl(league, seasonId))
+                        ?: return emptyList()
+                    HockeyTechParser.parseStandings(body)
+                }
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    companion object {
+        private const val TEAM_CACHE_MILLIS = 7L * 24 * 60 * 60 * 1000
+        private const val SEASON_CACHE_MILLIS = 24L * 60 * 60 * 1000
+
+        /** Enough history for "RECENT", enough future for a week of schedule. */
+        const val BACK_DAYS = 4L
+        const val AHEAD_DAYS = 11L
+    }
+}
