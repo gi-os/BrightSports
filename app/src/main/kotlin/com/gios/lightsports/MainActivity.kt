@@ -214,8 +214,10 @@ private fun App(openGameId: String?) {
             }
             LightBottomBar(
                 listOf(
+                    // Filled star, not the outline: at two grid units on a matte
+                    // greyscale panel the outline reads as a smudge.
                     BarItem.Icon(
-                        R.drawable.ic_list_white,
+                        R.drawable.ic_star_white,
                         { go(TAB_SCORES) },
                         "Scores",
                         selected = tab == TAB_SCORES && !teamsOpen,
