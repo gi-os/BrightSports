@@ -1,6 +1,6 @@
 # LightSports
 
-Apple Sports for the Light Phone III. Follow your teams, see one column of scores,
+A scores app for the Light Phone III. Follow your teams, see one column of scores,
 get notified when something happens.
 
 Launcher label: **Sports** · package `com.gios.lightsports`
