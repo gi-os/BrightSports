@@ -26,13 +26,28 @@ import com.gios.lightsports.ui.theme.Dim
 private val DELAY_CHOICES = listOf(0, 2, 5, 10, 15, 30)
 
 @Composable
-fun SettingsScreen(prefs: Prefs, vm: SportsViewModel, version: String) {
+fun SettingsScreen(
+    prefs: Prefs,
+    vm: SportsViewModel,
+    version: String,
+    followCount: Int,
+    onOpenTeams: () -> Unit,
+) {
     var notify by remember { mutableStateOf(prefs.notificationsEnabled) }
     var starts by remember { mutableStateOf(prefs.notifyStarts) }
     var delayOn by remember { mutableStateOf(prefs.delayEnabled) }
     var delay by remember { mutableIntStateOf(prefs.delayMinutes) }
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        SectionHeader("TEAMS")
+        MenuRow(
+            label = "My teams",
+            detail = if (followCount > 0) "$followCount" else "none",
+            sub = "Add or drop the teams in your feed",
+            onClick = onOpenTeams,
+        )
+        Rule()
+
         SectionHeader("NOTIFICATIONS")
         MenuRow(
             label = "Score alerts",

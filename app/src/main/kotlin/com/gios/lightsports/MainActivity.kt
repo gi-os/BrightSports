@@ -87,10 +87,13 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+/**
+ * Three places, because editing your teams is a thing you do twice a season and the
+ * action bar should not carry it for the rest of the year. It lives under settings.
+ */
 private const val TAB_SCORES = 0
-private const val TAB_TEAMS = 1
-private const val TAB_TABLE = 2
-private const val TAB_MORE = 3
+private const val TAB_TABLE = 1
+private const val TAB_MORE = 2
 
 @Composable
 private fun App(openGameId: String?) {
@@ -103,6 +106,7 @@ private fun App(openGameId: String?) {
     var tab by remember { mutableIntStateOf(TAB_SCORES) }
     var openGame by remember { mutableStateOf<Game?>(null) }
     var openLeague by remember { mutableStateOf<League?>(null) }
+    var teamsOpen by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         vm.refresh()
@@ -123,9 +127,13 @@ private fun App(openGameId: String?) {
     // LightOS supplies the back gesture; the SDK's own screens expect it to unwind the
     // stack rather than leave the app, so it is handled wherever there is a level to
     // pop and left alone at the root.
-    val canPop = openGame != null || openLeague != null
+    val canPop = openGame != null || openLeague != null || teamsOpen
     BackHandler(enabled = canPop) {
-        if (openGame != null) openGame = null else openLeague = null
+        when {
+            openGame != null -> openGame = null
+            openLeague != null -> openLeague = null
+            else -> teamsOpen = false
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -140,10 +148,13 @@ private fun App(openGameId: String?) {
                 left = BarItem.Icon(R.drawable.ic_back_white, { openLeague = null }, "Back"),
                 title = league.short,
             )
+            teamsOpen -> LightTopBar(
+                left = BarItem.Icon(R.drawable.ic_back_white, { teamsOpen = false }, "Back"),
+                title = "MY TEAMS",
+            )
             else -> LightTopBar(
                 title = when (tab) {
                     TAB_SCORES -> "SPORTS"
-                    TAB_TEAMS -> "MY TEAMS"
                     TAB_TABLE -> "STANDINGS"
                     else -> "SETTINGS"
                 },
@@ -157,13 +168,7 @@ private fun App(openGameId: String?) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 game != null -> GameScreen(game)
-                tab == TAB_SCORES -> FeedScreen(
-                    state = feed,
-                    hasFollows = follows.isNotEmpty(),
-                    onGame = { openGame = it },
-                    onEditTeams = { tab = TAB_TEAMS },
-                )
-                tab == TAB_TEAMS -> FollowScreen(
+                teamsOpen -> FollowScreen(
                     openLeague = openLeague,
                     teamsByLeague = teams,
                     follows = follows,
@@ -176,13 +181,25 @@ private fun App(openGameId: String?) {
                         vm.refresh()
                     },
                 )
+                tab == TAB_SCORES -> FeedScreen(
+                    state = feed,
+                    hasFollows = follows.isNotEmpty(),
+                    onGame = { openGame = it },
+                    onEditTeams = { teamsOpen = true },
+                )
                 tab == TAB_TABLE -> StandingsScreen(
                     leagues = vm.followedLeagues(),
                     groups = standings,
                     followedTeamIds = follows,
                     onLeagueSelected = { vm.loadStandings(it) },
                 )
-                else -> SettingsScreen(vm.prefs, vm, BuildConfig.VERSION_NAME)
+                else -> SettingsScreen(
+                    prefs = vm.prefs,
+                    vm = vm,
+                    version = BuildConfig.VERSION_NAME,
+                    followCount = follows.size,
+                    onOpenTeams = { teamsOpen = true },
+                )
             }
         }
 
@@ -190,31 +207,30 @@ private fun App(openGameId: String?) {
         // go while you are reading a line score.
         if (game == null) {
             Rule()
+            fun go(target: Int) {
+                tab = target
+                teamsOpen = false
+                openLeague = null
+            }
             LightBottomBar(
                 listOf(
                     BarItem.Icon(
                         R.drawable.ic_list_white,
-                        { tab = TAB_SCORES; openLeague = null },
+                        { go(TAB_SCORES) },
                         "Scores",
-                        selected = tab == TAB_SCORES,
-                    ),
-                    BarItem.Icon(
-                        R.drawable.ic_star_white,
-                        { tab = TAB_TEAMS },
-                        "My teams",
-                        selected = tab == TAB_TEAMS,
+                        selected = tab == TAB_SCORES && !teamsOpen,
                     ),
                     BarItem.Icon(
                         R.drawable.ic_large_list_white,
-                        { tab = TAB_TABLE; openLeague = null },
+                        { go(TAB_TABLE) },
                         "Standings",
-                        selected = tab == TAB_TABLE,
+                        selected = tab == TAB_TABLE && !teamsOpen,
                     ),
                     BarItem.Icon(
                         R.drawable.ic_settings_white,
-                        { tab = TAB_MORE; openLeague = null },
+                        { go(TAB_MORE) },
                         "Settings",
-                        selected = tab == TAB_MORE,
+                        selected = tab == TAB_MORE || teamsOpen,
                     ),
                 ),
             )
