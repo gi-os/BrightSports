@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.SpecialEvents
+import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.ui.theme.Dim
@@ -46,8 +48,16 @@ fun FollowScreen(
     onOpenLeague: (League) -> Unit,
     onToggle: (String) -> Unit,
 ) {
+    // Two lists, one screen, and only ever one of them on it. Both states are hoisted
+    // here rather than inside the branches so that stepping into a league and back out
+    // returns to where the league list was left.
+    val leagueList = rememberLazyListState()
+    val teamList = rememberLazyListState()
+    WheelScroll(leagueList, active = openLeague == null)
+    WheelScroll(teamList, active = openLeague != null)
+
     if (openLeague == null) {
-        LazyColumn(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.fillMaxSize(), state = leagueList) {
             item { FollowSummary(follows, teamsByLeague, onToggle) }
             for ((sectionTitle, leagues) in Leagues.sections) {
                 item(key = "s-$sectionTitle") { SectionHeader(sectionTitle) }
@@ -94,7 +104,7 @@ fun FollowScreen(
                 if (filtered.isEmpty()) {
                     EmptyState("No team matches “$query”.")
                 } else {
-                    LazyColumn(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), state = teamList) {
                         for (team in filtered) {
                             item(key = team.key) {
                                 val on = team.key in follows

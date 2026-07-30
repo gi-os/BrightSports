@@ -81,6 +81,29 @@ behind a token and this ships as a plain APK; if that ever opens up, delete that
   round of the season.
 - **Settings** — my teams, notifications, and the spoiler delay.
 
+## The wheel
+
+Turning the brightness wheel scrolls whatever list is up: the feed, a game, the table, the
+team picker, settings. Only the turns — the click and the camera button belong to
+LightControl, which owns them phone-wide and passes bare notches through to `com.gios.*`
+for exactly this.
+
+It works because the wheel arrives as an ordinary key event. Light patched
+`/system/usr/keylayout/Generic.kl` to label scancodes 19 and 20 `WHEEL_CCW`/`WHEEL_CW`,
+and nothing in `PhoneWindowManager` intercepts them, so they reach the focused window like
+any other key — which is also why an app that ignores the keycode appears to have a dead
+wheel. `hw/LightKeys.kt` resolves the labels at runtime and falls back to the raw
+scancode, gated on the sensor's device name so a paired keyboard's `r` can't scroll the
+standings.
+
+The handling lives in `dispatchKeyEvent`, above the view hierarchy, so a notch beats the
+team-search field when it has focus. Notches are frame-timed rather than applied on
+arrival: the sensor fires every ~35 ms, faster than a frame, and acting on each one gives
+a stack of jumps with nothing for the eye to follow. And the first notch after a pause is
+held until a second confirms it, because the wheel sits under a thumb and a stray brush
+should not move the score you were reading. `hw/Wheel.kt` has the numbers; LightNews has
+the long version.
+
 ## Notifications
 
 Score alerts run on `AlarmManager.setAndAllowWhileIdle`, the only alarm that fires

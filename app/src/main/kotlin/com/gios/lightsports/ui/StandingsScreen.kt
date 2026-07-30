@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -30,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.StandingsRow
@@ -55,6 +57,11 @@ fun StandingsScreen(
     var selected by remember { mutableStateOf(leagues.first()) }
     LaunchedEffect(selected.id) { onLeagueSelected(selected) }
 
+    // The wheel drives the table, not the league chips: the chips are one tap wide and
+    // the table is the thing that runs off the bottom of the panel.
+    val tableList = rememberLazyListState()
+    WheelScroll(tableList)
+
     Column(Modifier.fillMaxSize()) {
         LazyRow(
             Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp),
@@ -71,7 +78,7 @@ fun StandingsScreen(
         when {
             tables == null -> EmptyState("Loading…")
             tables.isEmpty() -> EmptyState("No table published for ${selected.short} right now.")
-            else -> LazyColumn(Modifier.fillMaxSize()) {
+            else -> LazyColumn(Modifier.fillMaxSize(), state = tableList) {
                 for (group in tables) {
                     item(key = "t-${group.title}") {
                         SectionHeader(group.title)

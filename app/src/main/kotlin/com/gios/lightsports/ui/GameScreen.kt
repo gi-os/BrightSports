@@ -22,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Leagues
+import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.Side
@@ -41,8 +42,10 @@ fun GameScreen(game: Game) {
     val zone = ZoneId.systemDefault()
     val league = Leagues.byId(game.leagueId)
     val kind = league?.kind ?: SportKind.BASEBALL
+    val scroll = rememberScrollState()
+    WheelScroll(scroll)
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
         Text(
             listOfNotNull(
                 league?.short,

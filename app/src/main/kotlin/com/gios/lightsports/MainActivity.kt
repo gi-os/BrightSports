@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -27,6 +29,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gios.lightsports.data.Leagues
+import com.gios.lightsports.hw.LightKey
+import com.gios.lightsports.hw.LightKeys
+import com.gios.lightsports.hw.LocalWheelBus
+import com.gios.lightsports.hw.WheelBus
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsRow
@@ -50,6 +56,32 @@ class MainActivity : ComponentActivity() {
     private val askNotifications =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
 
+    /** Wheel notches on their way to whichever screen is up. */
+    private val wheel = WheelBus()
+
+    /**
+     * Every hardware key arrives here first — `DecorView` hands the event to the window
+     * callback before it walks the view hierarchy — so a turn of the wheel reaches the
+     * list even when the team-search field holds focus.
+     *
+     * Both halves of the pair are consumed: one notch is a complete DOWN+UP, and letting
+     * the UP through would let a text field take it as a keypress.
+     */
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        when (LightKeys.of(event)) {
+            LightKey.WheelUp -> {
+                if (event.action == KeyEvent.ACTION_DOWN) wheel.send(1)
+                return true
+            }
+            LightKey.WheelDown -> {
+                if (event.action == KeyEvent.ACTION_DOWN) wheel.send(-1)
+                return true
+            }
+            else -> Unit
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Notifier.ensureChannels(this)
@@ -64,7 +96,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             LightSportsTheme {
                 Surface(Modifier.fillMaxSize(), color = Color.Black) {
-                    App(openGameId)
+                    // Every screen below can reach the wheel; which one answers a notch is
+                    // decided down there, by whichever scroller is on screen.
+                    CompositionLocalProvider(LocalWheelBus provides wheel) {
+                        App(openGameId)
+                    }
                 }
             }
         }

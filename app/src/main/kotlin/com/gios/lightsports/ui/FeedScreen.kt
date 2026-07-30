@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Feed
 import com.gios.lightsports.data.Leagues
+import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.RaceEvent
@@ -44,6 +46,8 @@ fun FeedScreen(
     onEditTeams: () -> Unit,
 ) {
     val zone = ZoneId.systemDefault()
+    val listState = rememberLazyListState()
+    WheelScroll(listState)
 
     if (!hasFollows) {
         Column(Modifier.fillMaxSize()) {
@@ -75,7 +79,7 @@ fun FeedScreen(
         return
     }
 
-    LazyColumn(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.fillMaxSize(), state = listState) {
         // The refresh control is an icon in the top bar now, so this line is the only
         // thing saying whether the screen can be trusted.
         item(key = "stamp") {

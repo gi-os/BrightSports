@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Prefs
+import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.ui.theme.Dim
 
 private val DELAY_CHOICES = listOf(0, 2, 5, 10, 15, 30)
@@ -37,8 +38,10 @@ fun SettingsScreen(
     var starts by remember { mutableStateOf(prefs.notifyStarts) }
     var delayOn by remember { mutableStateOf(prefs.delayEnabled) }
     var delay by remember { mutableIntStateOf(prefs.delayMinutes) }
+    val scroll = rememberScrollState()
+    WheelScroll(scroll)
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
         SectionHeader("TEAMS")
         MenuRow(
             label = "My teams",
