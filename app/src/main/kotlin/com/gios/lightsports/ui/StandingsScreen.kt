@@ -1,6 +1,8 @@
 package com.gios.lightsports.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -43,6 +45,7 @@ fun StandingsScreen(
     groups: Map<String, List<StandingsGroup>>,
     followedTeamIds: Set<String>,
     onLeagueSelected: (League) -> Unit,
+    onTeamHeld: (StandingsRow, League) -> Unit,
 ) {
     if (leagues.isEmpty()) {
         EmptyState("Follow a team and its league's table shows up here.")
@@ -71,18 +74,32 @@ fun StandingsScreen(
                 for (group in tables) {
                     item(key = "t-${group.title}") {
                         SectionHeader(group.title)
-                        Table(group, followedTeamIds, selected.id)
+                        Table(group, followedTeamIds, selected.id) { onTeamHeld(it, selected) }
                         Rule()
                     }
                 }
-                item { Spacer(Modifier.height(28.dp)) }
+                item {
+                    Text(
+                        "Hold a team for its full stats",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Faint,
+                        modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    )
+                    Spacer(Modifier.height(20.dp))
+                }
             }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun Table(group: StandingsGroup, followedTeamIds: Set<String>, leagueId: String) {
+private fun Table(
+    group: StandingsGroup,
+    followedTeamIds: Set<String>,
+    leagueId: String,
+    onHold: (StandingsRow) -> Unit,
+) {
     val scroll = rememberScrollState()
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
         Row(Modifier.fillMaxWidth().horizontalScroll(scroll)) {
@@ -112,6 +129,12 @@ private fun Table(group: StandingsGroup, followedTeamIds: Set<String>, leagueId:
             Row(
                 Modifier.fillMaxWidth()
                     .background(if (mine) Color.White else Color.Black)
+                    // Hold, not tap. The table scrolls sideways, and a row that
+                    // navigated on tap would fire every time a drag was read as a click.
+                    .combinedClickable(
+                        onClick = {},
+                        onLongClick = { onHold(row) },
+                    )
                     .horizontalScroll(scroll)
                     .padding(vertical = 5.dp),
                 verticalAlignment = Alignment.CenterVertically,

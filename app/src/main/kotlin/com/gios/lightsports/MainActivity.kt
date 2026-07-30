@@ -29,6 +29,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.notify.Notifier
 import com.gios.lightsports.notify.ScoreWatcher
 import com.gios.lightsports.ui.BarItem
@@ -41,6 +42,7 @@ import com.gios.lightsports.ui.Rule
 import com.gios.lightsports.ui.SettingsScreen
 import com.gios.lightsports.ui.SportsViewModel
 import com.gios.lightsports.ui.StandingsScreen
+import com.gios.lightsports.ui.TeamStatsScreen
 import com.gios.lightsports.ui.theme.LightSportsTheme
 
 class MainActivity : ComponentActivity() {
@@ -102,11 +104,13 @@ private fun App(openGameId: String?) {
     val follows by vm.follows.collectAsState()
     val teams by vm.teams.collectAsState()
     val standings by vm.standings.collectAsState()
+    val logos by vm.logos.collectAsState()
 
     var tab by remember { mutableIntStateOf(TAB_SCORES) }
     var openGame by remember { mutableStateOf<Game?>(null) }
     var openLeague by remember { mutableStateOf<League?>(null) }
     var teamsOpen by remember { mutableStateOf(false) }
+    var openStanding by remember { mutableStateOf<Pair<StandingsRow, League>?>(null) }
 
     LaunchedEffect(Unit) {
         vm.refresh()
@@ -127,10 +131,11 @@ private fun App(openGameId: String?) {
     // LightOS supplies the back gesture; the SDK's own screens expect it to unwind the
     // stack rather than leave the app, so it is handled wherever there is a level to
     // pop and left alone at the root.
-    val canPop = openGame != null || openLeague != null || teamsOpen
+    val canPop = openGame != null || openLeague != null || teamsOpen || openStanding != null
     BackHandler(enabled = canPop) {
         when {
             openGame != null -> openGame = null
+            openStanding != null -> openStanding = null
             openLeague != null -> openLeague = null
             else -> teamsOpen = false
         }
@@ -139,10 +144,15 @@ private fun App(openGameId: String?) {
     Column(Modifier.fillMaxSize()) {
         val game = openGame
         val league = openLeague
+        val standing = openStanding
         when {
             game != null -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { openGame = null }, "Back"),
                 title = Leagues.byId(game.leagueId)?.short,
+            )
+            standing != null -> LightTopBar(
+                left = BarItem.Icon(R.drawable.ic_back_white, { openStanding = null }, "Back"),
+                title = standing.second.short,
             )
             league != null -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { openLeague = null }, "Back"),
@@ -168,6 +178,7 @@ private fun App(openGameId: String?) {
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
                 game != null -> GameScreen(game)
+                standing != null -> TeamStatsScreen(standing.first, standing.second)
                 teamsOpen -> FollowScreen(
                     openLeague = openLeague,
                     teamsByLeague = teams,
@@ -184,6 +195,7 @@ private fun App(openGameId: String?) {
                 tab == TAB_SCORES -> FeedScreen(
                     state = feed,
                     hasFollows = follows.isNotEmpty(),
+                    logos = logos,
                     onGame = { openGame = it },
                     onEditTeams = { teamsOpen = true },
                 )
@@ -192,6 +204,7 @@ private fun App(openGameId: String?) {
                     groups = standings,
                     followedTeamIds = follows,
                     onLeagueSelected = { vm.loadStandings(it) },
+                    onTeamHeld = { row, l -> openStanding = row to l },
                 )
                 else -> SettingsScreen(
                     prefs = vm.prefs,
@@ -211,6 +224,7 @@ private fun App(openGameId: String?) {
                 tab = target
                 teamsOpen = false
                 openLeague = null
+                openStanding = null
             }
             LightBottomBar(
                 listOf(

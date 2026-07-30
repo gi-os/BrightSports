@@ -131,6 +131,29 @@ class ParserTest {
     }
 
     @Test
+    fun `a standings row carries every stat, not just the visible columns`() {
+        val body = """
+        {"name":"MLS","children":[{"name":"Eastern Conference","standings":{"entries":[
+          {"team":{"id":"17606","displayName":"New York City FC","abbreviation":"NYC"},
+           "stats":[{"name":"wins","displayValue":"12"},
+                    {"name":"losses","displayValue":"7"},
+                    {"name":"ties","displayValue":"5"},
+                    {"name":"points","shortDisplayName":"PTS","displayValue":"41"},
+                    {"name":"avgPointsAgainst","displayValue":"1.2"},
+                    {"name":"pointDifferential","shortDisplayName":"DIFF","displayValue":"+9"}]}]}}]}
+        """.trimIndent()
+        val row = EspnParser.parseStandings(Leagues.MLS, body).single().rows.single()
+        val stats = row.allStats.toMap()
+        assertEquals("41", stats["PTS"])
+        assertEquals("+9", stats["DIFF"])
+        // No label from ESPN, so the camelCase key is made readable.
+        assertEquals("1.2", stats["Avg points against"])
+        // The table itself only shows five soccer columns.
+        assertEquals(5, row.values.size)
+        assertEquals(6, row.allStats.size)
+    }
+
+    @Test
     fun `f1 collapses a weekend of sessions into one card`() {
         val body = """
         {"events":[{"id":"600057440","date":"2026-07-24T11:30Z",

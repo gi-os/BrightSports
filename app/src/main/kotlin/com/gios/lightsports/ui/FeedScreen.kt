@@ -39,6 +39,7 @@ import java.time.ZoneId
 fun FeedScreen(
     state: SportsViewModel.FeedState,
     hasFollows: Boolean,
+    logos: Map<String, String>,
     onGame: (Game) -> Unit,
     onEditTeams: () -> Unit,
 ) {
@@ -65,7 +66,7 @@ fun FeedScreen(
         return
     }
 
-    if (state.sections.isEmpty()) {
+    if (state.sections.isEmpty() && state.idle.isEmpty()) {
         EmptyState(
             if (state.loading) "Loading…"
             else if (state.offline) "Couldn't reach the scores.\nPull down to try again."
@@ -91,7 +92,7 @@ fun FeedScreen(
             for (item in section.items) {
                 when (item) {
                     is Feed.Item.GameItem -> item(key = "g-${item.game.leagueId}-${item.game.id}") {
-                        GameRow(item.game, zone) { onGame(item.game) }
+                        GameRow(item.game, zone, logos) { onGame(item.game) }
                         Rule()
                     }
                     is Feed.Item.RaceItem -> item(key = "r-${item.race.id}") {
@@ -101,12 +102,33 @@ fun FeedScreen(
                 }
             }
         }
+        if (state.idle.isNotEmpty()) {
+            item(key = "idle") {
+                SectionHeader("NO GAME SCHEDULED")
+                for (team in state.idle) {
+                    Text(
+                        team,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Dim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                    )
+                }
+            }
+        }
         item { Spacer(Modifier.height(28.dp)) }
     }
 }
 
 @Composable
-fun GameRow(game: Game, zone: ZoneId, onClick: () -> Unit) {
+fun GameRow(
+    game: Game,
+    zone: ZoneId,
+    logos: Map<String, String> = emptyMap(),
+    onClick: () -> Unit,
+) {
     val league = Leagues.byId(game.leagueId)
     val live = game.state == GameState.LIVE
     val final = game.state == GameState.FINAL
@@ -147,15 +169,27 @@ fun GameRow(game: Game, zone: ZoneId, onClick: () -> Unit) {
             }
         }
         Spacer(Modifier.height(8.dp))
-        TeamLine(game.away, dimmed = final && !awayWon, showScore = game.state != GameState.PRE)
+        TeamLine(
+            side = game.away,
+            logoUrl = logos["${game.leagueId}:${game.away.teamId}"],
+            dimmed = final && !awayWon,
+            showScore = game.state != GameState.PRE,
+        )
         Spacer(Modifier.height(4.dp))
-        TeamLine(game.home, dimmed = final && !homeWon, showScore = game.state != GameState.PRE)
+        TeamLine(
+            side = game.home,
+            logoUrl = logos["${game.leagueId}:${game.home.teamId}"],
+            dimmed = final && !homeWon,
+            showScore = game.state != GameState.PRE,
+        )
     }
 }
 
 @Composable
-private fun TeamLine(side: Side, dimmed: Boolean, showScore: Boolean) {
+private fun TeamLine(side: Side, logoUrl: String?, dimmed: Boolean, showScore: Boolean) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        TeamLogo(logoUrl, size = 24.dp)
+        Spacer(Modifier.width(10.dp))
         Text(
             side.short,
             style = MaterialTheme.typography.titleMedium,

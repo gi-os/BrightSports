@@ -31,6 +31,8 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val games: List<Game> = emptyList(),
         val updatedAt: Long = 0L,
         val offline: Boolean = false,
+        /** Followed teams with no fixture in the window, named for the feed's last row. */
+        val idle: List<String> = emptyList(),
     )
 
     private val _feed = MutableStateFlow(FeedState())
@@ -41,6 +43,10 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _teams = MutableStateFlow<Map<String, List<TeamRef>>>(emptyMap())
     val teams: StateFlow<Map<String, List<TeamRef>>> = _teams.asStateFlow()
+
+    /** Crest URLs by `leagueId:teamId`, derived from whatever team lists are loaded. */
+    private val _logos = MutableStateFlow<Map<String, String>>(emptyMap())
+    val logos: StateFlow<Map<String, String>> = _logos.asStateFlow()
 
     private val _standings = MutableStateFlow<Map<String, List<StandingsGroup>>>(emptyMap())
     val standings: StateFlow<Map<String, List<StandingsGroup>>> = _standings.asStateFlow()
@@ -53,10 +59,12 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
             val zone = ZoneId.systemDefault()
             val (games, races) = withContext(Dispatchers.IO) { repo.followedGames(now, zone) }
             val sections = Feed.build(games, races, now, zone)
+            val idle = Feed.idleFollows(prefs.follows, games, races) { key -> teamLabel(key) }
             _feed.value = FeedState(
                 loading = false,
                 sections = sections,
                 games = games,
+                idle = idle,
                 updatedAt = now,
                 // Followed teams but nothing came back: almost always the network,
                 // and worth saying so rather than showing a bare "no games".
@@ -70,6 +78,9 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val list = withContext(Dispatchers.IO) { repo.teams(league) }
             _teams.value = _teams.value + (league.id to list)
+            _logos.value = _logos.value + list.mapNotNull { team ->
+                team.logoUrl?.let { team.key to it }
+            }
         }
     }
 
@@ -91,6 +102,19 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun gameById(id: String): Game? = _feed.value.games.firstOrNull { it.id == id }
+
+    /**
+     * A follow key as a human name. Falls back to the league and the raw id when the
+     * team list hasn't loaded — better a rough label than a team that seems to vanish.
+     */
+    private fun teamLabel(key: String): String {
+        val leagueId = key.substringBefore(':')
+        val teamId = key.substringAfter(':')
+        val league = Leagues.byId(leagueId)
+        if (teamId == "series") return league?.name ?: leagueId.uppercase()
+        val name = _teams.value[leagueId]?.firstOrNull { it.teamId == teamId }?.displayName
+        return name ?: "${league?.short ?: leagueId.uppercase()} $teamId"
+    }
 
     /** Leagues with at least one followed team, for the standings picker. */
     fun followedLeagues(): List<League> =

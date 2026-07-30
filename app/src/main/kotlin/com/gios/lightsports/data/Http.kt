@@ -33,6 +33,17 @@ object Http {
         }
     }.getOrNull()
 
+    /** Raw bytes, for the team crests. */
+    fun bytes(url: String): ByteArray? = runCatching {
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Mozilla/5.0 (Android) LightSports")
+            .build()
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) null else response.body?.bytes()
+        }
+    }.getOrNull()
+
     /**
      * Read-through file cache for slow-moving lists.
      * @param maxAgeMillis serve the file if it is younger than this, else refetch.

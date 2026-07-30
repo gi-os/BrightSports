@@ -103,6 +103,66 @@ class FeedTest {
         assertTrue(buckets(listOf(game("a", GameState.PRE, "not a date"))).isEmpty())
     }
 
+    @Test
+    fun `a result four days old still shows, because it is still fetched`() {
+        // The repository asks for four days back. If the feed only kept three, that
+        // fourth day was downloaded and thrown away — which reads as a missing team.
+        assertEquals(
+            listOf(Feed.Bucket.RECENT),
+            buckets(listOf(game("a", GameState.FINAL, "2026-07-25T23:30:00Z"))),
+        )
+    }
+
+    // ------------------------------------------------------- teams with no game
+
+    @Test
+    fun `a followed team with a fixture is not idle`() {
+        val games = listOf(
+            game("a", GameState.PRE, "2026-07-31T23:30:00Z").let {
+                it.copy(home = it.home.copy(teamId = "17606"))
+            },
+        )
+        assertTrue(
+            Feed.idleFollows(setOf("mlb:17606"), games, emptyList()) { it }.isEmpty(),
+        )
+        // A team id is only unique within its league, so the same id in another league
+        // must still count as idle.
+        assertEquals(
+            listOf("mls:17606"),
+            Feed.idleFollows(setOf("mls:17606"), games, emptyList()) { it },
+        )
+    }
+
+    @Test
+    fun `a followed team with nothing scheduled is named`() {
+        assertEquals(
+            listOf("New York City FC"),
+            Feed.idleFollows(setOf("mls:17606"), emptyList(), emptyList()) { "New York City FC" },
+        )
+    }
+
+    @Test
+    fun `a followed series counts as busy when any race is in the window`() {
+        val race = com.gios.lightsports.model.RaceEvent(
+            id = "1", leagueId = "f1", name = "GP", shortName = "GP",
+            state = GameState.PRE, startMillis = now, sessionLabel = null, sessionMillis = null,
+        )
+        assertTrue(
+            Feed.idleFollows(setOf("f1:series"), emptyList(), listOf(race)) { it }.isEmpty(),
+        )
+        assertEquals(
+            listOf("Formula 1"),
+            Feed.idleFollows(setOf("f1:series"), emptyList(), emptyList()) { "Formula 1" },
+        )
+    }
+
+    @Test
+    fun `a label of null drops the team rather than printing a raw key`() {
+        assertTrue(
+            Feed.idleFollows(setOf("mls:99999"), emptyList(), emptyList()) { null }.isEmpty(),
+        )
+    }
+
     // ------------------------------------------------------------ poll timing
 
     @Test

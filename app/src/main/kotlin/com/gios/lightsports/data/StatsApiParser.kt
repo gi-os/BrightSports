@@ -64,6 +64,9 @@ object StatsApiParser {
                 abbrev = t.optString("abbreviation").ifEmpty {
                     t.optString("teamCode").uppercase()
                 },
+                // mlbstatic serves the club logos as SVG, which BitmapFactory cannot
+                // decode. The midfield "spots" endpoint is the same mark as a PNG.
+                logoUrl = "https://midfield.mlbstatic.com/v1/team/${t.optInt("id")}/spots/64",
             )
         }.sortedBy { it.displayName }
     }
@@ -187,6 +190,7 @@ object StatsApiParser {
                         tr.optString("gamesBack").ifEmpty { "-" },
                     ),
                     teamId = team?.optInt("id")?.toString(),
+                    allStats = teamStats(tr, team),
                 )
             }
             if (rows.isEmpty()) null
@@ -199,6 +203,42 @@ object StatsApiParser {
                 rows = rows,
             )
         }
+    }
+
+    /**
+     * Everything worth showing on a long press. StatsAPI is generous here — run
+     * differential, streak, and the home/away/last-ten splits all come down with the
+     * standings, so no extra request is needed.
+     */
+    private fun teamStats(tr: JSONObject, team: JSONObject?): List<Pair<String, String>> {
+        fun scalar(key: String) = when {
+            tr.isNull(key) -> null
+            else -> tr.optString(key).takeIf { it.isNotEmpty() && it != "-" }
+        }
+        val splits = tr.optJSONObject("records")?.optJSONArray("splitRecords")
+            ?.objects().orEmpty()
+        fun split(type: String) = splits.firstOrNull { it.optString("type") == type }
+            ?.let { "${it.optInt("wins")}-${it.optInt("losses")}" }
+
+        return listOfNotNull(
+            "Record" to "${tr.optInt("wins")}-${tr.optInt("losses")}",
+            scalar("winningPercentage")?.let { "Win %" to it },
+            scalar("gamesPlayed")?.let { "Games played" to it },
+            scalar("gamesBack")?.let { "Games back" to it },
+            scalar("divisionRank")?.let { "Division rank" to it },
+            scalar("leagueRank")?.let { "League rank" to it },
+            tr.optJSONObject("streak")?.optString("streakCode")
+                ?.takeIf { it.isNotEmpty() }?.let { "Streak" to it },
+            split("home")?.let { "Home" to it },
+            split("away")?.let { "Away" to it },
+            split("lastTen")?.let { "Last 10" to it },
+            scalar("runsScored")?.let { "Runs scored" to it },
+            scalar("runsAllowed")?.let { "Runs allowed" to it },
+            scalar("runDifferential")?.let { "Run diff" to it },
+            scalar("magicNumber")?.let { "Magic number" to it },
+            team?.optString("parentOrgName")?.takeIf { it.isNotEmpty() }
+                ?.let { "Affiliate" to it },
+        )
     }
 
     /**

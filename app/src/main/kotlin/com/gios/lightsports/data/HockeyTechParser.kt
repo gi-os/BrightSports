@@ -55,6 +55,7 @@ object HockeyTechParser {
                 displayName = it.optString("name"),
                 short = it.optString("nickname").ifEmpty { it.optString("name") },
                 abbrev = it.optString("code"),
+                logoUrl = it.optString("team_logo_url").takeIf { url -> url.isNotEmpty() },
             )
         }.sortedBy { it.displayName }
     }
@@ -144,6 +145,14 @@ object HockeyTechParser {
                             name = row.optString("name"),
                             abbrev = row.optString("team_code"),
                             values = cols.map { row.optString(it.first).ifEmpty { "0" } },
+                            allStats = row.keys().asSequence()
+                                .filter { it !in setOf("name", "team_code", "rank", "overall_rank") }
+                                .mapNotNull { key ->
+                                    val v = row.optString(key).takeIf { it.isNotBlank() }
+                                        ?: return@mapNotNull null
+                                    prettify(key.replace('_', ' ')) to v
+                                }
+                                .toList(),
                         )
                     }
                 if (rows.isNotEmpty()) {

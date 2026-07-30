@@ -43,10 +43,20 @@ are reimplemented rather than imported because the SDK artifacts sit on GitHub P
 behind a token and this ships as a plain APK; if that ever opens up, delete that file.
 
 - **Scores** — one feed, followed teams only, grouped Live / Today / Tomorrow /
-  Upcoming / Recent. Finished games dim the loser, since colour is not available.
+  Upcoming / Recent, with each club's crest on its line. Finished games dim the loser,
+  since colour is not available. Followed teams with nothing in the window are listed
+  under "no game scheduled" rather than left out, so a team between fixtures can't be
+  mistaken for a team that failed to load.
+
+  Crests are loaded by `ui/Logos.kt` — about seventy lines instead of an image-loading
+  library, because the job is one small PNG per club cached forever. They are downsampled
+  on decode: ESPN serves 500px crests, which is a megabyte of ARGB_8888 for a 24dp view.
 - **My teams** — league, then club. Search within a league. F1 is followed as a series.
-- **Standings** — followed leagues only. Your team's row inverts.
-- **Settings** — notifications and the spoiler delay.
+- **Standings** — followed leagues only. Your team's row inverts. **Hold a row** for
+  every stat the provider sent for that team, which is three or four times what fits in
+  the table: run differential, streaks, home and away splits, a driver's points at every
+  round of the season.
+- **Settings** — my teams, notifications, and the spoiler delay.
 
 ## Notifications
 

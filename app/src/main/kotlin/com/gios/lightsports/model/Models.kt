@@ -45,6 +45,8 @@ data class TeamRef(
     val displayName: String,
     val short: String,
     val abbrev: String,
+    /** Crest, drawn beside the name in the feed. Null when the provider has none. */
+    val logoUrl: String? = null,
 ) {
     /** Stable key for the follow set. Team ids are only unique within a league. */
     val key: String get() = "$leagueId:$teamId"
@@ -107,6 +109,11 @@ data class StandingsRow(
     val abbrev: String,
     val values: List<String>,
     val teamId: String? = null,
+    /**
+     * Every stat the provider sent for this team, label to value, in its own order.
+     * The table shows four or five columns; a long press opens the rest.
+     */
+    val allStats: List<Pair<String, String>> = emptyList(),
 )
 
 data class StandingsGroup(

@@ -54,10 +54,28 @@ object EspnParser {
                     abbrev = t.optString("abbreviation").ifEmpty {
                         t.optString("shortDisplayName").take(3).uppercase()
                     },
+                    logoUrl = logoFor(t),
                 )
             }
         }
         return out.distinctBy { it.teamId }.sortedBy { it.displayName }
+    }
+
+    /**
+     * ESPN ships several crests per club. Take the one marked `dark`, which is the
+     * variant drawn for a dark background — the default has white outlines that
+     * disappear against this app's black.
+     */
+    private fun logoFor(team: JSONObject): String? {
+        val logos = team.optJSONArray("logos")?.objects()
+            ?: return team.optString("logo").takeIf { it.isNotEmpty() }
+        fun href(rel: String) = logos.firstOrNull { logo ->
+            (logo.optJSONArray("rel") ?: JSONArray()).let { rels ->
+                (0 until rels.length()).any { rels.optString(it) == rel }
+            }
+        }?.optString("href")?.takeIf { it.isNotEmpty() }
+        return href("dark") ?: href("default") ?: logos.firstOrNull()
+            ?.optString("href")?.takeIf { it.isNotEmpty() }
     }
 
     // ---------------------------------------------------------------- games
@@ -256,6 +274,16 @@ object EspnParser {
                         ?: athlete?.optString("abbreviation")).orEmpty(),
                     values = cols.map { stat(it.first) },
                     teamId = team?.optString("id"),
+                    allStats = stats.mapNotNull { s ->
+                        val value = s.optString("displayValue").takeIf { it.isNotEmpty() }
+                            ?: return@mapNotNull null
+                        // ESPN ships a readable label for most stats and only a
+                        // camelCase key for the rest.
+                        val name = s.optString("shortDisplayName")
+                            .ifEmpty { s.optString("displayName") }
+                            .ifEmpty { prettify(s.optString("name")) }
+                        if (name.isEmpty()) null else name to value
+                    },
                 )
             }
             if (rows.isNotEmpty()) {
@@ -289,6 +317,15 @@ object EspnParser {
                     name = who.optString("displayName"),
                     abbrev = who.optString("abbreviation"),
                     values = listOf(stat("championshipPts")),
+                    // For a driver this is the points scored at every round of the
+                    // season, which is the whole story of their year.
+                    allStats = stats.mapNotNull { s ->
+                        val value = s.optString("displayValue").takeIf { it.isNotBlank() }
+                            ?: return@mapNotNull null
+                        val name = s.optString("shortDisplayName")
+                            .ifEmpty { prettify(s.optString("name")) }
+                        if (name.isEmpty()) null else name to value
+                    },
                 )
             }
             if (rows.isNotEmpty()) {
@@ -303,6 +340,13 @@ object EspnParser {
 
 internal fun JSONArray.objects(): List<JSONObject> =
     (0 until length()).mapNotNull { optJSONObject(it) }
+
+/** `avgPointsAgainst` -> `Avg points against`, for the stats ESPN doesn't label. */
+internal fun prettify(key: String): String {
+    if (key.isEmpty()) return key
+    val spaced = key.replace(Regex("([a-z0-9])([A-Z])"), "$1 $2")
+    return spaced.first().uppercase() + spaced.drop(1).lowercase()
+}
 
 internal fun fmtNum(d: Double): String =
     if (d == d.toLong().toDouble()) d.toLong().toString() else d.toString()
