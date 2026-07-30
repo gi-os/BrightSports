@@ -1,11 +1,30 @@
 # LightSports
 
-A scores app for the Light Phone III. Follow your teams, see one column of scores,
-get notified when something happens.
+A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
+get notified when something happens. Launcher label: **Sports**, package
+`com.gios.lightsports`. Current released version: **v1.8.15**.
 
-Launcher label: **Sports** · package `com.gios.lightsports`
+## Why this exists
 
-## Leagues
+LightOS has no built-in scores surface and no Google Play Services, so this is a plain
+sideloaded APK (not a Light SDK tool) built from the same skeleton as the rest of the
+`gi-os` portfolio, minus Room/KSP/CameraX — follows are a `SharedPreferences` string set
+and caches are plain files, so there's no annotation processor in the build at all.
+
+## Quick start
+
+1. `git clone https://github.com/gi-os/LightSports.git && cd LightSports`
+2. Build or grab the release:
+   ```
+   ./gradlew :app:assembleRelease
+   ```
+   or `adb install -r` the newest APK from [Releases](../../releases/latest) — every push
+   to `main` cuts one.
+3. Open the app, go to **Settings → My teams**, and follow a league + club (or an entire
+   category — see below). The scores feed populates from there; no account or API key
+   needed anywhere.
+
+## Leagues and data sources
 
 | | |
 |---|---|
@@ -14,191 +33,232 @@ Launcher label: **Sports** · package `com.gios.lightsports`
 | Minor league baseball | Triple-A, Double-A, High-A, Single-A |
 | Racing | Formula 1 |
 
-## Data sources
+Thirteen leagues, three **keyless** public JSON providers — no account, no key to paste in:
 
-All keyless public JSON. No account, no API key to paste in.
+- **ESPN site API** — the majors, the women's leagues (except PWHL), F1.
+  `site.api.espn.com/apis/site/v2/sports/<sport>/<league>/scoreboard`. One parser covers
+  all eight sports; the response shape is identical. Standings live at
+  `site.api.espn.com/apis/v2/sports/.../standings?level=3` and nest differently per
+  league — walk the `children` tree rather than indexing it.
+- **MLB StatsAPI** — the four MiLB levels by `sportId` (11/12/13/14 = AAA/AA/A+/A). ESPN
+  publishes no minor-league scoreboard; this is the feed MiLB.com itself runs on.
+- **HockeyTech / LeagueStat** — the PWHL, which is on no mainstream scores API.
+  `client_code=pwhl`, feed key `694cfeed58c932ee`, the public one thepwhl.com ships in its
+  own front end.
 
-- **ESPN site API** — the majors, the women's leagues, F1.
-  `site.api.espn.com/apis/site/v2/sports/<sport>/<league>/scoreboard`
-- **MLB StatsAPI** — the four MiLB levels by `sportId` (11/12/13/14). ESPN publishes no
-  minor-league scoreboard, and this is the feed MiLB.com itself runs on.
-- **HockeyTech / LeagueStat** — the PWHL, which is on no mainstream scores API. The feed
-  key in `HockeyTechParser` is the public one thepwhl.com ships in its own front end.
+### Three endpoint traps, all silent — worth knowing before touching the parsers
 
-Two provider quirks are worth knowing before touching the parsers: MLB's standings
-endpoint silently ignores `sportId` and has to be asked by `leagueId`, and HockeyTech
-returns its standings wrapped in a bare pair of parentheses left over from JSONP.
+1. **MLB StatsAPI's `standings` endpoint ignores `sportId` entirely** and answers with an
+   empty record set. Expand the level via `/leagues?sportId=11` and ask by
+   `leagueId=117,112,…` instead; `hydrate=team` then carries the division *name*, which
+   the records themselves don't.
+2. **HockeyTech's `statviewfeed` standings come back wrapped in a bare pair of
+   parentheses** — JSONP residue — strip before parsing JSON. `modulekit&view=statviewtype`
+   looks like the standings view but isn't; it errors.
+3. **ESPN leaves `completed:false` on F1 sessions of race weekends that finished months
+   ago** — Bahrain and Saudi Arabia 2026 both do. Keying race state off that flag pinned
+   both Grands Prix to LIVE at the top of the feed for the rest of the season. Fix: read
+   the per-session `status.type.state` string plus the event `endDate`, never the
+   `completed` flag. Those same two events also publish no finishing order, so a podium
+   can legitimately come back empty.
+
+Also: ESPN omits seconds from timestamps (`2026-07-29T16:10Z`), which stock
+`ISO_INSTANT` rejects — one lenient `DateTimeFormatterBuilder` covers all three
+providers. `LocalDate.ofInstant` is Java 9 and missing from Android's java.time subset;
+use `Instant.atZone().toLocalDate()` instead.
 
 MLS clubs also play knockout competitions ESPN serves as separate leagues — the Leagues
-Cup and the U.S. Open Cup. Those reuse the parent league's team ids (NYCFC is `17606` in
-all three), so a followed club is matched in them with no extra configuration; the games
-are filed under MLS and the row names the competition instead of the league. The roster
-check is deliberately skipped for cups: the field is full of Liga MX and USL clubs, and
-applying it would make every tie look like an all-star fixture. Both cups are fetched on
-every poll — measured live, they add ~260ms to a ~430ms total, and the out-of-season one
-answers in under a kilobyte.
-
-Classifying those events took a twelve-month sweep of all seven ESPN leagues — 8,231
-games — because the round is stored in a different field depending on the sport. The US
-leagues put it in `notes[0].headline` ("Super Bowl LX", "Stanley Cup Final - Game 6") and
-leave `season.slug` as a flat `post-season`; soccer does the reverse, so MLS Cup arrives
-as `slug = mls-cup` with no note at all. `season.type` is useless for this — the MLS
-All-Star game reports `13846`. And some fixtures carry no title in either field: all that
-marks the MLS and MLB all-star games is a competitor absent from the league's own team
-list. See `data/SpecialEvents.kt`; the vocabulary is what `SpecialEventsTest` pins down.
-
-A third quirk bites in F1: ESPN leaves `completed:false` on sessions of weekends that
-finished months ago (Bahrain and Saudi Arabia 2026 both do), so race state is read from
-each session's `state` string and the event `endDate`, never from that flag.
+Cup and the U.S. Open Cup — which reuse the parent league's team ids (NYCFC is `17606` in
+all three), so a followed club is matched with no extra configuration. The roster check
+is deliberately skipped inside a cup (the field is full of Liga MX and USL clubs); both
+cups are fetched every poll, adding ~260ms to a ~430ms total. NWSL has no cup on ESPN
+(four slug spellings all 400).
 
 ## Screens
 
-Navigation follows the LightOS bar idiom: a top bar carrying the title and a back
-chevron, and a four-icon action bar along the bottom. `ui/LightBars.kt` rebuilds
-`LightTopBar` and `LightBottomBar` from Light's own `sdk/ui` library — same 27-column
-grid, same 3- and 4-unit bar heights, same slot rules, same LightOS icon drawables. They
-are reimplemented rather than imported because the SDK artifacts sit on GitHub Packages
-behind a token and this ships as a plain APK; if that ever opens up, delete that file.
+Navigation follows the LightOS bar idiom: a top bar with the title and back chevron, a
+four-icon action bar along the bottom. `ui/LightBars.kt` rebuilds `LightTopBar` and
+`LightBottomBar` from Light's own `sdk/ui` — same 27-column grid, same 3-/4-unit bar
+heights, same LightOS icon drawables — reimplemented rather than imported, because the
+SDK artifacts sit on GitHub Packages behind a token and this ships as a plain APK.
 
-- **Scores** — one feed, followed teams only, grouped Live / Today / Tomorrow /
-  Upcoming / Recent, with each club's crest on its line. Finished games dim the loser,
-  since colour is not available. Followed teams with nothing in the window are listed
-  under "no game scheduled" rather than left out, so a team between fixtures can't be
-  mistaken for a team that failed to load.
+- **Scores** — one feed, followed teams only, grouped Live / Today / Tomorrow / Upcoming
+  / Recent, each club's crest on its line, finished games dim the loser (colour isn't
+  available). Followed teams with nothing in the window show "no game scheduled" rather
+  than being dropped, so "between fixtures" isn't confused with "failed to load."
+- **My teams** — league then club, searchable. F1 is followed as a series. Each league
+  also has two category stars: **Championship games** and **Special games** — star one
+  and you get those fixtures whoever's playing, resolved by one predicate
+  (`Game.involves`) shared by the feed filter, the notification poll and the standings
+  highlight.
+- **Standings** — followed leagues only, your team's row inverts. **Hold a row** for
+  every stat the provider sent — three or four times what fits the table: run
+  differential, streaks, home/away splits, a driver's points at every round.
+- **Settings** — my teams, notifications, spoiler delay.
 
-  Crests are loaded by `ui/Logos.kt` — about seventy lines instead of an image-loading
-  library, because the job is one small PNG per club cached forever. They are downsampled
-  on decode: ESPN serves 500px crests, which is a megabyte of ARGB_8888 for a 24dp view.
-- **My teams** — league, then club. Search within a league. F1 is followed as a series.
-  Each ESPN league also has two category stars above its team list:
-  **Championship games** (Super Bowl, World Series, Stanley Cup Final, NBA/WNBA Finals,
-  MLS Cup, NWSL Championship) and **Special games** (all-star weekends, Winter Classic,
-  Stadium Series, NBA Cup final, and the games played abroad). Star a category and you
-  get those fixtures whoever is playing in them.
-- **Standings** — followed leagues only. Your team's row inverts. **Hold a row** for
-  every stat the provider sent for that team, which is three or four times what fits in
-  the table: run differential, streaks, home and away splits, a driver's points at every
-  round of the season.
-- **Settings** — my teams, notifications, and the spoiler delay.
+Crest loading (`ui/Logos.kt`, ~70 lines, no image library) downsamples on decode — ESPN
+serves 500px crests, a megabyte of ARGB_8888 for a 24dp view — so the cache is
+byte-bounded, not count-bounded. Sources: ESPN `team.logos[]` filtered to the entry whose
+`rel` contains `dark` (the default is white outlines that vanish on black);
+`midfield.mlbstatic.com/v1/team/<id>/spots/64` for MiLB (`mlbstatic.com/team-logos/<id>.svg`
+is SVG and `BitmapFactory` can't decode it); `team_logo_url` from HockeyTech's
+`teamsbyseason`. Verified working for 297 teams across the 12 team leagues.
 
-## The wheel
+The special-events classifier (`data/SpecialEvents.kt`) came out of a 12-month sweep of
+8,231 ESPN games:
 
-Turning the brightness wheel scrolls whatever list is up: the feed, a game, the table, the
-team picker, settings. That needs nothing but LightSports installed — no service, no
-permission, no root — because the app reads the keys itself.
-
-It works because the wheel arrives as an ordinary key event. Light patched
-`/system/usr/keylayout/Generic.kl` to label scancodes 19 and 20 `WHEEL_CCW`/`WHEEL_CW`,
-and nothing in `PhoneWindowManager` intercepts them, so they reach the focused window like
-any other key — which is also why an app that ignores the keycode appears to have a dead
-wheel. `hw/LightKeys.kt` resolves the labels at runtime and falls back to the raw
-scancode, gated on the sensor's device name so a paired keyboard's `r` can't scroll the
-standings.
-
-The handling lives in `dispatchKeyEvent`, above the view hierarchy, so a notch beats the
-team-search field when it has focus. Notches are frame-timed rather than applied on
-arrival: the sensor fires every ~35 ms, faster than a frame, and acting on each one gives
-a stack of jumps with nothing for the eye to follow. And the first notch after a pause is
-held until a second confirms it, because the wheel sits under a thumb and a stray brush
-should not move the score you were reading. `hw/Wheel.kt` has the numbers; LightNews has
-the long version.
-
-Only the turns are handled here; the wheel click and the camera button do nothing in this
-app. If you want those, [LightControl](https://github.com/gi-os/LightControl) is a separate
-and optional install that gives them to the whole phone — hold the wheel in and turn for
-brightness, tap it for the flashlight, the camera button for the camera, and each of them
-rebindable, tap and hold separately, to any app you have. It also hands brightness or a
-synthetic-swipe scroll to apps that carry no wheel code at all.
-
-It doesn't cost you the scrolling above. LightControl is a phone-wide key filter, and it
-deliberately passes bare turns through to `com.gios.*` (and to LightFastread, LightRSS and
-LightPhono), because scrolling a notch at a time from inside the app beats anything reachable
-from outside it.
-
-```bash
-# Optional: LightControl, for brightness, the flashlight and the camera button
-adb install -r LightControl-v1.0.x.apk
-
-# The key service. NOTE: this setting is a list, and this command REPLACES it —
-# if you also run LightVoice's push-to-talk, colon-join both components instead.
-adb shell settings put secure enabled_accessibility_services \
-  com.gios.lightcontrol/com.gios.lightcontrol.keys.ControlService
-adb shell settings put secure accessibility_enabled 1
-
-# Brightness, and the level readout + opening apps from the service
-adb shell appops set com.gios.lightcontrol WRITE_SETTINGS allow
-adb shell appops set com.gios.lightcontrol SYSTEM_ALERT_WINDOW allow
-```
-
-Latest APK: https://github.com/gi-os/LightControl/releases/latest
+- The round lives in a different field per sport — US leagues in
+  `notes[0].headline` ("Super Bowl LX") with a flat `season.slug`; soccer the reverse
+  (MLS Cup is `slug=mls-cup` with no note, so a notes-only rule missed MLS Cup and the
+  NWSL Championship entirely).
+- `season.type` is not usable — MLS All-Star reports `13846`.
+- Some fixtures carry no title in either field — the MLS and MLB all-star games are only
+  identifiable by a competitor absent from the league's own team list.
+- Match slug rounds on the last `---` segment exactly — `semifinals` and `quarterfinals`
+  both *contain* "final".
+- Drop preseason outright, or NBA-vs-Guangzhou and WNBA-vs-Niger friendlies trip the
+  off-roster rule and top the feed.
+- `limit=200` on the scoreboard silently truncates (a fortnight of MLB is >200 games
+  league-wide); it's 1000 now.
 
 ## Notifications
 
-Alerts use LightChat's notifier design, carried over wholesale. The shade notification is
-the *record* — it stays in LightOS's list and drives LightGlance's dot — and a box over
-whatever the phone is showing is the *alert*, chosen two ways:
-
-- **Awake and unlocked → an overlay window** (`ScoreAlertOverlay`). Nothing else is
-  interrupted: the app underneath keeps running and every touch outside the box reaches it.
-  An activity can't do that, floating or not — anything on top pauses what's below.
-- **Screen off or locked → an activity** (`ScoreAlertActivity`). An overlay window sits
-  below the keyguard and can't wake the panel, so for a walk-off home run while the phone
-  is face-down on a desk, only `showWhenLocked` + `turnScreenOn` will do.
-
-Both need the `SYSTEM_ALERT_WINDOW` appop — for the overlay obviously, and for the activity
-because on Android 14 that appop is what exempts an app from background-activity-start
-restrictions. One-time, adb only, since LightOS has no Settings screen for it:
+Alerts are [LightChat](https://github.com/gi-os/LightChat)'s notifier design, carried over
+wholesale: the shade notification is the *record* (drives LightGlance's dot too), and a
+box over whatever's on screen is the *alert* — an overlay window (`ScoreAlertOverlay`)
+when awake and unlocked, so nothing underneath is paused; a full activity
+(`ScoreAlertActivity`, `showWhenLocked` + `turnScreenOn`) when the screen is off or
+locked, because an overlay sits below the keyguard and can't wake the panel.
 
 ```
 adb shell appops set com.gios.lightsports SYSTEM_ALERT_WINDOW allow
 ```
 
-Without it the buzz still fires and the notification is still posted; only the box is
-missing. Vibration is disabled on both channels so the box owns the buzz — one place to
-tune, rate-limited to one per 1.5s so a score and the final whistle together feel like one
-event.
+Without that, the buzz still fires and the notification still posts — only the box is
+missing. Vibration is disabled on both channels so the box owns the buzz, rate-limited to
+one per 1.5s.
 
+Per-sport loudness: `EVERY_SCORE` for baseball/hockey/soccer/football, **`PERIOD_ONLY` for
+basketball** (forty buckets a night is a pager, not a notification), `FINAL_ONLY` for F1.
+A game seen for the first time never alerts, so installing mid-Sunday doesn't replay the
+day. Score alerts are held 5 minutes by default against stream spoilers; several scores in
+one window collapse into a single notification.
 
-Score alerts run on `AlarmManager.setAndAllowWhileIdle`, the only alarm that fires
-during Doze — and its firing is what grants the short network window the poll needs. It
-has no repeating form, so each run arms the next, and both boot and app launch re-arm
-the chain (a force-stop cancels every alarm an app owns).
+Every sport except baseball also gets a **period mark** (halftime, end of quarter,
+intermission) — a 0-0 halftime still counts, since the mark doesn't wait for a score.
+Which period just ended is read from three signals, since none covers everything: ESPN
+names the phase for soccer (`STATUS_HALFTIME`), falls back to a flat
+`STATUS_IN_PROGRESS` for the US leagues (the human text says "End of 1st Quarter"
+instead), and failing both, the period number going up means the previous one ended —
+which reads one poll late. Deduplicated against the last period marked (halftime is 15
+minutes, the poll runs every 2). Baseball is `EVERY_SCORE` + no marks — nine innings and
+eighteen half-innings would make marks noise, and MLB's own text already says "End 2nd"
+so the detector fires and the flag is what suppresses it.
 
-- A nudge 15 minutes before a followed team kicks off, once per game — the lead window
-  spans seven or eight polls, so it's guarded by a flag on the stored snapshot rather than
-  by a state change. Nothing is announced early if the start time has already passed.
-- Every score in baseball, hockey, soccer and football.
-- **Basketball reports at the end of each quarter only.** Forty buckets a night is a
-  pager, not a notification.
-- **The end of each period is marked** — halftime, the end of a quarter, an intermission —
-  in every sport except baseball, where nine innings and eighteen half-innings are nobody's
-  idea of an event. A 0-0 halftime still counts: the mark doesn't wait for a score.
+A pre-game nudge fires 15 minutes before a followed team's kickoff — the only alert that
+fires with nothing changed, so it's guarded by a flag persisted on the snapshot rather
+than a state transition (the lead window spans 7-8 polls).
 
-  Which period just ended is read from three signals, because no one of them is everywhere.
-  ESPN names the phase for soccer (`STATUS_HALFTIME`, `STATUS_SECOND_HALF`) and falls back
-  to a flat `STATUS_IN_PROGRESS` for the US leagues, which say it in the human text instead
-  ("End of 1st Quarter"); failing both, the period number going up means the previous one
-  ended. Deduplicated against the last period marked, since halftime lasts fifteen minutes
-  and the poll runs every two.
-- F1 posts the podium once, when the weekend goes final.
-- All score alerts are held **5 minutes** by default so the phone doesn't beat the
-  stream. Adjustable or off in settings. Several scores inside one delay window collapse
-  into a single notification carrying the current score.
-- Expect roughly a nine minute floor between checks once the screen has been off a
-  while; Doze throttles idle alarms. `adb shell dumpsys deviceidle whitelist
-  +com.gios.lightsports` removes the throttle if you want it tighter.
+Runs on `AlarmManager.setAndAllowWhileIdle` — the only alarm that survives Doze, and its
+firing is what grants the short network window the poll needs. No repeating form exists,
+so each firing arms the next; both boot and app launch re-arm the chain, since a
+force-stop cancels every alarm an app owns. Expect roughly a 9-minute floor between checks
+once the screen's been off a while; `adb shell dumpsys deviceidle whitelist
++com.gios.lightsports` removes the throttle.
 
-## Build
+## The wheel
+
+Turning the brightness wheel scrolls whatever list is up — the feed, a game, the table,
+the team picker, settings — with **nothing installed but LightSports itself**: no
+service, no permission, no root. LightOS relabels the wheel sensor's scancodes 19/20 as
+`WHEEL_CCW`/`WHEEL_CW` in `/system/usr/keylayout/Generic.kl`, and nothing intercepts them,
+so they reach the focused window like any other key event — which is also why an app
+that ignores the keycode looks like it has a dead wheel. `hw/LightKeys.kt` resolves the
+labels at runtime and falls back to the raw scancode, gated on the sensor's device name
+so a paired keyboard's `r` can't scroll the standings.
+
+Handling lives in `dispatchKeyEvent`, above the view hierarchy, so a notch beats the team
+search field when it has focus. Notches are frame-timed rather than applied on arrival
+(the sensor fires every ~35ms, faster than a frame), and the first notch after a pause is
+held until a second confirms it, since the wheel sits under a thumb.
+
+Only turns are handled — the wheel click and the camera button do nothing here. Optional,
+separate install for those: [LightControl](https://github.com/gi-os/LightControl) gives
+the whole phone brightness (hold wheel + turn), flashlight (tap), and camera (camera
+button), each rebindable. It passes bare turns straight through to `com.gios.*`
+deliberately, so it doesn't cost this app its own scrolling.
+
+```bash
+adb install -r LightControl-v1.0.x.apk
+
+# NOTE: this replaces the accessibility-service list — colon-join if you also run
+# LightVoice's push-to-talk.
+adb shell settings put secure enabled_accessibility_services \
+  com.gios.lightcontrol/com.gios.lightcontrol.keys.ControlService
+adb shell settings put secure accessibility_enabled 1
+
+adb shell appops set com.gios.lightcontrol WRITE_SETTINGS allow
+adb shell appops set com.gios.lightcontrol SYSTEM_ALERT_WINDOW allow
+```
+
+## Building
 
 ```
-./gradlew :app:testDebugUnitTest      # parsers, feed bucketing, notification gating
+./gradlew :app:testDebugUnitTest      # parsers, feed bucketing, notification gating — 42 tests
 ./gradlew :app:assembleRelease
 python3 scripts/generate_icon.py      # only if the launcher mark changes
 ```
 
-Every push to `main` cuts a GitHub Release. The APK is signed with the committed
-keystore and CI fails if the certificate drifts from `signing-fingerprint.txt` — an
-Obtainium update dies with a bare "Failure: Invalid" otherwise.
+Every push to `main` cuts a GitHub Release — **a push is a release trigger, not a
+cosmetic action**. The APK is signed with the committed keystore
+(`keystore/lightsports.jks`), and CI fails if the certificate drifts from
+`signing-fingerprint.txt` (an Obtainium update otherwise dies with a bare
+`Failure: Invalid`).
 
-Bump `versionName` in `app/build.gradle.kts` when you want Obtainium to see a new
-release; the tag is derived from it.
+**Only the pure-Kotlin sources are type-checked locally** — Compose files reach a
+compiler for the first time in CI, so a missing import survives a green local run. A grep
+for named model types against each UI file's imports catches it in seconds before pushing.
+
+### The versionName trap
+
+Release tags are `v<major.minor>.<CI run number>`, with the base parsed from
+`app/build.gradle.kts`. **Bumping that only in a throwaway clone means the next push
+reads the old value and can publish a *lower* version string than the release before
+it** — which is exactly what happened once here: `v1.0.5` landed chronologically after
+`v1.1.4` (see the table below), and a lower version string is precisely what makes
+Obtainium skip an update. Bump `versionName` in the tracked source, not a scratch copy.
+
+## Contributing
+
+Issues and PRs welcome.
+
+- Run `./gradlew :app:testDebugUnitTest` before sending a change — it's pure Kotlin and
+  fast, and it's the only local signal for the parsers, feed bucketing and alert gating.
+- If you touch any Compose file, do a full `./gradlew :app:assembleDebug` locally rather
+  than trusting a "green" unit-test run — Compose isn't type-checked outside a real build.
+- New league or provider quirks belong in the endpoint-traps list above and, if they
+  affect classification, in `data/SpecialEvents.kt` with a `SpecialEventsTest` case.
+- CI publishes a release on every push to `main` — verify locally before pushing there.
+
+## Version history
+
+| Version | Change |
+| --- | --- |
+| v1.8.15 | Note that wheel scrolling needs nothing else installed (docs) |
+| v1.8.14 | Mark the end of each period, in every sport but baseball |
+| v1.7.13 | Alert with LightChat's notifier, and nudge before kickoff |
+| v1.6.12 | Scroll with the wheel |
+| v1.6.11 | Fold the Leagues Cup and U.S. Open Cup into the MLS feed |
+| v1.5.10 | Follow special games and championship games as categories |
+| v1.4.9 | Import StandingsRow in StandingsScreen (build fix) |
+| — | Crests in the feed, full stats on a held standings row, and stop losing teams |
+| v1.3.7 | Star for the scores tab |
+| v1.2.6 | Bump versionName to 1.2.0 and say what it's for |
+| v1.0.5 | Move team editing under settings; three icons in the action bar *(see the versionName trap above — this tag is out of chronological order, landing after v1.1.4)* |
+| v1.1.4 | Use the LightOS bar idiom for navigation, and stop pinning finished races to live |
+| v1.0.3 | README: describe the app on its own terms |
+| — | LightSports: scores and standings on the Light Phone III (initial commit) |
+
+## Licence
+
+MIT.
