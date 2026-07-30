@@ -133,6 +133,7 @@ object EspnParser {
                 statusDetail = type?.optString("shortDetail")
                     ?.ifEmpty { type.optString("detail") }.orEmpty(),
                 period = status?.optInt("period") ?: 0,
+                statusName = type?.optString("name")?.takeIf { it.isNotEmpty() },
                 clock = status?.optString("displayClock")?.takeIf { it.isNotEmpty() && it != "0:00" },
                 home = home,
                 away = away,

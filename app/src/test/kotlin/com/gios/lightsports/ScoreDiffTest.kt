@@ -21,7 +21,10 @@ class ScoreDiffTest {
         now: ScoreDiff.Snapshot,
         loudness: Loudness = Loudness.EVERY_SCORE,
         notifyStarts: Boolean = true,
-    ) = ScoreDiff.alerts(prev, now, loudness, notifyStarts).map { it.kind }
+        markPeriods: Boolean = false,
+    ) = ScoreDiff.alerts(
+        prev, now, loudness, notifyStarts, markPeriods = markPeriods,
+    ).map { it.kind }
 
     @Test
     fun `a game seen for the first time never alerts`() {
@@ -152,7 +155,8 @@ class ScoreDiffTest {
             kinds(
                 snap(GameState.LIVE, 24, 22, period = 2),
                 snap(GameState.LIVE, 48, 41, period = 2),
-                loudness = Loudness.PERIOD_END,
+                loudness = Loudness.PERIOD_ONLY,
+                markPeriods = true,
             ).isEmpty(),
         )
     }
@@ -164,7 +168,109 @@ class ScoreDiffTest {
             kinds(
                 snap(GameState.LIVE, 48, 41, period = 2),
                 snap(GameState.LIVE, 52, 45, period = 3),
-                loudness = Loudness.PERIOD_END,
+                loudness = Loudness.PERIOD_ONLY,
+                markPeriods = true,
+            ),
+        )
+    }
+
+    // ------------------------------------------------------------ period marks
+
+    private fun live(
+        period: Int,
+        home: Int = 0,
+        away: Int = 0,
+        statusName: String? = null,
+        statusDetail: String = "",
+        markedPeriod: Int = 0,
+    ) = ScoreDiff.Snapshot(
+        "g1", "mlb", GameState.LIVE, home, away, period,
+        statusName = statusName, statusDetail = statusDetail, markedPeriod = markedPeriod,
+    )
+
+    @Test
+    fun `baseball never marks an inning`() {
+        // Nine innings and eighteen half-innings is not a notification schedule.
+        assertTrue(
+            kinds(live(6, 3, 1), live(7, 3, 1), markPeriods = false).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `a soccer halftime is marked even at nil-nil`() {
+        // The old rule required a score change, so most halftimes went unreported.
+        assertEquals(
+            listOf(ScoreDiff.Kind.PERIOD),
+            kinds(
+                live(1, 0, 0, statusName = "STATUS_FIRST_HALF"),
+                live(1, 0, 0, statusName = "STATUS_HALFTIME", statusDetail = "HT"),
+                markPeriods = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `a period end is reported once, not for every poll of the interval`() {
+        // Fifteen minutes of halftime is seven or eight polls.
+        val at = live(1, 0, 0, statusName = "STATUS_HALFTIME", statusDetail = "HT")
+        val alerts = ScoreDiff.alerts(
+            prev = live(1, 0, 0, statusName = "STATUS_FIRST_HALF"), now = at,
+            loudness = Loudness.EVERY_SCORE, notifyStarts = true, markPeriods = true,
+        )
+        assertEquals(listOf(ScoreDiff.Kind.PERIOD), alerts.map { it.kind })
+        assertEquals(1, alerts.single().snapshot.markedPeriod)
+        // Same status again, now carrying the marker: silent.
+        assertTrue(
+            kinds(
+                at.copy(markedPeriod = 1), at.copy(markedPeriod = 1), markPeriods = true,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `the human status text is enough on its own`() {
+        // Basketball and football say it here rather than in the status enum.
+        assertEquals(
+            listOf(ScoreDiff.Kind.PERIOD),
+            kinds(
+                live(1, 24, 22, statusDetail = "8:31 - 1st"),
+                live(1, 30, 28, statusDetail = "End of 1st Quarter"),
+                loudness = Loudness.PERIOD_ONLY,
+                markPeriods = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `the period number alone is enough when neither field says anything`() {
+        assertEquals(1, ScoreDiff.endedPeriod(live(1), live(2)))
+        assertEquals(null, ScoreDiff.endedPeriod(live(2), live(2)))
+        // A provider correcting itself downward is not a boundary.
+        assertEquals(null, ScoreDiff.endedPeriod(live(3), live(2)))
+    }
+
+    @Test
+    fun `a score and a period end in the same poll both fire`() {
+        // A buzzer beater: the queue collapses them into one notification later, but the
+        // diff should not be the thing deciding that.
+        assertEquals(
+            listOf(ScoreDiff.Kind.SCORE, ScoreDiff.Kind.PERIOD),
+            kinds(
+                live(1, 7, 3),
+                live(1, 10, 3, statusDetail = "End of 1st"),
+                markPeriods = true,
+            ),
+        )
+    }
+
+    @Test
+    fun `an intermission counts, which is how the pwhl reports it`() {
+        assertEquals(
+            listOf(ScoreDiff.Kind.PERIOD),
+            kinds(
+                live(2, 1, 1, statusDetail = "12:00 2nd"),
+                live(2, 1, 1, statusName = "INTERMISSION", statusDetail = "INT 2"),
+                markPeriods = true,
             ),
         )
     }

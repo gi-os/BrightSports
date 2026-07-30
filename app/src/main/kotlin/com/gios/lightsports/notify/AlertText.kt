@@ -43,12 +43,37 @@ object AlertText {
             }
             ScoreDiff.Kind.OFF -> game.statusDetail.ifEmpty { "Postponed" }
             ScoreDiff.Kind.FINAL -> game.statusDetail.ifEmpty { "Final" }
-            ScoreDiff.Kind.PERIOD -> "End of ${periodLabel(league.kind, game.period - 1)}"
+            ScoreDiff.Kind.PERIOD -> boundaryLabel(league.kind, game)
             ScoreDiff.Kind.SCORE -> game.statusDetail.ifEmpty {
                 periodLabel(league.kind, game.period)
             }
         }
         return if (detail.isEmpty()) prefix else "$prefix · $detail"
+    }
+
+    /**
+     * What to call the break that has just started.
+     *
+     * The midpoint has its own name in the sports that have one — nobody says "end of the
+     * second quarter", they say halftime. Which period ended is read the same way
+     * [ScoreDiff.endedPeriod] reads it: the provider's own status when it spells the
+     * boundary out, and the previous period when all we saw was the number move.
+     */
+    fun boundaryLabel(kind: SportKind, game: Game): String {
+        if (ScoreDiff.isHalftime(game.statusName, game.statusDetail)) return "Halftime"
+        val explicit = ScoreDiff.explicitBoundary(game.statusName, game.statusDetail)
+        val ended = if (explicit) game.period else game.period - 1
+        if (ended <= 0) return "End of period"
+        // Football and basketball reach the midpoint at the end of the second quarter;
+        // soccer at the end of the first half. Same word, different number.
+        val midpoint = when (kind) {
+            SportKind.FOOTBALL, SportKind.BASKETBALL -> 2
+            SportKind.SOCCER -> 1
+            else -> 0
+        }
+        if (ended == midpoint) return "Halftime"
+        val label = periodLabel(kind, ended)
+        return if (label.isEmpty()) "End of period" else "End of $label"
     }
 
     /**

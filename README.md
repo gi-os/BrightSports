@@ -142,6 +142,16 @@ the chain (a force-stop cancels every alarm an app owns).
 - Every score in baseball, hockey, soccer and football.
 - **Basketball reports at the end of each quarter only.** Forty buckets a night is a
   pager, not a notification.
+- **The end of each period is marked** — halftime, the end of a quarter, an intermission —
+  in every sport except baseball, where nine innings and eighteen half-innings are nobody's
+  idea of an event. A 0-0 halftime still counts: the mark doesn't wait for a score.
+
+  Which period just ended is read from three signals, because no one of them is everywhere.
+  ESPN names the phase for soccer (`STATUS_HALFTIME`, `STATUS_SECOND_HALF`) and falls back
+  to a flat `STATUS_IN_PROGRESS` for the US leagues, which say it in the human text instead
+  ("End of 1st Quarter"); failing both, the period number going up means the previous one
+  ended. Deduplicated against the last period marked, since halftime lasts fifteen minutes
+  and the poll runs every two.
 - F1 posts the podium once, when the weekend goes final.
 - All score alerts are held **5 minutes** by default so the phone doesn't beat the
   stream. Adjustable or off in settings. Several scores inside one delay window collapse

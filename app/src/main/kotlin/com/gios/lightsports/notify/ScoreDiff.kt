@@ -22,6 +22,15 @@ object ScoreDiff {
         val away: Int?,
         val period: Int,
         val startMillis: Long = 0L,
+        /** The provider's status enum, for spotting halftime and the end of a period. */
+        val statusName: String? = null,
+        /** The provider's own words, the second signal for the same thing. */
+        val statusDetail: String = "",
+        /**
+         * The last period whose end was announced. Halftime lasts fifteen minutes and the
+         * poll runs every two, so without this the same interval is reported seven times.
+         */
+        val markedPeriod: Int = 0,
         /**
          * Whether the "starting soon" alert has already gone out for this game. Without
          * it, every poll inside the lead window would fire another one — seven or eight
@@ -30,7 +39,60 @@ object ScoreDiff {
         val soonSent: Boolean = false,
     )
 
-    fun snapshot(game: Game, soonSent: Boolean = false) = Snapshot(
+    /**
+     * The period that has just ended, or null if none has.
+     *
+     * Three signals, because no one of them is available everywhere:
+     *
+     * 1. **The status enum.** ESPN names the phase for soccer — `STATUS_HALFTIME`,
+     *    `STATUS_END_PERIOD` — and falls back to a flat `STATUS_IN_PROGRESS` for the US
+     *    leagues, so this catches some sports and not others.
+     * 2. **The human status text**, which is where basketball and football actually say
+     *    it: "End of 1st Quarter", "Halftime", "End 3rd".
+     * 3. **The period number going up.** The fallback that needs no vocabulary at all:
+     *    if the game is in period 3 and was in period 2, period 2 ended. It reads one
+     *    poll late, which for a fifteen-minute interval is immaterial.
+     *
+     * The first two report the period that ended as the *current* one ("End of 1st" while
+     * `period` is 1); the third reports the previous one. Both are deduplicated by number
+     * against [Snapshot.markedPeriod].
+     */
+    fun endedPeriod(prev: Snapshot, now: Snapshot): Int? {
+        if (explicitBoundary(now.statusName, now.statusDetail) && now.period > 0) {
+            return now.period
+        }
+
+        // Period numbers only move forward within a game; a provider correcting itself
+        // downward is not a boundary.
+        if (now.period > prev.period && prev.period > 0) return prev.period
+        return null
+    }
+
+    /**
+     * Whether the provider is saying, in either field, that a period has just ended
+     * rather than that one is under way.
+     *
+     * Shared with [AlertText] so the wording and the detection can't drift apart: if this
+     * is what fired the alert, this is also what decides whether to call it halftime.
+     */
+    fun explicitBoundary(statusName: String?, statusDetail: String): Boolean {
+        val name = statusName.orEmpty().uppercase()
+        if ("HALFTIME" in name || "END_PERIOD" in name || "END_OF_PERIOD" in name ||
+            "INTERMISSION" in name
+        ) return true
+        val text = statusDetail.lowercase().trim()
+        return text.startsWith("end of") || text.startsWith("end ") ||
+            text == "ht" || text == "half" || text == "halftime" || text.startsWith("int")
+    }
+
+    /** Whether the boundary is specifically the midpoint, which has its own name. */
+    fun isHalftime(statusName: String?, statusDetail: String): Boolean {
+        val name = statusName.orEmpty().uppercase()
+        val text = statusDetail.lowercase().trim()
+        return "HALFTIME" in name || text == "ht" || text == "half" || text == "halftime"
+    }
+
+    fun snapshot(game: Game, soonSent: Boolean = false, markedPeriod: Int = 0) = Snapshot(
         gameId = game.id,
         leagueId = game.leagueId,
         state = game.state,
@@ -39,6 +101,9 @@ object ScoreDiff {
         period = game.period,
         startMillis = game.startMillis,
         soonSent = soonSent,
+        statusName = game.statusName,
+        statusDetail = game.statusDetail,
+        markedPeriod = markedPeriod,
     )
 
     data class Alert(val kind: Kind, val snapshot: Snapshot)
@@ -58,6 +123,7 @@ object ScoreDiff {
         notifyStarts: Boolean,
         nowMillis: Long = 0L,
         leadMillis: Long = 0L,
+        markPeriods: Boolean = false,
     ): List<Alert> {
         if (prev == null) return emptyList()
 
@@ -85,26 +151,27 @@ object ScoreDiff {
         if (now.state == GameState.OFF && prev.state != GameState.OFF) {
             out += Kind.OFF
         }
+        var marked = prev.markedPeriod
         if (prev.state == GameState.LIVE && now.state == GameState.LIVE) {
-            when (loudness) {
-                Loudness.EVERY_SCORE ->
-                    if (scoreChanged(prev, now)) out += Kind.SCORE
+            if (loudness == Loudness.EVERY_SCORE && scoreChanged(prev, now)) out += Kind.SCORE
 
-                // A period boundary is the only interruption basketball gets. The
-                // score is read at the moment the period ticks over, which is the
-                // end-of-quarter score by definition.
-                Loudness.PERIOD_END ->
-                    if (now.period > prev.period && scoreChanged(prev, now)) out += Kind.PERIOD
-
-                Loudness.FINAL_ONLY -> Unit
+            // Halftime, the end of a quarter, an intermission. Fires whether or not the
+            // score moved — a 0-0 halftime is still halftime, and reporting it only when
+            // somebody scored would have missed most of them in soccer.
+            if (markPeriods) {
+                val ended = endedPeriod(prev, now)
+                if (ended != null && ended > prev.markedPeriod) {
+                    out += Kind.PERIOD
+                    marked = ended
+                }
             }
         }
         if (now.state == GameState.FINAL && prev.state != GameState.FINAL) {
             out += Kind.FINAL
         }
-        // Carry soonSent forward on the snapshot the caller will store, so a game that
-        // was nudged and then kicked off isn't nudged again if it somehow reverts to PRE.
-        val stored = if (soon) now.copy(soonSent = true) else now
+        // The snapshot the caller stores carries both bits of "already said that" — the
+        // pre-game nudge and the last period marked.
+        val stored = now.copy(soonSent = soon || now.soonSent, markedPeriod = marked)
         return out.map { Alert(it, stored) }
     }
 

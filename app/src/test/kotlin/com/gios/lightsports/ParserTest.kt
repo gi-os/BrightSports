@@ -5,6 +5,8 @@ import com.gios.lightsports.data.HockeyTechParser
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.StatsApiParser
 import com.gios.lightsports.model.EventClass
+import com.gios.lightsports.model.Game
+import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.notify.AlertText
 import com.gios.lightsports.model.SportKind
@@ -490,6 +492,31 @@ class ParserTest {
     }
 
     // -------------------------------------------------------------- wording
+
+    @Test
+    fun `a break is named the way the sport names it`() {
+        fun game(kind: SportKind, period: Int, name: String? = null, detail: String = "") =
+            AlertText.boundaryLabel(
+                kind,
+                Game(
+                    id = "1", leagueId = "x", state = GameState.LIVE, startMillis = 1L,
+                    statusDetail = detail, period = period, statusName = name,
+                    home = Side("1", "H", "H", "H", 0), away = Side("2", "A", "A", "A", 0),
+                ),
+            )
+
+        // The midpoint has its own word in the sports that have one.
+        assertEquals("Halftime", game(SportKind.FOOTBALL, 2, detail = "End of 2nd Quarter"))
+        assertEquals("Halftime", game(SportKind.BASKETBALL, 2, detail = "End of 2nd Quarter"))
+        assertEquals("Halftime", game(SportKind.SOCCER, 1, name = "STATUS_HALFTIME"))
+        // Hockey has intermissions, not halves.
+        assertEquals("End of P2", game(SportKind.HOCKEY, 2, detail = "End of 2nd"))
+        assertEquals("End of Q1", game(SportKind.BASKETBALL, 1, detail = "End of 1st Quarter"))
+        assertEquals("End of Q3", game(SportKind.FOOTBALL, 3, detail = "End of 3rd Quarter"))
+        // Number-only detection reports the previous period, so the label follows suit.
+        assertEquals("End of Q1", game(SportKind.BASKETBALL, 2, detail = "5:00 - 2nd"))
+        assertEquals("Halftime", game(SportKind.BASKETBALL, 3, detail = "5:00 - 3rd"))
+    }
 
     @Test
     fun `period labels follow the sport, and overtime is not a fifth quarter`() {

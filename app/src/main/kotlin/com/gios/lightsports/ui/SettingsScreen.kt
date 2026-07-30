@@ -55,7 +55,8 @@ fun SettingsScreen(
         MenuRow(
             label = "Score alerts",
             detail = if (notify) "[ ON ]" else "OFF",
-            sub = "Every goal, run and touchdown; basketball at the end of each quarter",
+            sub = "Goals, runs and touchdowns, plus halftime, quarters and periods. " +
+                "Basketball only at the quarter, baseball never by the inning",
             onClick = {
                 notify = !notify
                 vm.setNotificationsEnabled(notify)

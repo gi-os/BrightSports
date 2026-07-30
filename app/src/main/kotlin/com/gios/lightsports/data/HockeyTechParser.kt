@@ -78,6 +78,9 @@ object HockeyTechParser {
                         .ifEmpty { g.optString("GameStatusString") }
                 },
                 period = g.optString("Period").toIntOrNull() ?: 0,
+                // HockeyTech states the intermission outright, which is a better signal
+                // than anything derivable from the clock.
+                statusName = if (g.optString("Intermission") == "1") "INTERMISSION" else null,
                 clock = g.optString("GameClock").takeIf {
                     state == GameState.LIVE && it.isNotEmpty() && it != "00:00"
                 },

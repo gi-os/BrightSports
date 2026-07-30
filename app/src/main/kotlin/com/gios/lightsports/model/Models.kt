@@ -22,11 +22,15 @@ enum class Provider { ESPN, STATSAPI, HOCKEYTECH }
  * How often a league is allowed to interrupt.
  *
  * Basketball scores forty times a night, so a notification per bucket would be a
- * pager going off all evening — those leagues report at period boundaries only.
- * Everything else notifies on every change of score, which for baseball, hockey,
- * soccer and football is a handful of events per game.
+ * pager going off all evening — those leagues say nothing until a quarter ends, and the
+ * quarter mark carries the score. Everything else notifies on every change of score,
+ * which for baseball, hockey, soccer and football is a handful of events per game.
+ *
+ * This covers *scores* only. Whether a league also marks the end of each period is
+ * [League.markPeriods], and the two are independent: baseball wants every run and no
+ * inning marks at all.
  */
-enum class Loudness { EVERY_SCORE, PERIOD_END, FINAL_ONLY }
+enum class Loudness { EVERY_SCORE, PERIOD_ONLY, FINAL_ONLY }
 
 /**
  * A knockout competition a league's clubs also play in — the Leagues Cup, the U.S. Open
@@ -66,6 +70,14 @@ data class League(
     val specialExample: String? = null,
     /** Knockout competitions whose games are folded into this league's feed. */
     val cups: List<Cup> = emptyList(),
+    /**
+     * Announce the end of each period — halftime, the end of a quarter, an intermission.
+     *
+     * False for baseball: nine innings, eighteen half-innings, and none of them is an
+     * event anybody wants a buzz for. Every other sport has two to four of them a game
+     * and they're the natural moments to glance at the phone.
+     */
+    val markPeriods: Boolean = false,
 )
 
 /** A team the user can follow. Cached per league so the picker works offline. */
@@ -110,6 +122,13 @@ data class Game(
     val broadcast: String? = null,
     /** Series or session context: "Game 3 of 7", "Practice 2", "Leg 2". */
     val note: String? = null,
+    /**
+     * The provider's status enum: `STATUS_HALFTIME`, `STATUS_END_PERIOD`,
+     * `STATUS_SECOND_HALF`. ESPN names the phase for soccer and falls back to a flat
+     * `STATUS_IN_PROGRESS` elsewhere, so it is one signal of three for spotting the end
+     * of a period, not the whole answer.
+     */
+    val statusName: String? = null,
     /** "Super Bowl LX", "NHL Winter Classic", "MLS Cup" — what to call this one. */
     val eventTitle: String? = null,
     val eventClass: EventClass = EventClass.NONE,

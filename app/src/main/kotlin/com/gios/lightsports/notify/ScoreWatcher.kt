@@ -106,7 +106,13 @@ object ScoreWatcher {
         for (game in games) {
             val league = Leagues.byId(game.leagueId) ?: continue
             val was = previous[game.id]
-            val snapshot = ScoreDiff.snapshot(game, soonSent = was?.soonSent == true)
+            // Both "already said that" markers are carried in rather than reset, so they
+            // survive a poll that produces no alert at all.
+            val snapshot = ScoreDiff.snapshot(
+                game,
+                soonSent = was?.soonSent == true,
+                markedPeriod = was?.markedPeriod ?: 0,
+            )
             next[game.id] = snapshot
             val alerts = ScoreDiff.alerts(
                 prev = was,
@@ -115,9 +121,9 @@ object ScoreWatcher {
                 notifyStarts = prefs.notifyStarts,
                 nowMillis = now,
                 leadMillis = LEAD,
+                markPeriods = league.markPeriods,
             )
-            // The alert carries the snapshot to store, which is how "already nudged"
-            // survives to the next poll.
+            // The alert carries the snapshot to store, which is how the markers advance.
             alerts.firstOrNull()?.let { next[game.id] = it.snapshot }
             for (alert in alerts) {
                 newEntries += PendingQueue.Entry(
@@ -195,6 +201,7 @@ object ScoreWatcher {
                     period = o.optInt("period"),
                     startMillis = o.optLong("start"),
                     soonSent = o.optBoolean("soon"),
+                    markedPeriod = o.optInt("marked"),
                 )
             }
             return out
@@ -209,6 +216,7 @@ object ScoreWatcher {
                     .put("period", s.period)
                     .put("start", s.startMillis)
                     .put("soon", s.soonSent)
+                    .put("marked", s.markedPeriod)
                 if (s.home != null) o.put("home", s.home)
                 if (s.away != null) o.put("away", s.away)
                 root.put(key, o)

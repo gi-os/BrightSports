@@ -47,22 +47,25 @@ object Leagues {
         hasEvents = true,
         championshipExample = "Super Bowl",
         specialExample = "Pro Bowl, the London and Berlin games",
+        markPeriods = true,
     )
     val NBA = League(
         id = "nba", name = "National Basketball Association", short = "NBA",
         kind = SportKind.BASKETBALL, provider = Provider.ESPN, espnPath = "basketball/nba",
-        loudness = Loudness.PERIOD_END,
+        loudness = Loudness.PERIOD_ONLY,
         hasEvents = true,
         championshipExample = "NBA Finals",
         specialExample = "All-Star weekend, NBA Cup final, games abroad",
+        markPeriods = true,
     )
     val WNBA = League(
         id = "wnba", name = "Women's National Basketball Association", short = "WNBA",
         kind = SportKind.BASKETBALL, provider = Provider.ESPN, espnPath = "basketball/wnba",
-        loudness = Loudness.PERIOD_END,
+        loudness = Loudness.PERIOD_ONLY,
         hasEvents = true,
         championshipExample = "WNBA Finals",
         specialExample = "All-Star Game, Commissioner's Cup final",
+        markPeriods = true,
     )
     val NHL = League(
         id = "nhl", name = "National Hockey League", short = "NHL",
@@ -70,10 +73,12 @@ object Leagues {
         hasEvents = true,
         championshipExample = "Stanley Cup Final",
         specialExample = "Winter Classic, Stadium Series, Global Series",
+        markPeriods = true,
     )
     val PWHL = League(
         id = "pwhl", name = "Professional Women's Hockey League", short = "PWHL",
         kind = SportKind.HOCKEY, provider = Provider.HOCKEYTECH, hockeyTechClient = "pwhl",
+        markPeriods = true,
     )
     val MLS = League(
         id = "mls", name = "Major League Soccer", short = "MLS",
@@ -87,6 +92,7 @@ object Leagues {
             Cup("soccer/concacaf.leagues.cup", "Leagues Cup"),
             Cup("soccer/usa.open", "U.S. Open Cup"),
         ),
+        markPeriods = true,
     )
     val NWSL = League(
         id = "nwsl", name = "National Women's Soccer League", short = "NWSL",
@@ -94,6 +100,7 @@ object Leagues {
         hasEvents = true,
         championshipExample = "NWSL Championship",
         specialExample = "no special games published yet",
+        markPeriods = true,
     )
     val F1 = League(
         id = "f1", name = "Formula 1", short = "F1",
