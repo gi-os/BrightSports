@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsGroup
+import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.ui.theme.Dim
 import com.gios.lightsports.ui.theme.Faint
 
