@@ -4,6 +4,7 @@ import com.gios.lightsports.data.EspnParser
 import com.gios.lightsports.data.HockeyTechParser
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.StatsApiParser
+import com.gios.lightsports.model.EventClass
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.notify.AlertText
 import com.gios.lightsports.model.SportKind
@@ -128,6 +129,91 @@ class ParserTest {
         val row = groups.single().rows.single()
         assertEquals("1", row.rank)
         assertEquals(listOf("62", "44", ".585", "-"), row.values)
+    }
+
+    @Test
+    fun `a category star matches an event with neither team followed`() {
+        // The MLS All-Star fixture, exactly as it comes down: no headline, competitors
+        // that are absent from the 30-club roster.
+        val body = """
+        {"events":[{"id":"1","date":"2026-07-30T00:00Z","name":"Liga MX All-Stars at MLS All-Stars",
+          "season":{"year":2026,"type":13846,"slug":"regular-season"},
+          "competitions":[{"notes":[],
+            "status":{"period":0,"type":{"state":"pre","shortDetail":"7:00 PM"}},
+            "competitors":[
+              {"homeAway":"home","team":{"id":"9817","displayName":"MLS All-Stars",
+               "shortDisplayName":"MLS","abbreviation":"MLS"}},
+              {"homeAway":"away","team":{"id":"20279","displayName":"Liga MX All-Stars",
+               "shortDisplayName":"Liga MX","abbreviation":"LIGA MX"}}]}]}]}
+        """.trimIndent()
+        val roster = setOf("17606", "190")
+        val game = EspnParser.parseScoreboard(Leagues.MLS, body, roster).single()
+        assertEquals(EventClass.SHOWCASE, game.eventClass)
+        // An all-star game lives in `regular-season`, so there is no title to derive —
+        // and "Regular Season" would be a worse label than the league's own name.
+        assertNull(game.eventTitle)
+        assertTrue(game.involves(setOf("mls:special")))
+        assertTrue(!game.involves(setOf("mls:championship")))
+        assertTrue(!game.involves(setOf("mls:17606")))
+    }
+
+    @Test
+    fun `without a roster the same fixture falls back to the headline`() {
+        // A cold cache means no roster to compare against. The classifier must not
+        // invent an event, and must not crash.
+        val body = """
+        {"events":[{"id":"1","date":"2026-07-30T00:00Z",
+          "season":{"slug":"regular-season"},
+          "competitions":[{"notes":[],
+            "status":{"period":0,"type":{"state":"pre"}},
+            "competitors":[
+              {"homeAway":"home","team":{"id":"9817","displayName":"MLS All-Stars",
+               "shortDisplayName":"MLS","abbreviation":"MLS"}},
+              {"homeAway":"away","team":{"id":"20279","displayName":"Liga MX All-Stars",
+               "shortDisplayName":"Liga MX","abbreviation":"LIGA"}}]}]}]}
+        """.trimIndent()
+        val game = EspnParser.parseScoreboard(Leagues.MLS, body).single()
+        assertEquals(EventClass.NONE, game.eventClass)
+    }
+
+    @Test
+    fun `mls cup is titled from the season slug`() {
+        val body = """
+        {"events":[{"id":"1","date":"2025-12-06T20:30Z",
+          "season":{"year":2025,"type":13119,"slug":"mls-cup"},
+          "competitions":[{"notes":[],
+            "status":{"period":0,"type":{"state":"post","completed":true,"shortDetail":"FT"}},
+            "competitors":[
+              {"homeAway":"home","score":"3","team":{"id":"20232","displayName":"Inter Miami",
+               "shortDisplayName":"Miami","abbreviation":"MIA"}},
+              {"homeAway":"away","score":"1","team":{"id":"9727","displayName":"Vancouver",
+               "shortDisplayName":"Vancouver","abbreviation":"VAN"}}]}]}]}
+        """.trimIndent()
+        val game = EspnParser.parseScoreboard(Leagues.MLS, body, setOf("20232", "9727")).single()
+        assertEquals(EventClass.CHAMPIONSHIP, game.eventClass)
+        assertEquals("MLS Cup", game.eventTitle)
+        assertTrue(game.involves(setOf("mls:championship")))
+    }
+
+    @Test
+    fun `the super bowl keeps its own name and is followable either way`() {
+        val body = """
+        {"events":[{"id":"1","date":"2026-02-08T23:30Z",
+          "season":{"year":2025,"type":3,"slug":"post-season"},
+          "competitions":[{"notes":[{"headline":"Super Bowl LX"}],
+            "status":{"period":4,"type":{"state":"post","completed":true,"shortDetail":"Final"}},
+            "competitors":[
+              {"homeAway":"home","score":"24","team":{"id":"26","displayName":"Seattle Seahawks",
+               "shortDisplayName":"Seahawks","abbreviation":"SEA"}},
+              {"homeAway":"away","score":"21","team":{"id":"17","displayName":"New England Patriots",
+               "shortDisplayName":"Patriots","abbreviation":"NE"}}]}]}]}
+        """.trimIndent()
+        val game = EspnParser.parseScoreboard(Leagues.NFL, body, setOf("26", "17")).single()
+        assertEquals(EventClass.CHAMPIONSHIP, game.eventClass)
+        assertEquals("Super Bowl LX", game.eventTitle)
+        assertTrue(game.involves(setOf("nfl:championship")))
+        // It is two real teams, so following either still works.
+        assertTrue(game.involves(setOf("nfl:26")))
     }
 
     @Test

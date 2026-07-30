@@ -20,6 +20,9 @@ object Leagues {
     val MLB = League(
         id = "mlb", name = "Major League Baseball", short = "MLB",
         kind = SportKind.BASEBALL, provider = Provider.ESPN, espnPath = "baseball/mlb",
+        hasEvents = true,
+        championshipExample = "World Series",
+        specialExample = "All-Star Game, Little League Classic",
     )
     val AAA = League(
         id = "milb-aaa", name = "Triple-A", short = "AAA",
@@ -40,20 +43,32 @@ object Leagues {
     val NFL = League(
         id = "nfl", name = "National Football League", short = "NFL",
         kind = SportKind.FOOTBALL, provider = Provider.ESPN, espnPath = "football/nfl",
+        hasEvents = true,
+        championshipExample = "Super Bowl",
+        specialExample = "Pro Bowl, the London and Berlin games",
     )
     val NBA = League(
         id = "nba", name = "National Basketball Association", short = "NBA",
         kind = SportKind.BASKETBALL, provider = Provider.ESPN, espnPath = "basketball/nba",
         loudness = Loudness.PERIOD_END,
+        hasEvents = true,
+        championshipExample = "NBA Finals",
+        specialExample = "All-Star weekend, NBA Cup final, games abroad",
     )
     val WNBA = League(
         id = "wnba", name = "Women's National Basketball Association", short = "WNBA",
         kind = SportKind.BASKETBALL, provider = Provider.ESPN, espnPath = "basketball/wnba",
         loudness = Loudness.PERIOD_END,
+        hasEvents = true,
+        championshipExample = "WNBA Finals",
+        specialExample = "All-Star Game, Commissioner's Cup final",
     )
     val NHL = League(
         id = "nhl", name = "National Hockey League", short = "NHL",
         kind = SportKind.HOCKEY, provider = Provider.ESPN, espnPath = "hockey/nhl",
+        hasEvents = true,
+        championshipExample = "Stanley Cup Final",
+        specialExample = "Winter Classic, Stadium Series, Global Series",
     )
     val PWHL = League(
         id = "pwhl", name = "Professional Women's Hockey League", short = "PWHL",
@@ -62,10 +77,16 @@ object Leagues {
     val MLS = League(
         id = "mls", name = "Major League Soccer", short = "MLS",
         kind = SportKind.SOCCER, provider = Provider.ESPN, espnPath = "soccer/usa.1",
+        hasEvents = true,
+        championshipExample = "MLS Cup",
+        specialExample = "MLS All-Stars vs Liga MX",
     )
     val NWSL = League(
         id = "nwsl", name = "National Women's Soccer League", short = "NWSL",
         kind = SportKind.SOCCER, provider = Provider.ESPN, espnPath = "soccer/usa.nwsl",
+        hasEvents = true,
+        championshipExample = "NWSL Championship",
+        specialExample = "no special games published yet",
     )
     val F1 = League(
         id = "f1", name = "Formula 1", short = "F1",

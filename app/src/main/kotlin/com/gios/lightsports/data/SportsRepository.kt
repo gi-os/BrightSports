@@ -83,7 +83,12 @@ class SportsRepository(context: Context) {
 
         return runCatching {
             when (league.provider) {
-                Provider.ESPN -> EspnParser.parseScoreboard(league, body)
+                // The team list is already cached for a week, so handing its ids to the
+                // parser costs nothing and is what makes an all-star fixture — which
+                // carries no headline at all in MLS and MLB — recognisable.
+                Provider.ESPN -> EspnParser.parseScoreboard(
+                    league, body, rosterIds = teams(league).map { it.teamId }.toSet(),
+                )
                 Provider.STATSAPI -> StatsApiParser.parseSchedule(league, body)
                 Provider.HOCKEYTECH -> HockeyTechParser.parseScorebar(league, body)
             }

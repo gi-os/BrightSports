@@ -145,7 +145,9 @@ fun GameRow(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 listOfNotNull(
-                    league?.short,
+                    // "SUPER BOWL LX" earns the league's slot on the line; nobody
+                    // needs telling which league the Super Bowl belongs to.
+                    game.eventTitle?.uppercase() ?: league?.short,
                     when (game.state) {
                         GameState.PRE -> Fmt.time(game.startMillis, zone)
                         GameState.LIVE -> game.statusDetail.ifEmpty { "Live" }

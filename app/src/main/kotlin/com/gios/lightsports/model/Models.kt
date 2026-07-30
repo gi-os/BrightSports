@@ -8,6 +8,13 @@ enum class SportKind { BASEBALL, FOOTBALL, BASKETBALL, HOCKEY, SOCCER, RACING }
 
 enum class GameState { PRE, LIVE, FINAL, OFF }
 
+/**
+ * Whether a game is a one-off you might follow without following either side.
+ * `SHOWCASE` is all-star weekends and neutral-site novelties; `CHAMPIONSHIP` is the
+ * Super Bowl, the World Series, MLS Cup and their equivalents.
+ */
+enum class EventClass { NONE, SHOWCASE, CHAMPIONSHIP }
+
 /** Which provider a league's data comes from. */
 enum class Provider { ESPN, STATSAPI, HOCKEYTECH }
 
@@ -36,6 +43,15 @@ data class League(
     val loudness: Loudness = Loudness.EVERY_SCORE,
     /** Racing has no home/away pair; the feed renders those rows differently. */
     val isRacing: Boolean = false,
+    /**
+     * Whether this league's feed carries recognisable one-off events. Only the ESPN
+     * leagues do — MiLB's StatsAPI and the PWHL's HockeyTech feed publish neither the
+     * headline nor the season slug the classifier reads.
+     */
+    val hasEvents: Boolean = false,
+    /** Shown under the toggles so the choice isn't abstract. */
+    val championshipExample: String? = null,
+    val specialExample: String? = null,
 )
 
 /** A team the user can follow. Cached per league so the picker works offline. */
@@ -80,9 +96,24 @@ data class Game(
     val broadcast: String? = null,
     /** Series or session context: "Game 3 of 7", "Practice 2", "Leg 2". */
     val note: String? = null,
+    /** "Super Bowl LX", "NHL Winter Classic", "MLS Cup" — what to call this one. */
+    val eventTitle: String? = null,
+    val eventClass: EventClass = EventClass.NONE,
 ) {
-    fun involves(teamKeys: Set<String>): Boolean =
-        "$leagueId:${home.teamId}" in teamKeys || "$leagueId:${away.teamId}" in teamKeys
+    /**
+     * True when the user follows either side, or follows the category this game belongs
+     * to. Everything downstream — the feed filter, the notification poll, the standings
+     * highlight — is expressed in terms of this one predicate.
+     */
+    fun involves(teamKeys: Set<String>): Boolean {
+        if ("$leagueId:${home.teamId}" in teamKeys) return true
+        if ("$leagueId:${away.teamId}" in teamKeys) return true
+        return when (eventClass) {
+            EventClass.SHOWCASE -> "$leagueId:special" in teamKeys
+            EventClass.CHAMPIONSHIP -> "$leagueId:championship" in teamKeys
+            EventClass.NONE -> false
+        }
+    }
 }
 
 /**

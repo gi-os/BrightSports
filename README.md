@@ -29,7 +29,16 @@ Two provider quirks are worth knowing before touching the parsers: MLB's standin
 endpoint silently ignores `sportId` and has to be asked by `leagueId`, and HockeyTech
 returns its standings wrapped in a bare pair of parentheses left over from JSONP.
 
-A third one bites in F1: ESPN leaves `completed:false` on sessions of weekends that
+Classifying those events took a twelve-month sweep of all seven ESPN leagues — 8,231
+games — because the round is stored in a different field depending on the sport. The US
+leagues put it in `notes[0].headline` ("Super Bowl LX", "Stanley Cup Final - Game 6") and
+leave `season.slug` as a flat `post-season`; soccer does the reverse, so MLS Cup arrives
+as `slug = mls-cup` with no note at all. `season.type` is useless for this — the MLS
+All-Star game reports `13846`. And some fixtures carry no title in either field: all that
+marks the MLS and MLB all-star games is a competitor absent from the league's own team
+list. See `data/SpecialEvents.kt`; the vocabulary is what `SpecialEventsTest` pins down.
+
+A third quirk bites in F1: ESPN leaves `completed:false` on sessions of weekends that
 finished months ago (Bahrain and Saudi Arabia 2026 both do), so race state is read from
 each session's `state` string and the event `endDate`, never from that flag.
 
@@ -52,6 +61,11 @@ behind a token and this ships as a plain APK; if that ever opens up, delete that
   library, because the job is one small PNG per club cached forever. They are downsampled
   on decode: ESPN serves 500px crests, which is a megabyte of ARGB_8888 for a 24dp view.
 - **My teams** — league, then club. Search within a league. F1 is followed as a series.
+  Each ESPN league also has two category stars above its team list:
+  **Championship games** (Super Bowl, World Series, Stanley Cup Final, NBA/WNBA Finals,
+  MLS Cup, NWSL Championship) and **Special games** (all-star weekends, Winter Classic,
+  Stadium Series, NBA Cup final, and the games played abroad). Star a category and you
+  get those fixtures whoever is playing in them.
 - **Standings** — followed leagues only. Your team's row inverts. **Hold a row** for
   every stat the provider sent for that team, which is three or four times what fits in
   the table: run differential, streaks, home and away splits, a driver's points at every

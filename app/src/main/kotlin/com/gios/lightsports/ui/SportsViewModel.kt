@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.gios.lightsports.data.Feed
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.Prefs
+import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.data.SportsRepository
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
@@ -107,10 +108,15 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
      * A follow key as a human name. Falls back to the league and the raw id when the
      * team list hasn't loaded — better a rough label than a team that seems to vanish.
      */
-    private fun teamLabel(key: String): String {
+    private fun teamLabel(key: String): String? {
         val leagueId = key.substringBefore(':')
         val teamId = key.substringAfter(':')
         val league = Leagues.byId(leagueId)
+        // A category is not a team, so "no game scheduled" would be nonsense for it —
+        // there is no fixture list to be absent from.
+        if (teamId == SpecialEvents.SUFFIX_SPECIAL || teamId == SpecialEvents.SUFFIX_CHAMPIONSHIP) {
+            return null
+        }
         if (teamId == "series") return league?.name ?: leagueId.uppercase()
         val name = _teams.value[leagueId]?.firstOrNull { it.teamId == teamId }?.displayName
         return name ?: "${league?.short ?: leagueId.uppercase()} $teamId"

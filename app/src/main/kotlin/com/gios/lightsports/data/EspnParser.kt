@@ -1,5 +1,6 @@
 package com.gios.lightsports.data
 
+import com.gios.lightsports.model.EventClass
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.League
@@ -21,8 +22,14 @@ object EspnParser {
     private const val SITE = "https://site.api.espn.com/apis/site/v2/sports"
     private const val CORE = "https://site.api.espn.com/apis/v2/sports"
 
+    /**
+     * `limit` has to clear the busiest window in the calendar. A fortnight of MLB is
+     * north of 200 games league-wide, and at limit=200 the tail was being cut off
+     * silently — no error, just a short list, which is indistinguishable from a quiet
+     * fortnight until you count.
+     */
     fun scoreboardUrl(league: League, startYmd: String, endYmd: String): String =
-        "$SITE/${league.espnPath}/scoreboard?limit=200&dates=$startYmd-$endYmd"
+        "$SITE/${league.espnPath}/scoreboard?limit=1000&dates=$startYmd-$endYmd"
 
     fun teamsUrl(league: League): String = "$SITE/${league.espnPath}/teams?limit=400"
 
@@ -80,7 +87,17 @@ object EspnParser {
 
     // ---------------------------------------------------------------- games
 
-    fun parseScoreboard(league: League, body: String): List<Game> {
+    /**
+     * @param rosterIds the league's own team ids, from the cached team list. An event
+     *   with a competitor outside this set is an all-star or exhibition fixture — for
+     *   several of them that is the only signal, since they carry no headline. Pass an
+     *   empty set to skip that check; classification then falls back to the headline.
+     */
+    fun parseScoreboard(
+        league: League,
+        body: String,
+        rosterIds: Set<String> = emptySet(),
+    ): List<Game> {
         val events = JSONObject(body).optJSONArray("events") ?: return emptyList()
         val out = mutableListOf<Game>()
         for (e in events.objects()) {
@@ -93,6 +110,13 @@ object EspnParser {
                 if (c.optString("homeAway") == "home") home = side else away = side
             }
             if (home == null || away == null) continue
+
+            val headline = comp.optJSONArray("notes")?.optJSONObject(0)
+                ?.optString("headline")?.takeIf { it.isNotEmpty() }
+            val seasonSlug = e.optJSONObject("season")?.optString("slug")
+            val offRoster = rosterIds.isNotEmpty() &&
+                listOf(home, away).any { it.teamId !in rosterIds }
+            val eventClass = SpecialEvents.classify(headline, seasonSlug, offRoster)
 
             val status = comp.optJSONObject("status") ?: e.optJSONObject("status")
             val type = status?.optJSONObject("type")
@@ -109,11 +133,35 @@ object EspnParser {
                 away = away,
                 venue = comp.optJSONObject("venue")?.optString("fullName")?.takeIf { it.isNotEmpty() },
                 broadcast = broadcast(comp),
-                note = comp.optJSONArray("notes")?.optJSONObject(0)
-                    ?.optString("headline")?.takeIf { it.isNotEmpty() },
+                note = headline,
+                // Soccer names its finals only in the slug, so fall back to that.
+                eventTitle = headline ?: slugTitle(seasonSlug).takeIf {
+                    eventClass != EventClass.NONE
+                },
+                eventClass = eventClass,
             )
         }
         return out
+    }
+
+    /**
+     * `mls-cup` -> `MLS Cup`, `playoffs---championship` -> `Championship`.
+     *
+     * Generic slugs give nothing back: an all-star game sits in `regular-season`, and
+     * titling it "Regular Season" is worse than leaving it to the league name.
+     */
+    private fun slugTitle(slug: String?): String? {
+        if (slug.isNullOrEmpty()) return null
+        if (slug.lowercase().replace("-", "") in
+            setOf("regularseason", "postseason", "preseason", "offseason")
+        ) return null
+        val tail = slug.substringAfterLast("---").replace('-', ' ').trim()
+        if (tail.isEmpty()) return null
+        return tail.split(' ').joinToString(" ") { word ->
+            // Acronyms stay upper: mls, nwsl.
+            if (word.length <= 4 && word !in setOf("cup", "final", "semi")) word.uppercase()
+            else word.replaceFirstChar { it.uppercase() }
+        }
     }
 
     private fun side(c: JSONObject): Side? {

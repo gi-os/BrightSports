@@ -25,6 +25,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Leagues
+import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.ui.theme.Dim
@@ -78,6 +79,9 @@ fun FollowScreen(
     val teams = teamsByLeague[openLeague.id]
 
     Column(Modifier.fillMaxSize()) {
+        if (openLeague.hasEvents) {
+            EventToggles(openLeague, follows, onToggle)
+        }
         SearchField(query) { query = it }
         Rule()
         when {
@@ -111,6 +115,41 @@ fun FollowScreen(
     }
 }
 
+/**
+ * Follow a category rather than a club. Starring championship games gets you the Super
+ * Bowl or MLS Cup whoever reaches it; starring special games gets the all-star weekend,
+ * the Winter Classic and the games played abroad.
+ */
+@Composable
+private fun EventToggles(
+    league: League,
+    follows: Set<String>,
+    onToggle: (String) -> Unit,
+) {
+    val special = "${league.id}:${SpecialEvents.SUFFIX_SPECIAL}"
+    val championship = "${league.id}:${SpecialEvents.SUFFIX_CHAMPIONSHIP}"
+    Column(Modifier.fillMaxWidth()) {
+        SectionHeader("EVENTS")
+        MenuRow(
+            label = "Championship games",
+            detail = if (championship in follows) "[ ON ]" else "OFF",
+            sub = league.championshipExample,
+            dim = championship !in follows,
+            onClick = { onToggle(championship) },
+        )
+        Rule()
+        MenuRow(
+            label = "Special games",
+            detail = if (special in follows) "[ ON ]" else "OFF",
+            sub = league.specialExample,
+            dim = special !in follows,
+            onClick = { onToggle(special) },
+        )
+        Rule()
+        SectionHeader("TEAMS")
+    }
+}
+
 /** The teams already followed, as removable chips, so unfollowing takes one tap. */
 @Composable
 private fun FollowSummary(
@@ -129,11 +168,13 @@ private fun FollowSummary(
                 item(key = key) {
                     val leagueId = key.substringBefore(':')
                     val teamId = key.substringAfter(':')
-                    val label = if (teamId == "series") {
-                        Leagues.byId(leagueId)?.short ?: leagueId.uppercase()
-                    } else {
-                        teamsByLeague[leagueId]?.firstOrNull { it.teamId == teamId }?.abbrev
-                            ?: teamId
+                    val short = Leagues.byId(leagueId)?.short ?: leagueId.uppercase()
+                    val label = when (teamId) {
+                        "series" -> short
+                        SpecialEvents.SUFFIX_CHAMPIONSHIP -> "$short FINAL"
+                        SpecialEvents.SUFFIX_SPECIAL -> "$short EVENTS"
+                        else -> teamsByLeague[leagueId]
+                            ?.firstOrNull { it.teamId == teamId }?.abbrev ?: teamId
                     }
                     Chip(label = "$label ×", selected = true) { onToggle(key) }
                 }
