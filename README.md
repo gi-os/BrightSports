@@ -106,11 +106,39 @@ the long version.
 
 ## Notifications
 
+Alerts use LightChat's notifier design, carried over wholesale. The shade notification is
+the *record* — it stays in LightOS's list and drives LightGlance's dot — and a box over
+whatever the phone is showing is the *alert*, chosen two ways:
+
+- **Awake and unlocked → an overlay window** (`ScoreAlertOverlay`). Nothing else is
+  interrupted: the app underneath keeps running and every touch outside the box reaches it.
+  An activity can't do that, floating or not — anything on top pauses what's below.
+- **Screen off or locked → an activity** (`ScoreAlertActivity`). An overlay window sits
+  below the keyguard and can't wake the panel, so for a walk-off home run while the phone
+  is face-down on a desk, only `showWhenLocked` + `turnScreenOn` will do.
+
+Both need the `SYSTEM_ALERT_WINDOW` appop — for the overlay obviously, and for the activity
+because on Android 14 that appop is what exempts an app from background-activity-start
+restrictions. One-time, adb only, since LightOS has no Settings screen for it:
+
+```
+adb shell appops set com.gios.lightsports SYSTEM_ALERT_WINDOW allow
+```
+
+Without it the buzz still fires and the notification is still posted; only the box is
+missing. Vibration is disabled on both channels so the box owns the buzz — one place to
+tune, rate-limited to one per 1.5s so a score and the final whistle together feel like one
+event.
+
+
 Score alerts run on `AlarmManager.setAndAllowWhileIdle`, the only alarm that fires
 during Doze — and its firing is what grants the short network window the poll needs. It
 has no repeating form, so each run arms the next, and both boot and app launch re-arm
 the chain (a force-stop cancels every alarm an app owns).
 
+- A nudge 15 minutes before a followed team kicks off, once per game — the lead window
+  spans seven or eight polls, so it's guarded by a flag on the stored snapshot rather than
+  by a state change. Nothing is announced early if the start time has already passed.
 - Every score in baseball, hockey, soccer and football.
 - **Basketball reports at the end of each quarter only.** Forty buckets a night is a
   pager, not a notification.

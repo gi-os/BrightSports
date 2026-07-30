@@ -11,7 +11,7 @@ import com.gios.lightsports.model.Loudness
  */
 object ScoreDiff {
 
-    enum class Kind { START, SCORE, PERIOD, FINAL, OFF }
+    enum class Kind { SOON, START, SCORE, PERIOD, FINAL, OFF }
 
     /** The minimum of a game needed to tell what changed since last time. */
     data class Snapshot(
@@ -21,15 +21,24 @@ object ScoreDiff {
         val home: Int?,
         val away: Int?,
         val period: Int,
+        val startMillis: Long = 0L,
+        /**
+         * Whether the "starting soon" alert has already gone out for this game. Without
+         * it, every poll inside the lead window would fire another one — seven or eight
+         * reminders for one kickoff.
+         */
+        val soonSent: Boolean = false,
     )
 
-    fun snapshot(game: Game) = Snapshot(
+    fun snapshot(game: Game, soonSent: Boolean = false) = Snapshot(
         gameId = game.id,
         leagueId = game.leagueId,
         state = game.state,
         home = game.home.score,
         away = game.away.score,
         period = game.period,
+        startMillis = game.startMillis,
+        soonSent = soonSent,
     )
 
     data class Alert(val kind: Kind, val snapshot: Snapshot)
@@ -47,12 +56,29 @@ object ScoreDiff {
         now: Snapshot,
         loudness: Loudness,
         notifyStarts: Boolean,
+        nowMillis: Long = 0L,
+        leadMillis: Long = 0L,
     ): List<Alert> {
         if (prev == null) return emptyList()
-        if (prev.state == now.state && prev.state != GameState.LIVE) return emptyList()
+
+        // The pre-game nudge, which is the only alert that fires without anything having
+        // changed: what changed is the clock. Guarded by soonSent rather than by a state
+        // transition, since the game is still PRE on both sides of it.
+        val soon = notifyStarts &&
+            leadMillis > 0L &&
+            now.state == GameState.PRE &&
+            !prev.soonSent &&
+            now.startMillis > 0L &&
+            nowMillis >= now.startMillis - leadMillis &&
+            nowMillis < now.startMillis
+
+        if (prev.state == now.state && prev.state != GameState.LIVE) {
+            return if (soon) listOf(Alert(Kind.SOON, now.copy(soonSent = true))) else emptyList()
+        }
 
         val out = mutableListOf<Kind>()
 
+        if (soon) out += Kind.SOON
         if (prev.state == GameState.PRE && now.state == GameState.LIVE && notifyStarts) {
             out += Kind.START
         }
@@ -76,7 +102,10 @@ object ScoreDiff {
         if (now.state == GameState.FINAL && prev.state != GameState.FINAL) {
             out += Kind.FINAL
         }
-        return out.map { Alert(it, now) }
+        // Carry soonSent forward on the snapshot the caller will store, so a game that
+        // was nudged and then kicked off isn't nudged again if it somehow reverts to PRE.
+        val stored = if (soon) now.copy(soonSent = true) else now
+        return out.map { Alert(it, stored) }
     }
 
     private fun scoreChanged(prev: Snapshot, now: Snapshot): Boolean {

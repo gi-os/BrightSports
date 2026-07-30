@@ -105,18 +105,27 @@ object ScoreWatcher {
 
         for (game in games) {
             val league = Leagues.byId(game.leagueId) ?: continue
-            val snapshot = ScoreDiff.snapshot(game)
+            val was = previous[game.id]
+            val snapshot = ScoreDiff.snapshot(game, soonSent = was?.soonSent == true)
             next[game.id] = snapshot
             val alerts = ScoreDiff.alerts(
-                prev = previous[game.id],
+                prev = was,
                 now = snapshot,
                 loudness = league.loudness,
                 notifyStarts = prefs.notifyStarts,
+                nowMillis = now,
+                leadMillis = LEAD,
             )
+            // The alert carries the snapshot to store, which is how "already nudged"
+            // survives to the next poll.
+            alerts.firstOrNull()?.let { next[game.id] = it.snapshot }
             for (alert in alerts) {
                 newEntries += PendingQueue.Entry(
-                    // A start reminder is useless late, so only score news is delayed.
-                    dueAt = now + if (alert.kind == ScoreDiff.Kind.START) 0L else delay,
+                    // A reminder is useless late, so only score news is delayed.
+                    dueAt = now + when (alert.kind) {
+                        ScoreDiff.Kind.SOON, ScoreDiff.Kind.START -> 0L
+                        else -> delay
+                    },
                     gameId = game.id,
                     leagueId = game.leagueId,
                     kind = alert.kind,
@@ -184,6 +193,8 @@ object ScoreWatcher {
                     home = if (o.has("home")) o.optInt("home") else null,
                     away = if (o.has("away")) o.optInt("away") else null,
                     period = o.optInt("period"),
+                    startMillis = o.optLong("start"),
+                    soonSent = o.optBoolean("soon"),
                 )
             }
             return out
@@ -196,6 +207,8 @@ object ScoreWatcher {
                     .put("league", s.leagueId)
                     .put("state", s.state.name)
                     .put("period", s.period)
+                    .put("start", s.startMillis)
+                    .put("soon", s.soonSent)
                 if (s.home != null) o.put("home", s.home)
                 if (s.away != null) o.put("away", s.away)
                 root.put(key, o)

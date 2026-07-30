@@ -30,6 +30,81 @@ class ScoreDiffTest {
         assertTrue(kinds(null, snap(GameState.FINAL, 5, 4)).isEmpty())
     }
 
+    // ------------------------------------------------------------ starting soon
+
+    private val LEAD = 15 * 60_000L
+    private val NOW = 1_785_000_000_000L
+
+    private fun pre(startsInMinutes: Long, soonSent: Boolean = false) = ScoreDiff.Snapshot(
+        "g1", "mlb", GameState.PRE, 0, 0, 0,
+        startMillis = NOW + startsInMinutes * 60_000L,
+        soonSent = soonSent,
+    )
+
+    @Test
+    fun `a game inside the lead window is announced`() {
+        val alerts = ScoreDiff.alerts(
+            prev = pre(12), now = pre(12), loudness = Loudness.EVERY_SCORE,
+            notifyStarts = true, nowMillis = NOW, leadMillis = LEAD,
+        )
+        assertEquals(listOf(ScoreDiff.Kind.SOON), alerts.map { it.kind })
+        // The stored snapshot records it, which is what stops the next poll repeating it.
+        assertTrue(alerts.single().snapshot.soonSent)
+    }
+
+    @Test
+    fun `it is announced once, not on every poll inside the window`() {
+        // Two minutes later, already sent: the lead window spans seven or eight polls.
+        assertTrue(
+            ScoreDiff.alerts(
+                prev = pre(10, soonSent = true), now = pre(10, soonSent = true),
+                loudness = Loudness.EVERY_SCORE, notifyStarts = true,
+                nowMillis = NOW, leadMillis = LEAD,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `a game outside the lead window says nothing yet`() {
+        assertTrue(
+            ScoreDiff.alerts(
+                prev = pre(90), now = pre(90), loudness = Loudness.EVERY_SCORE,
+                notifyStarts = true, nowMillis = NOW, leadMillis = LEAD,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `a start time already past is not announced as upcoming`() {
+        // A game late to flip to LIVE must not produce "starts in 1 min" forever.
+        assertTrue(
+            ScoreDiff.alerts(
+                prev = pre(-5), now = pre(-5), loudness = Loudness.EVERY_SCORE,
+                notifyStarts = true, nowMillis = NOW, leadMillis = LEAD,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `the reminder honours the same setting as the kickoff alert`() {
+        assertTrue(
+            ScoreDiff.alerts(
+                prev = pre(12), now = pre(12), loudness = Loudness.EVERY_SCORE,
+                notifyStarts = false, nowMillis = NOW, leadMillis = LEAD,
+            ).isEmpty(),
+        )
+    }
+
+    @Test
+    fun `with no lead configured nothing is announced early`() {
+        assertTrue(
+            ScoreDiff.alerts(
+                prev = pre(12), now = pre(12), loudness = Loudness.EVERY_SCORE,
+                notifyStarts = true, nowMillis = NOW, leadMillis = 0L,
+            ).isEmpty(),
+        )
+    }
+
     @Test
     fun `going live reports a start`() {
         assertEquals(

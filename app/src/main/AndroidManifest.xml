@@ -6,6 +6,12 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Alarms are re-armed after a reboot; nothing else survives one. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Not for drawing over other apps as such: on Android 14 this appop is also what
+         exempts the app from background-activity-start restrictions, which is the only
+         way a sideloaded app gets the box up while the screen is off. Granted by adb,
+         since LightOS has no Settings screen for it. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <application
         android:allowBackup="true"
@@ -27,6 +33,20 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- The score box for the screen-off and locked cases. Floating and sized to its
+             content (see ScoreAlertActivity), excluded from recents, never left in the
+             back stack. singleTop so a burst of scores re-uses one instance. -->
+        <activity
+            android:name=".notify.ScoreAlertActivity"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:theme="@style/Theme.LightSports.Alert" />
 
         <!-- The scoreboard poll. Not exported: only this app's own alarm triggers it. -->
         <receiver

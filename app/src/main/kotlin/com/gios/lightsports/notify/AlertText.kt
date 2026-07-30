@@ -18,15 +18,25 @@ object AlertText {
     private val timeFormat = DateTimeFormatter.ofPattern("h:mm a")
 
     fun title(game: Game, kind: ScoreDiff.Kind): String = when (kind) {
-        ScoreDiff.Kind.START, ScoreDiff.Kind.OFF ->
+        ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF ->
             "${game.away.short} at ${game.home.short}"
         else ->
             "${game.away.short} ${game.away.score ?: 0} · ${game.home.short} ${game.home.score ?: 0}"
     }
 
     fun body(game: Game, league: League, kind: ScoreDiff.Kind, zone: ZoneId): String {
-        val prefix = league.short
+        val prefix = game.competition ?: league.short
         val detail = when (kind) {
+            // "in 15 min" rather than a clock time: the alert is the answer to "should I
+            // put the TV on", and a time would need doing arithmetic on.
+            ScoreDiff.Kind.SOON -> {
+                val minutes = ((game.startMillis - System.currentTimeMillis()) / 60_000L)
+                    .coerceAtLeast(1L)
+                listOfNotNull(
+                    if (minutes <= 1L) "Starts now" else "Starts in $minutes min",
+                    game.broadcast,
+                ).joinToString(" · ")
+            }
             ScoreDiff.Kind.START -> {
                 val at = Instant.ofEpochMilli(game.startMillis).atZone(zone).format(timeFormat)
                 listOfNotNull(at, game.broadcast).joinToString(" · ")

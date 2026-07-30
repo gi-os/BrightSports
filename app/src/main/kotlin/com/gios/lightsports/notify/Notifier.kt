@@ -24,17 +24,25 @@ object Notifier {
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        // Importance DEFAULT, not HIGH: a score is worth the shade and a buzz, not a
-        // box thrown over whatever is on screen.
+        // Vibration off on both channels: the box in ScoreAlert owns the buzz, so it can
+        // be rate-limited across a burst and still fire when the box can't be shown.
+        // Importance DEFAULT, not HIGH — the platform heads-up is not wanted here, the
+        // app draws its own.
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_SCORES, "Scores", NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply { description = "Score changes and final results" },
+            ).apply {
+                description = "Score changes and final results"
+                enableVibration(false)
+            },
         )
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_SCHEDULE, "Game starts", NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply { description = "Reminders when a followed team is about to play" },
+            ).apply {
+                description = "Reminders when a followed team is about to play"
+                enableVibration(false)
+            },
         )
     }
 
@@ -43,7 +51,7 @@ object Notifier {
         ensureChannels(context)
 
         val channel = when (entry.kind) {
-            ScoreDiff.Kind.START, ScoreDiff.Kind.OFF -> CHANNEL_SCHEDULE
+            ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF -> CHANNEL_SCHEDULE
             else -> CHANNEL_SCORES
         }
         val tap = PendingIntent.getActivity(
@@ -69,5 +77,9 @@ object Notifier {
         // One notification id per game, so a second score replaces the first rather
         // than stacking six cards for one baseball game.
         manager.notify(entry.gameId.hashCode(), notification)
+
+        // The notification is the record; the box is the alert. Raised after, so a
+        // failure to draw it still leaves the score in the shade.
+        ScoreAlert.show(context, entry)
     }
 }

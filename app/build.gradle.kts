@@ -17,7 +17,7 @@ android {
         // major.minor below, so the release tag is <major>.<minor>.<run>. Bump this by
         // hand for anything Obtainium should treat as a new version.
         versionCode = 1
-        versionName = "1.6.0"
+        versionName = "1.7.0"
 
         // The LPIII is arm64 only; shipping four ABIs tripled the APK for nothing.
         ndk { abiFilters += "arm64-v8a" }
@@ -69,6 +69,11 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    // Both arrive transitively, but the score-box overlay hosts a ComposeView outside any
+    // Activity and has to supply the lifecycle and saved-state owners by hand — worth
+    // depending on directly rather than relying on someone else's transitive graph.
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.savedstate:savedstate:1.2.1")
 
     // Networking. Every provider here is a plain public JSON endpoint, no auth.
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
