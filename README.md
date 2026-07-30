@@ -84,9 +84,8 @@ behind a token and this ships as a plain APK; if that ever opens up, delete that
 ## The wheel
 
 Turning the brightness wheel scrolls whatever list is up: the feed, a game, the table, the
-team picker, settings. Only the turns — the click and the camera button belong to
-LightControl, which owns them phone-wide and passes bare notches through to `com.gios.*`
-for exactly this.
+team picker, settings. That needs nothing but LightSports installed — no service, no
+permission, no root — because the app reads the keys itself.
 
 It works because the wheel arrives as an ordinary key event. Light patched
 `/system/usr/keylayout/Generic.kl` to label scancodes 19 and 20 `WHEEL_CCW`/`WHEEL_CW`,
@@ -103,6 +102,35 @@ a stack of jumps with nothing for the eye to follow. And the first notch after a
 held until a second confirms it, because the wheel sits under a thumb and a stray brush
 should not move the score you were reading. `hw/Wheel.kt` has the numbers; LightNews has
 the long version.
+
+Only the turns are handled here; the wheel click and the camera button do nothing in this
+app. If you want those, [LightControl](https://github.com/gi-os/LightControl) is a separate
+and optional install that gives them to the whole phone — hold the wheel in and turn for
+brightness, tap it for the flashlight, the camera button for the camera, and each of them
+rebindable, tap and hold separately, to any app you have. It also hands brightness or a
+synthetic-swipe scroll to apps that carry no wheel code at all.
+
+It doesn't cost you the scrolling above. LightControl is a phone-wide key filter, and it
+deliberately passes bare turns through to `com.gios.*` (and to LightFastread, LightRSS and
+LightPhono), because scrolling a notch at a time from inside the app beats anything reachable
+from outside it.
+
+```bash
+# Optional: LightControl, for brightness, the flashlight and the camera button
+adb install -r LightControl-v1.0.x.apk
+
+# The key service. NOTE: this setting is a list, and this command REPLACES it —
+# if you also run LightVoice's push-to-talk, colon-join both components instead.
+adb shell settings put secure enabled_accessibility_services \
+  com.gios.lightcontrol/com.gios.lightcontrol.keys.ControlService
+adb shell settings put secure accessibility_enabled 1
+
+# Brightness, and the level readout + opening apps from the service
+adb shell appops set com.gios.lightcontrol WRITE_SETTINGS allow
+adb shell appops set com.gios.lightcontrol SYSTEM_ALERT_WINDOW allow
+```
+
+Latest APK: https://github.com/gi-os/LightControl/releases/latest
 
 ## Notifications
 
