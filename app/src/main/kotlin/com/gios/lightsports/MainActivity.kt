@@ -138,6 +138,7 @@ private fun App(openGameId: String?) {
     val vm: SportsViewModel = viewModel()
     val feed by vm.feed.collectAsState()
     val follows by vm.follows.collectAsState()
+    val muted by vm.muted.collectAsState()
     val teams by vm.teams.collectAsState()
     val standings by vm.standings.collectAsState()
     val logos by vm.logos.collectAsState()
@@ -219,6 +220,7 @@ private fun App(openGameId: String?) {
                     openLeague = openLeague,
                     teamsByLeague = teams,
                     follows = follows,
+                    muted = muted,
                     onOpenLeague = {
                         openLeague = it
                         vm.loadTeams(it)
@@ -227,6 +229,7 @@ private fun App(openGameId: String?) {
                         vm.toggleFollow(it)
                         vm.refresh()
                     },
+                    onToggleMute = { vm.toggleMute(it) },
                 )
                 tab == TAB_SCORES -> FeedScreen(
                     state = feed,
@@ -247,6 +250,7 @@ private fun App(openGameId: String?) {
                     vm = vm,
                     version = BuildConfig.VERSION_NAME,
                     followCount = follows.size,
+                    mutedCount = muted.size,
                     onOpenTeams = { teamsOpen = true },
                 )
             }

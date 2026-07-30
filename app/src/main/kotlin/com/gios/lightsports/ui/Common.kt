@@ -1,7 +1,9 @@
 package com.gios.lightsports.ui
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -48,6 +50,7 @@ fun EmptyState(message: String, modifier: Modifier = Modifier) {
 }
 
 /** Full-width tappable row: title on the left, optional figure on the right. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun MenuRow(
     label: String,
@@ -55,11 +58,23 @@ fun MenuRow(
     sub: String? = null,
     dim: Boolean = false,
     onClick: (() -> Unit)? = null,
+    onLongClick: (() -> Unit)? = null,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
-            .let { if (onClick != null) it.clickable(onClick = onClick) else it }
+            .let {
+                when {
+                    // combinedClickable only when a long press is actually wanted: it
+                    // adds a press-and-hold delay to the ordinary tap otherwise.
+                    onLongClick != null -> it.combinedClickable(
+                        onClick = onClick ?: {},
+                        onLongClick = onLongClick,
+                    )
+                    onClick != null -> it.clickable(onClick = onClick)
+                    else -> it
+                }
+            }
             .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

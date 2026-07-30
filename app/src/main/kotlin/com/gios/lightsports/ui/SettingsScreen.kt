@@ -32,6 +32,7 @@ fun SettingsScreen(
     vm: SportsViewModel,
     version: String,
     followCount: Int,
+    mutedCount: Int,
     onOpenTeams: () -> Unit,
 ) {
     var notify by remember { mutableStateOf(prefs.notificationsEnabled) }
@@ -46,7 +47,8 @@ fun SettingsScreen(
         MenuRow(
             label = "My teams",
             detail = if (followCount > 0) "$followCount" else "none",
-            sub = "Add or drop the teams in your feed",
+            sub = if (mutedCount > 0) "$mutedCount silenced — in the feed, no alerts"
+            else "Add or drop the teams in your feed",
             onClick = onOpenTeams,
         )
         Rule()

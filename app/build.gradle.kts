@@ -17,7 +17,7 @@ android {
         // major.minor below, so the release tag is <major>.<minor>.<run>. Bump this by
         // hand for anything Obtainium should treat as a new version.
         versionCode = 1
-        versionName = "1.8.0"
+        versionName = "1.9.0"
 
         // The LPIII is arm64 only; shipping four ABIs tripled the APK for nothing.
         ndk { abiFilters += "arm64-v8a" }

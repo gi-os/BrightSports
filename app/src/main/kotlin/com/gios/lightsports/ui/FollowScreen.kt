@@ -45,8 +45,10 @@ fun FollowScreen(
     openLeague: League?,
     teamsByLeague: Map<String, List<TeamRef>>,
     follows: Set<String>,
+    muted: Set<String>,
     onOpenLeague: (League) -> Unit,
     onToggle: (String) -> Unit,
+    onToggleMute: (String) -> Unit,
 ) {
     // Two lists, one screen, and only ever one of them on it. Both states are hoisted
     // here rather than inside the branches so that stepping into a league and back out
@@ -68,13 +70,16 @@ fun FollowScreen(
                             label = l.short,
                             sub = l.name,
                             detail = if (l.isRacing) {
-                                if ("${l.id}:series" in follows) "[ ON ]" else "OFF"
+                                state("${l.id}:series", follows, muted)
                             } else if (count > 0) "$count" else null,
                             onClick = {
                                 // Racing has no clubs to choose between; following the
                                 // series is the whole interaction.
                                 if (l.isRacing) onToggle("${l.id}:series") else onOpenLeague(l)
                             },
+                            onLongClick = if (l.isRacing && "${l.id}:series" in follows) {
+                                { onToggleMute("${l.id}:series") }
+                            } else null,
                         )
                         Rule()
                     }
@@ -90,7 +95,7 @@ fun FollowScreen(
 
     Column(Modifier.fillMaxSize()) {
         if (openLeague.hasEvents) {
-            EventToggles(openLeague, follows, onToggle)
+            EventToggles(openLeague, follows, muted, onToggle, onToggleMute)
         }
         SearchField(query) { query = it }
         Rule()
@@ -108,16 +113,35 @@ fun FollowScreen(
                         for (team in filtered) {
                             item(key = team.key) {
                                 val on = team.key in follows
+                                val silent = team.key in muted
                                 MenuRow(
                                     label = team.displayName,
-                                    detail = if (on) "[ ON ]" else null,
+                                    detail = when {
+                                        on && silent -> "[ SILENT ]"
+                                        on -> "[ ON ]"
+                                        else -> null
+                                    },
+                                    sub = if (on && silent) "In the feed, no alerts" else null,
                                     dim = !on,
                                     onClick = { onToggle(team.key) },
+                                    // Only a followed team can be silenced; holding an
+                                    // unfollowed one would silently create a follow.
+                                    onLongClick = if (on) {
+                                        { onToggleMute(team.key) }
+                                    } else null,
                                 )
                                 Rule()
                             }
                         }
-                        item { Spacer(Modifier.height(28.dp)) }
+                        item {
+                            Text(
+                                "Hold a followed team to keep it in the feed without alerts",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Faint,
+                                modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            )
+                            Spacer(Modifier.height(20.dp))
+                        }
                     }
                 }
             }
@@ -134,7 +158,9 @@ fun FollowScreen(
 private fun EventToggles(
     league: League,
     follows: Set<String>,
+    muted: Set<String>,
     onToggle: (String) -> Unit,
+    onToggleMute: (String) -> Unit,
 ) {
     val special = "${league.id}:${SpecialEvents.SUFFIX_SPECIAL}"
     val championship = "${league.id}:${SpecialEvents.SUFFIX_CHAMPIONSHIP}"
@@ -142,22 +168,35 @@ private fun EventToggles(
         SectionHeader("EVENTS")
         MenuRow(
             label = "Championship games",
-            detail = if (championship in follows) "[ ON ]" else "OFF",
+            detail = state(championship, follows, muted),
             sub = league.championshipExample,
             dim = championship !in follows,
             onClick = { onToggle(championship) },
+            onLongClick = if (championship in follows) {
+                { onToggleMute(championship) }
+            } else null,
         )
         Rule()
         MenuRow(
             label = "Special games",
-            detail = if (special in follows) "[ ON ]" else "OFF",
+            detail = state(special, follows, muted),
             sub = league.specialExample,
             dim = special !in follows,
             onClick = { onToggle(special) },
+            onLongClick = if (special in follows) {
+                { onToggleMute(special) }
+            } else null,
         )
         Rule()
         SectionHeader("TEAMS")
     }
+}
+
+/** On, on-but-silent, or off — the same three states a team row shows. */
+private fun state(key: String, follows: Set<String>, muted: Set<String>): String = when {
+    key in muted && key in follows -> "[ SILENT ]"
+    key in follows -> "[ ON ]"
+    else -> "OFF"
 }
 
 /** The teams already followed, as removable chips, so unfollowing takes one tap. */

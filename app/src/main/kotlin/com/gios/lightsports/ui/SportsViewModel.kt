@@ -42,6 +42,10 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val _follows = MutableStateFlow(prefs.follows)
     val follows: StateFlow<Set<String>> = _follows.asStateFlow()
 
+    /** Followed teams that don't interrupt. A subset of [follows]. */
+    private val _muted = MutableStateFlow(prefs.muted)
+    val muted: StateFlow<Set<String>> = _muted.asStateFlow()
+
     private val _teams = MutableStateFlow<Map<String, List<TeamRef>>>(emptyMap())
     val teams: StateFlow<Map<String, List<TeamRef>>> = _teams.asStateFlow()
 
@@ -98,8 +102,15 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleFollow(key: String) {
         prefs.toggleFollow(key)
         _follows.value = prefs.follows
+        // Unfollowing drops any silence with it, so the two flows move together.
+        _muted.value = prefs.muted
         // Following the first team is what turns the background poll on at all.
         ScoreWatcher.ensureArmed(getApplication())
+    }
+
+    fun toggleMute(key: String) {
+        prefs.toggleMute(key)
+        _muted.value = prefs.muted
     }
 
     fun gameById(id: String): Game? = _feed.value.games.firstOrNull { it.id == id }

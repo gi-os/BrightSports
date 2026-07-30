@@ -81,6 +81,29 @@ class ParserTest {
     }
 
     @Test
+    fun `silencing a team is subtraction, so a derby still alerts`() {
+        // Marlins (28) at home, Phillies (22) away. Notifications are matched against
+        // follows minus muted, which is the whole mechanism.
+        val game = EspnParser.parseScoreboard(Leagues.MLB, espnScoreboard).single()
+        val follows = setOf("mlb:28", "mlb:22")
+
+        // Both followed, one silenced: the other one still carries the game.
+        assertTrue(game.involves(follows - setOf("mlb:28")))
+        assertTrue(game.involves(follows - setOf("mlb:22")))
+        // Both silenced: nothing left to match on.
+        assertTrue(!game.involves(follows - follows))
+        // Silencing a team not in this game changes nothing.
+        assertTrue(game.involves(follows - setOf("mlb:99")))
+    }
+
+    @Test
+    fun `a silenced team is still in the feed`() {
+        // The feed filter uses the full follow set; only the notifier subtracts.
+        val game = EspnParser.parseScoreboard(Leagues.MLB, espnScoreboard).single()
+        assertTrue(game.involves(setOf("mlb:28")))
+    }
+
+    @Test
     fun `espn team lists drop inactive clubs`() {
         val body = """
         {"sports":[{"leagues":[{"teams":[

@@ -90,7 +90,10 @@ SDK artifacts sit on GitHub Packages behind a token and this ships as a plain AP
   also has two category stars: **Championship games** and **Special games** — star one
   and you get those fixtures whoever's playing, resolved by one predicate
   (`Game.involves`) shared by the feed filter, the notification poll and the standings
-  highlight.
+  highlight. **Hold a followed team to silence it**: still in the feed and the standings,
+  just no alerts. The notifier matches against follows *minus* silenced, which is why a
+  derby still alerts — Yankees–Mets with the Mets silenced matches on the Yankees.
+  Silencing one team never silences a game the other is in.
 - **Standings** — followed leagues only, your team's row inverts. **Hold a row** for
   every stat the provider sent — three or four times what fits the table: run
   differential, streaks, home/away splits, a driver's points at every round.

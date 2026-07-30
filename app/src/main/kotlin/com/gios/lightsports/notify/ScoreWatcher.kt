@@ -103,6 +103,11 @@ object ScoreWatcher {
         val newEntries = mutableListOf<PendingQueue.Entry>()
         val delay = prefs.effectiveDelayMillis
 
+        // Silenced teams stay in the feed and still get their snapshot kept up to date —
+        // they simply produce no alerts. Keeping the snapshot fresh is what stops
+        // un-silencing a team mid-game from firing a burst for everything it missed.
+        val notifyKeys = prefs.notifyKeys
+
         for (game in games) {
             val league = Leagues.byId(game.leagueId) ?: continue
             val was = previous[game.id]
@@ -114,6 +119,7 @@ object ScoreWatcher {
                 markedPeriod = was?.markedPeriod ?: 0,
             )
             next[game.id] = snapshot
+            if (!game.involves(notifyKeys)) continue
             val alerts = ScoreDiff.alerts(
                 prev = was,
                 now = snapshot,
@@ -148,6 +154,7 @@ object ScoreWatcher {
             val snapshot = ScoreDiff.Snapshot(key, race.leagueId, race.state, null, null, 0)
             next[key] = snapshot
             val prev = previous[key]
+            if ("${race.leagueId}:series" !in notifyKeys) continue
             if (prev != null && prev.state != GameState.FINAL && race.state == GameState.FINAL) {
                 newEntries += PendingQueue.Entry(
                     dueAt = now + delay,

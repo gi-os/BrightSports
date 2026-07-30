@@ -26,8 +26,40 @@ class Prefs(context: Context) {
         val added = next.add(key)
         if (!added) next.remove(key)
         follows = next
+        // Dropping a team drops its silence with it, so re-following later doesn't
+        // silently inherit a decision made months ago.
+        if (!added && key in muted) muted = muted - key
         return added
     }
+
+    // --------------------------------------------------------------- silenced
+
+    /**
+     * Followed teams that shouldn't interrupt. A subset of [follows] — they stay in the
+     * feed and the standings, they just don't buzz.
+     */
+    var muted: Set<String>
+        get() = sp.getStringSet(KEY_MUTED, emptySet()) ?: emptySet()
+        set(value) = sp.edit().putStringSet(KEY_MUTED, value).apply()
+
+    fun isMuted(key: String): Boolean = key in muted
+
+    fun toggleMute(key: String): Boolean {
+        val next = muted.toMutableSet()
+        val added = next.add(key)
+        if (!added) next.remove(key)
+        muted = next
+        return added
+    }
+
+    /**
+     * The keys notifications are allowed to fire for.
+     *
+     * Subtraction rather than a separate list, and it's why a derby still buzzes: a game
+     * is checked against this set, so Yankees–Mets with the Mets silenced still matches
+     * on the Yankees. Silencing one team never silences a game the other is in.
+     */
+    val notifyKeys: Set<String> get() = follows - muted
 
     /** League ids that have at least one followed team — the only ones worth fetching. */
     fun followedLeagueIds(): List<String> =
@@ -71,6 +103,7 @@ class Prefs(context: Context) {
 
     companion object {
         private const val KEY_FOLLOWS = "follows"
+        private const val KEY_MUTED = "muted"
         private const val KEY_NOTIFY = "notify"
         private const val KEY_DELAY = "delay_minutes"
         private const val KEY_DELAY_ON = "delay_enabled"
