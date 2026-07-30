@@ -28,6 +28,18 @@ enum class Provider { ESPN, STATSAPI, HOCKEYTECH }
  */
 enum class Loudness { EVERY_SCORE, PERIOD_END, FINAL_ONLY }
 
+/**
+ * A knockout competition a league's clubs also play in — the Leagues Cup, the U.S. Open
+ * Cup. ESPN serves these as separate leagues, but they reuse the parent league's team
+ * ids, so a followed club is matched in them without any extra bookkeeping.
+ */
+data class Cup(
+    /** ESPN `sports/soccer/<path>`, e.g. `concacaf.leagues.cup`. */
+    val path: String,
+    /** Shown in place of the league name on the row: "LEAGUES CUP". */
+    val name: String,
+)
+
 data class League(
     val id: String,
     val name: String,
@@ -52,6 +64,8 @@ data class League(
     /** Shown under the toggles so the choice isn't abstract. */
     val championshipExample: String? = null,
     val specialExample: String? = null,
+    /** Knockout competitions whose games are folded into this league's feed. */
+    val cups: List<Cup> = emptyList(),
 )
 
 /** A team the user can follow. Cached per league so the picker works offline. */
@@ -99,6 +113,11 @@ data class Game(
     /** "Super Bowl LX", "NHL Winter Classic", "MLS Cup" — what to call this one. */
     val eventTitle: String? = null,
     val eventClass: EventClass = EventClass.NONE,
+    /**
+     * The competition, when it isn't the league's own: "Leagues Cup". Cup games are
+     * filed under the parent league so they land in the same feed as the league fixtures.
+     */
+    val competition: String? = null,
 ) {
     /**
      * True when the user follows either side, or follows the category this game belongs

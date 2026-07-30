@@ -1,5 +1,6 @@
 package com.gios.lightsports.data
 
+import com.gios.lightsports.model.Cup
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.model.Provider
@@ -80,6 +81,12 @@ object Leagues {
         hasEvents = true,
         championshipExample = "MLS Cup",
         specialExample = "MLS All-Stars vs Liga MX",
+        // Both reuse the MLS team ids, so a followed club is matched in them with no
+        // extra configuration. Verified: NYCFC is 17606 in all three competitions.
+        cups = listOf(
+            Cup("soccer/concacaf.leagues.cup", "Leagues Cup"),
+            Cup("soccer/usa.open", "U.S. Open Cup"),
+        ),
     )
     val NWSL = League(
         id = "nwsl", name = "National Women's Soccer League", short = "NWSL",

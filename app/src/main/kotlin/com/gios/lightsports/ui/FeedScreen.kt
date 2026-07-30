@@ -145,9 +145,12 @@ fun GameRow(
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 listOfNotNull(
-                    // "SUPER BOWL LX" earns the league's slot on the line; nobody
-                    // needs telling which league the Super Bowl belongs to.
-                    game.eventTitle?.uppercase() ?: league?.short,
+                    // "SUPER BOWL LX" earns the league's slot on the line; nobody needs
+                    // telling which league the Super Bowl belongs to. A cup game names
+                    // its competition, since "MLS" would be actively wrong for a
+                    // Leagues Cup tie against Toluca.
+                    game.eventTitle?.uppercase() ?: game.competition?.uppercase()
+                        ?: league?.short,
                     when (game.state) {
                         GameState.PRE -> Fmt.time(game.startMillis, zone)
                         GameState.LIVE -> game.statusDetail.ifEmpty { "Live" }

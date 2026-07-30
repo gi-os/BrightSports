@@ -9,7 +9,7 @@ Launcher label: **Sports** · package `com.gios.lightsports`
 
 | | |
 |---|---|
-| Majors | MLB, NFL, NBA, NHL, MLS |
+| Majors | MLB, NFL, NBA, NHL, MLS (+ Leagues Cup, U.S. Open Cup) |
 | Women's | WNBA, NWSL, PWHL |
 | Minor league baseball | Triple-A, Double-A, High-A, Single-A |
 | Racing | Formula 1 |
@@ -28,6 +28,15 @@ All keyless public JSON. No account, no API key to paste in.
 Two provider quirks are worth knowing before touching the parsers: MLB's standings
 endpoint silently ignores `sportId` and has to be asked by `leagueId`, and HockeyTech
 returns its standings wrapped in a bare pair of parentheses left over from JSONP.
+
+MLS clubs also play knockout competitions ESPN serves as separate leagues — the Leagues
+Cup and the U.S. Open Cup. Those reuse the parent league's team ids (NYCFC is `17606` in
+all three), so a followed club is matched in them with no extra configuration; the games
+are filed under MLS and the row names the competition instead of the league. The roster
+check is deliberately skipped for cups: the field is full of Liga MX and USL clubs, and
+applying it would make every tie look like an all-star fixture. Both cups are fetched on
+every poll — measured live, they add ~260ms to a ~430ms total, and the out-of-season one
+answers in under a kilobyte.
 
 Classifying those events took a twelve-month sweep of all seven ESPN leagues — 8,231
 games — because the round is stored in a different field depending on the sport. The US

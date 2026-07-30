@@ -217,6 +217,65 @@ class ParserTest {
     }
 
     @Test
+    fun `a cup tie is filed under its league but named after the competition`() {
+        // Leagues Cup, exactly as it comes down: MLS ids alongside a Liga MX club that
+        // is nowhere in the MLS team list.
+        val body = """
+        {"events":[{"id":"7","date":"2025-08-01T23:30Z",
+          "season":{"year":2025,"slug":"league-phase"},
+          "competitions":[{"notes":[],
+            "status":{"period":2,"type":{"state":"post","completed":true,"shortDetail":"FT"}},
+            "competitors":[
+              {"homeAway":"home","score":"2","team":{"id":"17606",
+               "displayName":"New York City FC","shortDisplayName":"NYCFC","abbreviation":"NYC"}},
+              {"homeAway":"away","score":"1","team":{"id":"228",
+               "displayName":"Leon","shortDisplayName":"Leon","abbreviation":"LEO"}}]}]}]}
+        """.trimIndent()
+        val game = EspnParser.parseScoreboard(
+            Leagues.MLS, body, competition = "Leagues Cup",
+        ).single()
+        assertEquals("mls", game.leagueId)
+        assertEquals("Leagues Cup", game.competition)
+        // A league-phase tie is an ordinary game you get by following the club — the
+        // roster check is deliberately not applied to cups, or the Liga MX side would
+        // make every tie look like an all-star fixture.
+        assertEquals(EventClass.NONE, game.eventClass)
+        assertTrue(game.involves(setOf("mls:17606")))
+        assertTrue(!game.involves(setOf("mls:special")))
+    }
+
+    @Test
+    fun `a cup final counts as a championship`() {
+        val body = """
+        {"events":[{"id":"8","date":"2026-08-31T23:30Z",
+          "season":{"year":2026,"slug":"final"},
+          "competitions":[{"notes":[],
+            "status":{"period":0,"type":{"state":"pre","shortDetail":"8:00 PM"}},
+            "competitors":[
+              {"homeAway":"home","team":{"id":"17606","displayName":"New York City FC",
+               "shortDisplayName":"NYCFC","abbreviation":"NYC"}},
+              {"homeAway":"away","team":{"id":"228","displayName":"Leon",
+               "shortDisplayName":"Leon","abbreviation":"LEO"}}]}]}]}
+        """.trimIndent()
+        val game = EspnParser.parseScoreboard(
+            Leagues.MLS, body, competition = "Leagues Cup",
+        ).single()
+        assertEquals(EventClass.CHAMPIONSHIP, game.eventClass)
+        assertTrue(game.involves(setOf("mls:championship")))
+    }
+
+    @Test
+    fun `mls carries its two cups`() {
+        assertEquals(
+            listOf("Leagues Cup", "U.S. Open Cup"),
+            Leagues.MLS.cups.map { it.name },
+        )
+        // Paths are full ESPN sport paths, since the scoreboard URL takes them verbatim.
+        assertTrue(Leagues.MLS.cups.all { it.path.startsWith("soccer/") })
+        assertTrue(Leagues.MLB.cups.isEmpty())
+    }
+
+    @Test
     fun `a standings row carries every stat, not just the visible columns`() {
         val body = """
         {"name":"MLS","children":[{"name":"Eastern Conference","standings":{"entries":[

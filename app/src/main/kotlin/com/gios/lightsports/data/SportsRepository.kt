@@ -79,9 +79,11 @@ class SportsRepository(context: Context) {
             Provider.HOCKEYTECH -> Http.get(
                 HockeyTechParser.scorebarUrl(league, BACK_DAYS.toInt(), AHEAD_DAYS.toInt()),
             )
-        } ?: return emptyList()
+        }
 
-        return runCatching {
+        // A failed league fetch must not take the cups down with it: in August the
+        // Leagues Cup is where the games actually are.
+        val leagueGames = if (body == null) emptyList() else runCatching {
             when (league.provider) {
                 // The team list is already cached for a week, so handing its ids to the
                 // parser costs nothing and is what makes an all-star fixture — which
@@ -93,6 +95,30 @@ class SportsRepository(context: Context) {
                 Provider.HOCKEYTECH -> HockeyTechParser.parseScorebar(league, body)
             }
         }.getOrDefault(emptyList())
+
+        return leagueGames + cupGames(league, from.format(ymd), to.format(ymd))
+    }
+
+    /**
+     * The knockout competitions a league's clubs also play in. Fetched on every poll:
+     * measured against the live endpoints, the two MLS cups add about 260ms to a 430ms
+     * total, and the out-of-season one answers in under a kilobyte — cheap enough not to
+     * need a separate cadence.
+     */
+    private fun cupGames(league: League, fromYmd: String, toYmd: String): List<Game> {
+        if (league.cups.isEmpty()) return emptyList()
+        val out = mutableListOf<Game>()
+        for (cup in league.cups) {
+            val body = Http.get(EspnParser.pathScoreboardUrl(cup.path, fromYmd, toYmd))
+                ?: continue
+            out += runCatching {
+                // No roster check here. A cup field is full of clubs from other leagues,
+                // so every game would look like an all-star fixture; in a cup the round
+                // in `season.slug` is the only signal that matters.
+                EspnParser.parseScoreboard(league, body, competition = cup.name)
+            }.getOrDefault(emptyList())
+        }
+        return out
     }
 
     fun races(league: League, nowMillis: Long, zone: ZoneId): List<RaceEvent> {

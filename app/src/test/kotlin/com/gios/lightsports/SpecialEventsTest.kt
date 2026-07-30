@@ -37,6 +37,25 @@ class SpecialEventsTest {
     }
 
     @Test
+    fun `a cup final is a championship, its earlier rounds are not`() {
+        // Leagues Cup and U.S. Open Cup rounds, as ESPN spells them.
+        assertEquals(EventClass.CHAMPIONSHIP, c(null, "final"))
+        assertEquals(EventClass.NONE, c(null, "league-phase"))
+        assertEquals(EventClass.NONE, c(null, "round-one"))
+        assertEquals(EventClass.NONE, c(null, "round-of-32"))
+    }
+
+    @Test
+    fun `semifinals must not be mistaken for a final`() {
+        // "semifinals" contains "final", so a substring test would promote every
+        // knockout round to a championship. The match is on the slug's last segment.
+        assertEquals(EventClass.NONE, c(null, "semifinals"))
+        assertEquals(EventClass.NONE, c(null, "quarterfinals"))
+        assertEquals(EventClass.NONE, c(null, "playoffs---semifinals"))
+        assertEquals(EventClass.NONE, c(null, "playoffs---quarterfinals"))
+    }
+
+    @Test
     fun `a conference final is not a championship`() {
         assertEquals(EventClass.NONE, c(null, "eastern-conference-playoffs---final"))
         assertEquals(EventClass.NONE, c(null, "western-conference-playoffs---final"))

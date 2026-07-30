@@ -42,11 +42,14 @@ object SpecialEvents {
     )
 
     /**
-     * Soccer's championship rounds, read off `season.slug`. Conference finals are
-     * deliberately absent — `eastern-conference-playoffs---final` is a semi-final by
-     * another name, and you already get it by following the team.
+     * Soccer's championship rounds, read off the last segment of `season.slug`.
+     *
+     * Matched against that segment exactly, never as a substring: `semifinals` and
+     * `quarterfinals` both contain "final", so `"final" in slug` would promote every
+     * knockout round to a championship. Conference finals are excluded separately —
+     * `eastern-conference-playoffs---final` is a semi-final by another name.
      */
-    private val CHAMPIONSHIP_SLUGS = listOf("mls-cup", "playoffs---championship")
+    private val CHAMPIONSHIP_ROUNDS = setOf("final", "championship", "mls-cup")
 
     /**
      * Headlines that exist for scheduling reasons rather than sporting ones. Without
@@ -68,6 +71,12 @@ object SpecialEvents {
      * playing Japan trips the off-roster rule, and five friendlies at the top of the
      * feed is not what anyone means by a special event.
      */
+    /**
+     * The round, as the trailing segment of a season slug.
+     * `eastern-conference-playoffs---final` -> `final`; `mls-cup` -> `mls-cup`.
+     */
+    private fun round(slug: String): String = slug.substringAfterLast("---")
+
     fun classify(note: String?, seasonSlug: String?, offRoster: Boolean): EventClass {
         val slug = seasonSlug.orEmpty().lowercase()
         if (slug.replace("-", "") in setOf("preseason", "offseason")) return EventClass.NONE
@@ -77,7 +86,7 @@ object SpecialEvents {
 
         if (CHAMPIONSHIP_TITLES.any { it in title }) return EventClass.CHAMPIONSHIP
         // A conference final is not a championship, whatever the slug suffix says.
-        if ("conference" !in slug && CHAMPIONSHIP_SLUGS.any { it in slug }) {
+        if ("conference" !in slug && round(slug) in CHAMPIONSHIP_ROUNDS) {
             return EventClass.CHAMPIONSHIP
         }
         if (offRoster || SHOWCASE_TITLES.any { it in title }) return EventClass.SHOWCASE

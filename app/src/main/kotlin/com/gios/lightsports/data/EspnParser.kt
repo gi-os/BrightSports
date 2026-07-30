@@ -29,7 +29,11 @@ object EspnParser {
      * fortnight until you count.
      */
     fun scoreboardUrl(league: League, startYmd: String, endYmd: String): String =
-        "$SITE/${league.espnPath}/scoreboard?limit=1000&dates=$startYmd-$endYmd"
+        pathScoreboardUrl(league.espnPath.orEmpty(), startYmd, endYmd)
+
+    /** Any ESPN competition path, which is how the cups are reached. */
+    fun pathScoreboardUrl(path: String, startYmd: String, endYmd: String): String =
+        "$SITE/$path/scoreboard?limit=1000&dates=$startYmd-$endYmd"
 
     fun teamsUrl(league: League): String = "$SITE/${league.espnPath}/teams?limit=400"
 
@@ -97,6 +101,7 @@ object EspnParser {
         league: League,
         body: String,
         rosterIds: Set<String> = emptySet(),
+        competition: String? = null,
     ): List<Game> {
         val events = JSONObject(body).optJSONArray("events") ?: return emptyList()
         val out = mutableListOf<Game>()
@@ -139,6 +144,7 @@ object EspnParser {
                     eventClass != EventClass.NONE
                 },
                 eventClass = eventClass,
+                competition = competition,
             )
         }
         return out
