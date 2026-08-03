@@ -38,8 +38,8 @@ import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.notify.Notifier
 import com.gios.lightsports.notify.ScoreWatcher
-import com.gios.lightsports.report.CrashLog
-import com.gios.lightsports.report.ReportOverlay
+import com.gios.light.common.report.LightReport
+import com.gios.light.common.report.ReportOverlay
 import com.gios.lightsports.ui.BarItem
 import com.gios.lightsports.ui.FeedScreen
 import com.gios.lightsports.ui.FollowScreen
@@ -88,7 +88,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // First thing, before anything else can throw: the handler chains onto whatever is
         // already installed and only writes a file, so it is safe this early.
-        CrashLog.install(this)
+        LightReport.install(
+            context = this,
+            appName = "LightSports",
+            label = "sports",
+            token = BuildConfig.REPORT_TOKEN,
+        )
         Notifier.ensureChannels(this)
         requestNotificationsIfNeeded()
 
