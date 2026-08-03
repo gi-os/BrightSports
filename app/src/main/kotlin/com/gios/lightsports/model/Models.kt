@@ -16,7 +16,7 @@ enum class GameState { PRE, LIVE, FINAL, OFF }
 enum class EventClass { NONE, SHOWCASE, CHAMPIONSHIP }
 
 /** Which provider a league's data comes from. */
-enum class Provider { ESPN, STATSAPI, HOCKEYTECH }
+enum class Provider { ESPN, STATSAPI, HOCKEYTECH, WPBL }
 
 /**
  * How often a league is allowed to interrupt.

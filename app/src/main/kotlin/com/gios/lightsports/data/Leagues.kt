@@ -9,12 +9,14 @@ import com.gios.lightsports.model.SportKind
 /**
  * Every league the app knows about, and where its data comes from.
  *
- * Three providers, all keyless public JSON:
+ * Four providers, all keyless public JSON:
  *  - ESPN's site API covers the men's and women's majors and Formula 1.
  *  - MLB's StatsAPI is the only free source for the four full-season MiLB levels;
  *    ESPN has no minor-league scoreboard at all.
  *  - The PWHL is not on ESPN either. It runs on HockeyTech/LeagueStat, whose feed
  *    key is public and baked into thepwhl.com's own front end.
+ *  - The WPBL is on neither, despite ESPN carrying the broadcast. Its own stats
+ *    service publishes the season as plain JSON; see [WpblParser].
  */
 object Leagues {
 
@@ -80,6 +82,10 @@ object Leagues {
         kind = SportKind.HOCKEY, provider = Provider.HOCKEYTECH, hockeyTechClient = "pwhl",
         markPeriods = true,
     )
+    val WPBL = League(
+        id = "wpbl", name = "Women's Pro Baseball League", short = "WPBL",
+        kind = SportKind.BASEBALL, provider = Provider.WPBL,
+    )
     val MLS = League(
         id = "mls", name = "Major League Soccer", short = "MLS",
         kind = SportKind.SOCCER, provider = Provider.ESPN, espnPath = "soccer/usa.1",
@@ -110,14 +116,14 @@ object Leagues {
 
     val all: List<League> = listOf(
         MLB, NFL, NBA, NHL, MLS, F1,
-        WNBA, NWSL, PWHL,
+        WNBA, NWSL, PWHL, WPBL,
         AAA, AA, HIGH_A, SINGLE_A,
     )
 
     /** Grouping used by the follow picker, in the order it renders. */
     val sections: List<Pair<String, List<League>>> = listOf(
         "MAJOR" to listOf(MLB, NFL, NBA, NHL, MLS),
-        "WOMEN'S" to listOf(WNBA, NWSL, PWHL),
+        "WOMEN'S" to listOf(WNBA, NWSL, PWHL, WPBL),
         "MINOR LEAGUE BASEBALL" to listOf(AAA, AA, HIGH_A, SINGLE_A),
         "RACING" to listOf(F1),
     )

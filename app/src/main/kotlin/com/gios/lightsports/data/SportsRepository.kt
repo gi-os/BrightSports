@@ -45,6 +45,10 @@ class SportsRepository(context: Context) {
                 cacheDir, "teams-${league.id}.json",
                 HockeyTechParser.teamsUrl(league), TEAM_CACHE_MILLIS,
             )
+            Provider.WPBL -> Http.cached(
+                cacheDir, "teams-${league.id}.json",
+                WpblParser.teamsUrl(), TEAM_CACHE_MILLIS,
+            )
         } ?: return emptyList()
 
         return runCatching {
@@ -52,6 +56,7 @@ class SportsRepository(context: Context) {
                 Provider.ESPN -> EspnParser.parseTeams(league.id, body)
                 Provider.STATSAPI -> StatsApiParser.parseTeams(league.id, body)
                 Provider.HOCKEYTECH -> HockeyTechParser.parseTeams(league.id, body)
+                Provider.WPBL -> WpblParser.parseTeams(league.id, body)
             }
         }.getOrDefault(emptyList())
     }
@@ -79,6 +84,9 @@ class SportsRepository(context: Context) {
             Provider.HOCKEYTECH -> Http.get(
                 HockeyTechParser.scorebarUrl(league, BACK_DAYS.toInt(), AHEAD_DAYS.toInt()),
             )
+            // No date parameter on this one: it answers with the whole season and the
+            // window is applied after parsing.
+            Provider.WPBL -> Http.get(WpblParser.gamesUrl())
         }
 
         // A failed league fetch must not take the cups down with it: in August the
@@ -93,6 +101,14 @@ class SportsRepository(context: Context) {
                 )
                 Provider.STATSAPI -> StatsApiParser.parseSchedule(league, body)
                 Provider.HOCKEYTECH -> HockeyTechParser.parseScorebar(league, body)
+                // The cached team list fills in the sides of a fixture the schedule
+                // has not named yet, which is otherwise a row reading "Away team".
+                Provider.WPBL -> WpblParser.parseGames(
+                    league, body,
+                    roster = teams(league),
+                    fromMillis = from.atStartOfDay(zone).toInstant().toEpochMilli(),
+                    toMillis = to.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli(),
+                )
             }
         }.getOrDefault(emptyList())
 
@@ -173,6 +189,19 @@ class SportsRepository(context: Context) {
                     val body = Http.get(StatsApiParser.standingsUrl(leagueIds, season))
                         ?: return emptyList()
                     StatsApiParser.parseStandings(body, divisions)
+                }
+                // The league publishes no standings endpoint — its own site computes
+                // the table in the browser from finished games, and so does this.
+                Provider.WPBL -> {
+                    val body = Http.get(WpblParser.gamesUrl()) ?: return emptyList()
+                    WpblParser.standings(
+                        WpblParser.parseGames(
+                            league, body,
+                            roster = teams(league),
+                            standingsOnly = true,
+                        ),
+                        title = league.short,
+                    )
                 }
                 Provider.HOCKEYTECH -> {
                     val seasonId = Http.cached(

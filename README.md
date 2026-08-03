@@ -2,7 +2,7 @@
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
-`com.gios.lightsports`. Current released version: **v1.8.15**.
+`com.gios.lightsports`. Current released version: **v1.10.18**.
 
 ## Why this exists
 
@@ -29,11 +29,11 @@ and caches are plain files, so there's no annotation processor in the build at a
 | | |
 |---|---|
 | Majors | MLB, NFL, NBA, NHL, MLS (+ Leagues Cup, U.S. Open Cup) |
-| Women's | WNBA, NWSL, PWHL |
+| Women's | WNBA, NWSL, PWHL, WPBL |
 | Minor league baseball | Triple-A, Double-A, High-A, Single-A |
 | Racing | Formula 1 |
 
-Thirteen leagues, three **keyless** public JSON providers — no account, no key to paste in:
+Fourteen leagues, four **keyless** public JSON providers — no account, no key to paste in:
 
 - **ESPN site API** — the majors, the women's leagues (except PWHL), F1.
   `site.api.espn.com/apis/site/v2/sports/<sport>/<league>/scoreboard`. One parser covers
@@ -45,8 +45,12 @@ Thirteen leagues, three **keyless** public JSON providers — no account, no key
 - **HockeyTech / LeagueStat** — the PWHL, which is on no mainstream scores API.
   `client_code=pwhl`, feed key `694cfeed58c932ee`, the public one thepwhl.com ships in its
   own front end.
+- **WPBL stats service** — the Women's Pro Baseball League, which is on no mainstream
+  scores API either, despite ESPN carrying every game of the broadcast.
+  `stats.womensprobaseballleague.com/v1/games` and `/v1/teams`, the same endpoints the
+  league's own public game centre calls from the browser.
 
-### Three endpoint traps, all silent — worth knowing before touching the parsers
+### Four endpoint traps, all silent — worth knowing before touching the parsers
 
 1. **MLB StatsAPI's `standings` endpoint ignores `sportId` entirely** and answers with an
    empty record set. Expand the level via `/leagues?sportId=11` and ask by
@@ -55,7 +59,16 @@ Thirteen leagues, three **keyless** public JSON providers — no account, no key
 2. **HockeyTech's `statviewfeed` standings come back wrapped in a bare pair of
    parentheses** — JSONP residue — strip before parsing JSON. `modulekit&view=statviewtype`
    looks like the standings view but isn't; it errors.
-3. **ESPN leaves `completed:false` on F1 sessions of race weekends that finished months
+3. **The WPBL feed answers with the whole season and no date parameter**, so the
+   fetch window has to be applied after parsing. Leave it off and every September
+   fixture counts as an upcoming game in August, which arms the pre-game nudge against
+   the wrong one. That feed also has no standings endpoint at all — `/v1/teams` carries
+   `wins`/`losses`/`streak` and leaves them zeroed, and the league's own site computes
+   its table in the browser from finished games, so `WpblParser.standings` does the same
+   over the same `counts_in_standings` flag. Line score, hits and errors are a separate
+   ~35 KB request per game and are deliberately not fetched: the notification poll runs
+   every two minutes and shares this code path.
+4. **ESPN leaves `completed:false` on F1 sessions of race weekends that finished months
    ago** — Bahrain and Saudi Arabia 2026 both do. Keying race state off that flag pinned
    both Grands Prix to LIVE at the top of the feed for the rest of the season. Fix: read
    the per-session `status.type.state` string plus the event `endDate`, never the
@@ -247,6 +260,9 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.10.18 | Track the WPBL, on the league's own stats feed |
+| v1.9.17 | Silence a followed team without unfollowing it |
+| v1.8.16 | Rewrite the README for v1.8.15 (docs) |
 | v1.8.15 | Note that wheel scrolling needs nothing else installed (docs) |
 | v1.8.14 | Mark the end of each period, in every sport but baseball |
 | v1.7.13 | Alert with LightChat's notifier, and nudge before kickoff |
