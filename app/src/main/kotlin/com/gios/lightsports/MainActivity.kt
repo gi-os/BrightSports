@@ -38,6 +38,8 @@ import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.notify.Notifier
 import com.gios.lightsports.notify.ScoreWatcher
+import com.gios.lightsports.report.CrashLog
+import com.gios.lightsports.report.ReportOverlay
 import com.gios.lightsports.ui.BarItem
 import com.gios.lightsports.ui.FeedScreen
 import com.gios.lightsports.ui.FollowScreen
@@ -84,6 +86,9 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // First thing, before anything else can throw: the handler chains onto whatever is
+        // already installed and only writes a file, so it is safe this early.
+        CrashLog.install(this)
         Notifier.ensureChannels(this)
         requestNotificationsIfNeeded()
 
@@ -100,6 +105,10 @@ class MainActivity : ComponentActivity() {
                     // decided down there, by whichever scroller is on screen.
                     CompositionLocalProvider(LocalWheelBus provides wheel) {
                         App(openGameId)
+                        // Shake to report, the crash offer on next launch, and the app's own
+                        // noticed failures. A sibling, not a wrapper — the sheet is its own
+                        // window, so it covers this whether or not it contains it.
+                        ReportOverlay()
                     }
                 }
             }
