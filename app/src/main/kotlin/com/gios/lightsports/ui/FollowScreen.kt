@@ -27,7 +27,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.SpecialEvents
-import com.gios.lightsports.hw.WheelScroll
+import com.gios.light.common.hw.WheelScroll
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.ui.theme.Dim

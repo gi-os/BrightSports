@@ -13,7 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.gios.lightsports.hw.WheelScroll
+import com.gios.light.common.hw.WheelScroll
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.ui.theme.Dim

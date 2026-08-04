@@ -23,7 +23,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Feed
 import com.gios.lightsports.data.Leagues
-import com.gios.lightsports.hw.WheelScroll
+import com.gios.light.common.hw.WheelScroll
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.RaceEvent

@@ -31,7 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.gios.lightsports.hw.WheelScroll
+import com.gios.light.common.hw.WheelScroll
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.StandingsRow

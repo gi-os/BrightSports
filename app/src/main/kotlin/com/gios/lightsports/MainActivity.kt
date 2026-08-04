@@ -29,10 +29,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.gios.lightsports.data.Leagues
-import com.gios.lightsports.hw.LightKey
-import com.gios.lightsports.hw.LightKeys
-import com.gios.lightsports.hw.LocalWheelBus
-import com.gios.lightsports.hw.WheelBus
+import com.gios.light.common.hw.LightKey
+import com.gios.light.common.hw.LightKeys
+import com.gios.light.common.hw.LocalWheelBus
+import com.gios.light.common.hw.WheelBus
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsRow
