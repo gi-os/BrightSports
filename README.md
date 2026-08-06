@@ -1,4 +1,4 @@
-# LightSports
+# BrightSports
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
@@ -13,7 +13,7 @@ and caches are plain files, so there's no annotation processor in the build at a
 
 ## Quick start
 
-1. `git clone https://github.com/gi-os/LightSports.git && cd LightSports`
+1. `git clone https://github.com/gi-os/BrightSports.git && cd BrightSports`
 2. Build or grab the release:
    ```
    ./gradlew :app:assembleRelease
@@ -139,7 +139,7 @@ The special-events classifier (`data/SpecialEvents.kt`) came out of a 12-month s
 
 ## Notifications
 
-Alerts are [LightChat](https://github.com/gi-os/LightChat)'s notifier design, carried over
+Alerts are [BrightChat](https://github.com/gi-os/BrightChat)'s notifier design, carried over
 wholesale: the shade notification is the *record* (drives LightGlance's dot too), and a
 box over whatever's on screen is the *alert* — an overlay window (`ScoreAlertOverlay`)
 when awake and unlocked, so nothing underneath is paused; a full activity
@@ -185,7 +185,7 @@ once the screen's been off a while; `adb shell dumpsys deviceidle whitelist
 ## The wheel
 
 Turning the brightness wheel scrolls whatever list is up — the feed, a game, the table,
-the team picker, settings — with **nothing installed but LightSports itself**: no
+the team picker, settings — with **nothing installed but BrightSports itself**: no
 service, no permission, no root. LightOS relabels the wheel sensor's scancodes 19/20 as
 `WHEEL_CCW`/`WHEEL_CW` in `/system/usr/keylayout/Generic.kl`, and nothing intercepts them,
 so they reach the focused window like any other key event — which is also why an app
@@ -199,7 +199,7 @@ search field when it has focus. Notches are frame-timed rather than applied on a
 held until a second confirms it, since the wheel sits under a thumb.
 
 Only turns are handled — the wheel click and the camera button do nothing here. Optional,
-separate install for those: [LightControl](https://github.com/gi-os/LightControl) gives
+separate install for those: [BrightControl](https://github.com/gi-os/BrightControl) gives
 the whole phone brightness (hold wheel + turn), flashlight (tap), and camera (camera
 button), each rebindable. It passes bare turns straight through to `com.gios.*`
 deliberately, so it doesn't cost this app its own scrolling.
@@ -265,7 +265,7 @@ Issues and PRs welcome.
 | v1.8.16 | Rewrite the README for v1.8.15 (docs) |
 | v1.8.15 | Note that wheel scrolling needs nothing else installed (docs) |
 | v1.8.14 | Mark the end of each period, in every sport but baseball |
-| v1.7.13 | Alert with LightChat's notifier, and nudge before kickoff |
+| v1.7.13 | Alert with BrightChat's notifier, and nudge before kickoff |
 | v1.6.12 | Scroll with the wheel |
 | v1.6.11 | Fold the Leagues Cup and U.S. Open Cup into the MLS feed |
 | v1.5.10 | Follow special games and championship games as categories |
@@ -276,7 +276,7 @@ Issues and PRs welcome.
 | v1.0.5 | Move team editing under settings; three icons in the action bar *(see the versionName trap above — this tag is out of chronological order, landing after v1.1.4)* |
 | v1.1.4 | Use the LightOS bar idiom for navigation, and stop pinning finished races to live |
 | v1.0.3 | README: describe the app on its own terms |
-| — | LightSports: scores and standings on the Light Phone III (initial commit) |
+| — | BrightSports: scores and standings on the Light Phone III (initial commit) |
 
 ## Licence
 
