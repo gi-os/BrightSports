@@ -4,6 +4,25 @@ A scores app for the **Light Phone III**. Follow your teams, see one column of s
 get notified when something happens. Launcher label: **Sports**, package
 `com.gios.lightsports`. Current released version: **v1.10.18**.
 
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/screenshots/01-scores.png" width="250" alt="One column of scores, grouped by day, with team marks and records"><br>
+      <sub>Scores: one column, grouped by day</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/02-standings.png" width="250" alt="MLB standings by division, with a league tab strip across the top"><br>
+      <sub>Standings: by division, one tab per league</sub>
+    </td>
+    <td align="center">
+      <img src="docs/screenshots/03-game.png" width="250" alt="A single game with first pitch, venue, TV listing and both records"><br>
+      <sub>Game: start time, venue, TV and records</sub>
+    </td>
+  </tr>
+</table>
+
+Taken on a Light Phone III.
+
 ## Why this exists
 
 LightOS has no built-in scores surface and no Google Play Services, so this is a plain
