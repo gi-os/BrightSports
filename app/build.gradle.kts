@@ -34,7 +34,7 @@ android {
         // major.minor below, so the release tag is <major>.<minor>.<run>. Bump this by
         // hand for anything Obtainium should treat as a new version.
         versionCode = 1
-        versionName = "1.11.0"
+        versionName = "1.12.0"
 
         buildConfigField("String", "REPORT_TOKEN", "\"$reportToken\"")
         buildConfigField("String", "REPORT_REPO", "\"gi-os/light-reports\"")

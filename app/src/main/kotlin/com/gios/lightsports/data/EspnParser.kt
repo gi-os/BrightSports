@@ -28,8 +28,12 @@ object EspnParser {
      * silently — no error, just a short list, which is indistinguishable from a quiet
      * fortnight until you count.
      */
-    fun scoreboardUrl(league: League, startYmd: String, endYmd: String): String =
-        pathScoreboardUrl(league.espnPath.orEmpty(), startYmd, endYmd)
+    fun scoreboardUrl(league: League, startYmd: String, endYmd: String): String {
+        val base = pathScoreboardUrl(league.espnPath.orEmpty(), startYmd, endYmd)
+        // Plural, confirmed against college football: `groups=80` is what actually
+        // narrows the scoreboard to FBS games.
+        return league.espnGroup?.let { "$base&groups=$it" } ?: base
+    }
 
     /** Any ESPN competition path, which is how the cups are reached. */
     fun pathScoreboardUrl(path: String, startYmd: String, endYmd: String): String =
@@ -41,7 +45,12 @@ object EspnParser {
      * level=3 asks for divisions rather than conferences. Leagues without divisions
      * ignore it, so it is safe to send everywhere.
      */
-    fun standingsUrl(league: League): String = "$CORE/${league.espnPath}/standings?level=3"
+    fun standingsUrl(league: League): String {
+        val base = "$CORE/${league.espnPath}/standings?level=3"
+        // Singular here, unlike the scoreboard's `groups=` — verified live against
+        // college football's FBS/FCS split, which is the only league that needs it.
+        return league.espnGroup?.let { "$base&group=$it" } ?: base
+    }
 
     fun raceUrl(league: League, year: Int): String = "$SITE/${league.espnPath}/scoreboard?dates=$year"
 
@@ -69,6 +78,38 @@ object EspnParser {
                 )
             }
         }
+        return out.distinctBy { it.teamId }.sortedBy { it.displayName }
+    }
+
+    /**
+     * The roster source for any league with [League.espnGroup] set, since the plain
+     * `teams` endpoint silently ignores that filter (see the field's doc comment).
+     * The standings tree does honor it, and every leaf entry carries a full team
+     * object — id, name, crest — so it doubles as a roster without a second request.
+     */
+    fun parseTeamsFromStandings(leagueId: String, body: String): List<TeamRef> {
+        val out = mutableListOf<TeamRef>()
+        fun walk(node: JSONObject) {
+            for (entry in (node.optJSONObject("standings")
+                ?.optJSONArray("entries") ?: JSONArray()).objects()) {
+                val t = entry.optJSONObject("team") ?: continue
+                if (t.has("isActive") && !t.optBoolean("isActive", true)) continue
+                out += TeamRef(
+                    leagueId = leagueId,
+                    teamId = t.optString("id"),
+                    displayName = t.optString("displayName"),
+                    short = t.optString("shortDisplayName").ifEmpty { t.optString("name") },
+                    abbrev = t.optString("abbreviation").ifEmpty {
+                        t.optString("shortDisplayName").take(3).uppercase()
+                    },
+                    logoUrl = logoFor(t),
+                )
+            }
+            for (child in (node.optJSONArray("children") ?: JSONArray()).objects()) {
+                walk(child)
+            }
+        }
+        walk(JSONObject(body))
         return out.distinctBy { it.teamId }.sortedBy { it.displayName }
     }
 

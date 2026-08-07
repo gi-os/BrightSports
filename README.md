@@ -59,15 +59,18 @@ and caches are plain files, so there's no annotation processor in the build at a
 | | |
 |---|---|
 | Majors | MLB, NFL, NBA, NHL, MLS (+ Leagues Cup, U.S. Open Cup) |
+| Soccer | EPL, LaLiga, Bundesliga, Serie A, Ligue 1, UEFA Champions League, UEFA Europa League |
+| College football | FBS (~140 teams, filtered from ESPN's ~750-team college football feed) |
 | Women's | WNBA, NWSL, PWHL, WPBL |
 | Minor league baseball | Triple-A, Double-A, High-A, Single-A |
 | Racing | Formula 1 |
 
-Fourteen leagues, four **keyless** public JSON providers — no account, no key to paste in:
+Twenty-two leagues, four **keyless** public JSON providers — no account, no key to paste in:
 
-- **ESPN site API** — the majors, the women's leagues (except PWHL), F1.
+- **ESPN site API** — the majors, the European soccer leagues, college football, the
+  women's leagues (except PWHL), F1.
   `site.api.espn.com/apis/site/v2/sports/<sport>/<league>/scoreboard`. One parser covers
-  all eight sports; the response shape is identical. Standings live at
+  every team sport; the response shape is identical. Standings live at
   `site.api.espn.com/apis/v2/sports/.../standings?level=3` and nest differently per
   league — walk the `children` tree rather than indexing it.
 - **MLB StatsAPI** — the four MiLB levels by `sportId` (11/12/13/14 = AAA/AA/A+/A). ESPN
@@ -80,16 +83,25 @@ Fourteen leagues, four **keyless** public JSON providers — no account, no key 
   `stats.womensprobaseballleague.com/v1/games` and `/v1/teams`, the same endpoints the
   league's own public game centre calls from the browser.
 
-### Four endpoint traps, all silent — worth knowing before touching the parsers
+### Five endpoint traps, all silent — worth knowing before touching the parsers
 
-1. **MLB StatsAPI's `standings` endpoint ignores `sportId` entirely** and answers with an
+1. **ESPN's `teams` endpoint silently ignores its own `groups` filter.**
+   `teams?groups=80` for college football answers 200 with a full team list — just not
+   a filtered one. It's the alphabetically-first slice of all ~750 teams across FBS
+   through Division III, cut off at whatever `limit` was sent, so "Abilene Christian"
+   through the A's and B's shows up looking exactly like a correctly-filtered FBS
+   roster. The `scoreboard` and `standings` endpoints both honor the filter (as
+   `groups=` and `group=` respectively — no relation between the two spellings), and
+   the standings tree carries a full team object at every leaf, so for any league with
+   [`League.espnGroup`] set the roster is sourced from there instead of `teams`.
+2. **MLB StatsAPI's `standings` endpoint ignores `sportId` entirely** and answers with an
    empty record set. Expand the level via `/leagues?sportId=11` and ask by
    `leagueId=117,112,…` instead; `hydrate=team` then carries the division *name*, which
    the records themselves don't.
-2. **HockeyTech's `statviewfeed` standings come back wrapped in a bare pair of
+3. **HockeyTech's `statviewfeed` standings come back wrapped in a bare pair of
    parentheses** — JSONP residue — strip before parsing JSON. `modulekit&view=statviewtype`
    looks like the standings view but isn't; it errors.
-3. **The WPBL feed answers with the whole season and no date parameter**, so the
+4. **The WPBL feed answers with the whole season and no date parameter**, so the
    fetch window has to be applied after parsing. Leave it off and every September
    fixture counts as an upcoming game in August, which arms the pre-game nudge against
    the wrong one. That feed also has no standings endpoint at all — `/v1/teams` carries
@@ -98,7 +110,7 @@ Fourteen leagues, four **keyless** public JSON providers — no account, no key 
    over the same `counts_in_standings` flag. Line score, hits and errors are a separate
    ~35 KB request per game and are deliberately not fetched: the notification poll runs
    every two minutes and shares this code path.
-4. **ESPN leaves `completed:false` on F1 sessions of race weekends that finished months
+5. **ESPN leaves `completed:false` on F1 sessions of race weekends that finished months
    ago** — Bahrain and Saudi Arabia 2026 both do. Keying race state off that flag pinned
    both Grands Prix to LIVE at the top of the feed for the rest of the season. Fix: read
    the per-session `status.type.state` string plus the event `endDate`, never the
@@ -290,6 +302,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.12.24 | Add the big-five European soccer leagues, both UEFA cups, and FBS college football |
 | v1.10.18 | Track the WPBL, on the league's own stats feed |
 | v1.9.17 | Silence a followed team without unfollowing it |
 | v1.8.16 | Rewrite the README for v1.8.15 (docs) |

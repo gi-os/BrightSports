@@ -32,10 +32,15 @@ class SportsRepository(context: Context) {
      * subway, which is exactly where someone edits their teams.
      */
     fun teams(league: League): List<TeamRef> {
+        // A league with a `groups` filter (college football) needs the standings
+        // tree instead of the plain teams endpoint, which ignores that filter — see
+        // League.espnGroup.
         val body = when (league.provider) {
             Provider.ESPN -> Http.cached(
                 cacheDir, "teams-${league.id}.json",
-                EspnParser.teamsUrl(league), TEAM_CACHE_MILLIS,
+                if (league.espnGroup != null) EspnParser.standingsUrl(league)
+                else EspnParser.teamsUrl(league),
+                TEAM_CACHE_MILLIS,
             )
             Provider.STATSAPI -> Http.cached(
                 cacheDir, "teams-${league.id}.json",
@@ -53,7 +58,11 @@ class SportsRepository(context: Context) {
 
         return runCatching {
             when (league.provider) {
-                Provider.ESPN -> EspnParser.parseTeams(league.id, body)
+                Provider.ESPN -> if (league.espnGroup != null) {
+                    EspnParser.parseTeamsFromStandings(league.id, body)
+                } else {
+                    EspnParser.parseTeams(league.id, body)
+                }
                 Provider.STATSAPI -> StatsApiParser.parseTeams(league.id, body)
                 Provider.HOCKEYTECH -> HockeyTechParser.parseTeams(league.id, body)
                 Provider.WPBL -> WpblParser.parseTeams(league.id, body)
@@ -95,9 +104,18 @@ class SportsRepository(context: Context) {
             when (league.provider) {
                 // The team list is already cached for a week, so handing its ids to the
                 // parser costs nothing and is what makes an all-star fixture — which
-                // carries no headline at all in MLS and MLB — recognisable.
+                // carries no headline at all in MLS and MLB — recognisable. Gated on
+                // hasEvents: college football's off-conference games (an FBS team
+                // hosting an FCS team) would otherwise read as an off-roster showcase
+                // every single week, since that mismatch is routine there rather than
+                // the exception it is everywhere else this runs.
                 Provider.ESPN -> EspnParser.parseScoreboard(
-                    league, body, rosterIds = teams(league).map { it.teamId }.toSet(),
+                    league, body,
+                    rosterIds = if (league.hasEvents) {
+                        teams(league).map { it.teamId }.toSet()
+                    } else {
+                        emptySet()
+                    },
                 )
                 Provider.STATSAPI -> StatsApiParser.parseSchedule(league, body)
                 Provider.HOCKEYTECH -> HockeyTechParser.parseScorebar(league, body)

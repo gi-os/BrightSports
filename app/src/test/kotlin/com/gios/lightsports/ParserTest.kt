@@ -290,6 +290,50 @@ class ParserTest {
     }
 
     @Test
+    fun `a groups filter narrows the scoreboard and standings urls`() {
+        val plain = EspnParser.scoreboardUrl(Leagues.MLS, "20260101", "20260107")
+        assertTrue(!plain.contains("groups="))
+        val filtered = EspnParser.scoreboardUrl(Leagues.CFB, "20260101", "20260107")
+        assertTrue(filtered.contains("groups=80"))
+        // The standings endpoint takes the singular spelling — no relation to the
+        // scoreboard's plural `groups=`, confirmed against the live API.
+        assertTrue(!EspnParser.standingsUrl(Leagues.MLS).contains("group="))
+        assertTrue(EspnParser.standingsUrl(Leagues.CFB).contains("group=80"))
+        assertTrue(!EspnParser.standingsUrl(Leagues.CFB).contains("groups="))
+    }
+
+    @Test
+    fun `college football has no off-roster signal to misfire on`() {
+        // An FBS-vs-FCS game is a normal non-conference Saturday, not a showcase — so
+        // unlike the leagues that use the off-roster check, this one must not opt in.
+        assertTrue(!Leagues.CFB.hasEvents)
+        assertEquals("80", Leagues.CFB.espnGroup)
+    }
+
+    @Test
+    fun `team roster comes from the standings tree when a groups filter is set`() {
+        // Shaped like the real FBS standings response: a conference layer, then teams.
+        // The `teams` endpoint ignores `groups=80` entirely, so this tree is the only
+        // reliable source for who's actually in the FBS.
+        val body = """
+        {"name":"FBS","children":[
+          {"name":"American Conference","standings":{"entries":[
+            {"team":{"id":"2678","displayName":"Tulane Green Wave","abbreviation":"TULN",
+             "shortDisplayName":"Tulane","isActive":true,
+             "logos":[{"href":"http://x/default.png","rel":["full","default"]},
+                      {"href":"http://x/dark.png","rel":["full","dark"]}]},"stats":[]}]}},
+          {"name":"Big Ten Conference","standings":{"entries":[
+            {"team":{"id":"194","displayName":"Michigan Wolverines","abbreviation":"MICH",
+             "shortDisplayName":"Michigan","isActive":true},"stats":[]}]}}]}
+        """.trimIndent()
+        val teams = EspnParser.parseTeamsFromStandings("cfb", body)
+        assertEquals(listOf("Michigan Wolverines", "Tulane Green Wave"), teams.map { it.displayName })
+        assertEquals("cfb:2678", teams.first { it.displayName == "Tulane Green Wave" }.key)
+        // The dark crest, not the default, for the same reason every other league's does.
+        assertEquals("http://x/dark.png", teams.first { it.displayName == "Tulane Green Wave" }.logoUrl)
+    }
+
+    @Test
     fun `mls carries its two cups`() {
         assertEquals(
             listOf("Leagues Cup", "U.S. Open Cup"),

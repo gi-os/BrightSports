@@ -52,6 +52,16 @@ data class League(
     val provider: Provider,
     /** ESPN `sports/<path>` fragment, e.g. `baseball/mlb`. */
     val espnPath: String? = null,
+    /**
+     * ESPN's `groups` filter, e.g. `"80"` for FBS college football. Confirmed live:
+     * the scoreboard and standings endpoints both honor it (`groups=` on the former,
+     * singular `group=` on the latter — no relation between the two spellings), but the
+     * plain `teams` endpoint silently ignores it, returning the alphabetically-first
+     * slice of every division from FBS through D3. When this is set, the team roster is
+     * sourced from the standings tree instead, which carries a full team object at every
+     * leaf and does respect the filter.
+     */
+    val espnGroup: String? = null,
     /** MLB StatsAPI `sportId`, e.g. 11 for Triple-A. */
     val statsApiSportId: Int? = null,
     /** HockeyTech `client_code`, e.g. `pwhl`. */

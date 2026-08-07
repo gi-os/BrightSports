@@ -34,8 +34,9 @@ import com.gios.lightsports.ui.theme.Dim
 import com.gios.lightsports.ui.theme.Faint
 
 /**
- * Pick teams. A league is chosen first, then its clubs — 13 leagues and roughly 500
- * teams is far too many for one alphabetical list.
+ * Pick teams. A league is chosen first, then its clubs — 22 leagues and, once college
+ * football's ~140 FBS programs are in the mix, well over a thousand teams is far too
+ * many for one alphabetical list.
  *
  * Which league is open lives in the caller, so the top bar can own the back button the
  * way every LightOS screen does.
