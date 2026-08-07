@@ -4,6 +4,17 @@ A scores app for the **Light Phone III**. Follow your teams, see one column of s
 get notified when something happens. Launcher label: **Sports**, package
 `com.gios.lightsports`. Current released version: **v1.10.18**.
 
+## Install via BrightMarket
+
+<p align="center">
+  <img src="https://gi-os.github.io/brightmarket-index/assets/brightmarket-qr.png" alt="Scan to open BrightMarket" width="180" />
+</p>
+
+Scan the code above, or visit
+**[gi-os.github.io/brightmarket-index/browse.html](https://gi-os.github.io/brightmarket-index/browse.html)**, to install
+and keep this app updated through **BrightMarket** — no Play Store, no PC
+required.
+
 <table>
   <tr>
     <td align="center">
