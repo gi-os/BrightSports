@@ -83,7 +83,7 @@ Twenty-two leagues, four **keyless** public JSON providers — no account, no ke
   `stats.womensprobaseballleague.com/v1/games` and `/v1/teams`, the same endpoints the
   league's own public game centre calls from the browser.
 
-### Six endpoint traps, all silent — worth knowing before touching the parsers
+### Seven endpoint traps, all silent — worth knowing before touching the parsers
 
 1. **ESPN's `teams` endpoint silently ignores its own `groups` filter.**
    `teams?groups=80` for college football answers 200 with a full team list — just not
@@ -131,6 +131,18 @@ Twenty-two leagues, four **keyless** public JSON providers — no account, no ke
    "delay" -> LIVE`, so an active weather delay ("In Progress - Weather Delay") read
    as an ordinary live game too, for the same underlying reason — checked in the wrong
    order against a status string that names two states in one sentence.
+7. **A postponed MiLB game with a make-up date is listed twice in one schedule
+   response, under the same `gamePk`, with conflicting statuses** — confirmed live for
+   the Brooklyn Cyclones, gamePk 821809: `detailedState: "Postponed"` under its
+   original date, `"Scheduled"` again under the reschedule date. Both survive the
+   app's multi-day fetch window, and since the notification poll keeps one snapshot per
+   game *id*, the second duplicate processed silently overwrote whichever snapshot the
+   first one had just recorded — so the "already told you about this" marker never
+   actually stuck, and the next poll found the same stale unseen snapshot and refired
+   the postponed alert every two minutes, forever. `StatsApiParser.parseSchedule` now
+   dedupes by id, keeping whichever duplicate's state is more specific (`OFF` or
+   `FINAL` over a bare `PRE`) — one `Game` per id from there on, so there is nothing
+   left downstream to overwrite.
 
 Also: ESPN omits seconds from timestamps (`2026-07-29T16:10Z`), which stock
 `ISO_INSTANT` rejects — one lenient `DateTimeFormatterBuilder` covers all three
@@ -320,6 +332,7 @@ Issues and PRs welcome.
 | v1.12.24 | Add the big-five European soccer leagues, both UEFA cups, and FBS college football |
 | v1.13.25 | Stop repeating a delay notification, and say when the game is back |
 | v1.14.26 | Fix the WPBL's own version of the same delay bug |
+| v1.15.27 | Fix the actual cause: a postponed MiLB game listed twice with conflicting statuses |
 | v1.10.18 | Track the WPBL, on the league's own stats feed |
 | v1.9.17 | Silence a followed team without unfollowing it |
 | v1.8.16 | Rewrite the README for v1.8.15 (docs) |

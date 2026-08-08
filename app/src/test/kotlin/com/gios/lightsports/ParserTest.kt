@@ -554,6 +554,34 @@ class ParserTest {
     }
 
     @Test
+    fun `a postponed game with a make-up date is not counted twice`() {
+        // The actual repeat this covers, live: a postponed MiLB game keeps its gamePk
+        // and gets listed under both its original date (detailedState "Postponed")
+        // and its reschedule date (a generic placeholder, "Scheduled") in the same
+        // schedule response -- confirmed for the Brooklyn Cyclones, gamePk 821809.
+        // Two Game objects sharing one id meant the second one processed always
+        // overwrote whichever snapshot the first one had just recorded, so the
+        // postponement's "already told you" marker never actually stuck -- the next
+        // poll found the same stale unseen snapshot and refired every two minutes.
+        val body = """
+        {"dates":[
+          {"date":"2026-08-07","games":[{
+            "gamePk":821809,"gameDate":"2026-08-07T22:35:00Z",
+            "status":{"abstractGameState":"Final","detailedState":"Postponed"},
+            "teams":{"home":{"team":{"id":426,"name":"Wilmington Blue Rocks"}},
+                     "away":{"team":{"id":453,"name":"Brooklyn Cyclones"}}}}]},
+          {"date":"2026-08-08","games":[{
+            "gamePk":821809,"gameDate":"2026-08-08T20:35:00Z",
+            "status":{"abstractGameState":"Preview","detailedState":"Scheduled"},
+            "teams":{"home":{"team":{"id":426,"name":"Wilmington Blue Rocks"}},
+                     "away":{"team":{"id":453,"name":"Brooklyn Cyclones"}}}}]}]}
+        """.trimIndent()
+        val games = StatsApiParser.parseSchedule(Leagues.HIGH_A, body)
+        assertEquals(1, games.size)
+        assertEquals(GameState.OFF, games.single().state)
+    }
+
+    @Test
     fun `minor league teams carry their parent club`() {
         val body = """
         {"teams":[{"id":105,"name":"Sacramento River Cats","teamName":"River Cats",

@@ -110,7 +110,37 @@ object StatsApiParser {
                 )
             }
         }
-        return out
+        return dedupe(out)
+    }
+
+    /**
+     * A postponed game with a make-up date lands in this response twice — once under
+     * its original date reporting `detailedState: "Postponed"`, and again under the
+     * reschedule date reporting the generic placeholder `"Scheduled"` — same `gamePk`,
+     * two conflicting states, confirmed live (Brooklyn Cyclones, gamePk 821809,
+     * 2026-08-07/08). Both entries survive the date-window filter in
+     * [SportsRepository.games] since `BACK_DAYS`/`AHEAD_DAYS` spans several days either
+     * side. Downstream, `ScoreWatcher.poll` writes one snapshot per game *id* and the
+     * later entry in the list silently overwrites the earlier one's — so whichever
+     * duplicate is processed last decides what gets remembered, and if that is the
+     * bland "Scheduled" placeholder, the postponement never actually gets marked seen.
+     * The next poll finds the same stale "not yet seen" snapshot, re-detects the
+     * transition into OFF, and repeats forever.
+     *
+     * Deduping by id and keeping the more specific state (OFF or FINAL over a plain
+     * PRE) fixes it at the source rather than papering over it downstream: there is
+     * only ever one [Game] per id from here on, so there is nothing left to overwrite.
+     */
+    private fun dedupe(games: List<Game>): List<Game> {
+        fun rank(g: Game) = when (g.state) {
+            GameState.OFF -> 3
+            GameState.FINAL -> 2
+            GameState.LIVE -> 1
+            GameState.PRE -> 0
+        }
+        return games.groupBy { it.id }.values.map { dupes ->
+            dupes.maxByOrNull { rank(it) } ?: dupes.first()
+        }
     }
 
     private fun side(node: JSONObject?, line: JSONObject?, home: Boolean): Side? {
