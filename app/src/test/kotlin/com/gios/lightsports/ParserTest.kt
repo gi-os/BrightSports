@@ -118,6 +118,29 @@ class ParserTest {
     }
 
     @Test
+    fun `a rain delay is off, not a quiet live game`() {
+        // Confirmed live against ESPN: a rain delay reports state "in", completed
+        // false, name STATUS_RAIN_DELAY -- identical to an ordinary live game unless
+        // the name is checked first. Missing this means the delay never changes state
+        // at all: no alert when it starts, nothing to say when it clears either.
+        val body = """
+        {"events":[{"id":"1","date":"2026-07-29T16:10Z","competitions":[{
+          "status":{"period":1,"type":{"state":"in","completed":false,
+                    "name":"STATUS_RAIN_DELAY","detail":"Rain Delay, Top 1st",
+                    "shortDetail":"Rain Delay"}},
+          "competitors":[
+            {"homeAway":"home","team":{"id":"1","displayName":"A","shortDisplayName":"A",
+             "abbreviation":"A"}},
+            {"homeAway":"away","team":{"id":"2","displayName":"B","shortDisplayName":"B",
+             "abbreviation":"B"}}]}]}]}
+        """.trimIndent()
+        assertEquals(
+            GameState.OFF,
+            EspnParser.parseScoreboard(Leagues.MLB, body).single().state,
+        )
+    }
+
+    @Test
     fun `a postponed game is neither upcoming nor final`() {
         val body = """
         {"events":[{"id":"1","date":"2026-07-29T16:10Z","competitions":[{
@@ -488,6 +511,46 @@ class ParserTest {
         val game = StatsApiParser.parseSchedule(Leagues.AAA, statsApiSchedule).single()
         assertEquals(listOf("0", "-"), game.home.lineScore)
         assertEquals(listOf("0", "1"), game.away.lineScore)
+    }
+
+    @Test
+    fun `a postponed minor league game is off, not final`() {
+        // Confirmed live against StatsAPI: a postponed MiLB game reports
+        // abstractGameState "Final" -- reading as a completed game rather than a
+        // rainout unless detailedState is checked first, and refiring a FINAL alert
+        // every time a pending reschedule flips the feed between Preview and Final.
+        val body = """
+        {"dates":[{"games":[{
+          "gamePk":1,"gameDate":"2026-08-04T23:04:00Z",
+          "status":{"abstractGameState":"Final","detailedState":"Postponed"},
+          "teams":{
+            "home":{"team":{"id":1,"name":"A"}},
+            "away":{"team":{"id":2,"name":"B"}}}}]}]}
+        """.trimIndent()
+        assertEquals(
+            GameState.OFF,
+            StatsApiParser.parseSchedule(Leagues.AAA, body).single().state,
+        )
+    }
+
+    @Test
+    fun `a suspended minor league game is off, not an ordinary live one`() {
+        // Confirmed live: a suspended MiLB game reports abstractGameState "Live" --
+        // indistinguishable from a normal in-progress game unless detailedState is
+        // checked first, which means the suspension carries no alert either way: none
+        // when it stops, and nothing to say when it resumes.
+        val body = """
+        {"dates":[{"games":[{
+          "gamePk":2,"gameDate":"2026-08-02T17:05:00Z",
+          "status":{"abstractGameState":"Live","detailedState":"Suspended"},
+          "teams":{
+            "home":{"score":3,"team":{"id":1,"name":"A"}},
+            "away":{"score":2,"team":{"id":2,"name":"B"}}}}]}]}
+        """.trimIndent()
+        assertEquals(
+            GameState.OFF,
+            StatsApiParser.parseSchedule(Leagues.AAA, body).single().state,
+        )
     }
 
     @Test

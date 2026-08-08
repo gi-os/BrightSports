@@ -51,7 +51,9 @@ object Notifier {
         ensureChannels(context)
 
         val channel = when (entry.kind) {
-            ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF -> CHANNEL_SCHEDULE
+            ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF,
+            ScoreDiff.Kind.RESUMED,
+            -> CHANNEL_SCHEDULE
             else -> CHANNEL_SCORES
         }
         val tap = PendingIntent.getActivity(

@@ -336,4 +336,39 @@ class ScoreDiffTest {
             kinds(snap(GameState.PRE, 0, 0), snap(GameState.OFF, 0, 0)),
         )
     }
+
+    @Test
+    fun `a delay is reported once and stays silent while it drags on`() {
+        // The exact complaint this covers: a game stuck in a rain delay for forty
+        // minutes must not repeat the same "delayed" notification every poll.
+        assertEquals(
+            listOf(ScoreDiff.Kind.OFF),
+            kinds(snap(GameState.LIVE, 2, 1, period = 5), snap(GameState.OFF, 2, 1, period = 5)),
+        )
+        assertTrue(
+            kinds(snap(GameState.OFF, 2, 1, period = 5), snap(GameState.OFF, 2, 1, period = 5))
+                .isEmpty(),
+        )
+    }
+
+    @Test
+    fun `play resuming after a delay is its own one-time alert`() {
+        assertEquals(
+            listOf(ScoreDiff.Kind.RESUMED),
+            kinds(snap(GameState.OFF, 2, 1, period = 5), snap(GameState.LIVE, 2, 1, period = 5)),
+        )
+    }
+
+    @Test
+    fun `a postponed game rescheduled and postponed again alerts each time, not once`() {
+        // What actually produced repeats before the state() fix: MiLB reports a
+        // postponed game as abstractGameState "Final", and a reschedule can flip the
+        // feed back to "Preview" before the next rainout lands. Each of those two OFF
+        // entries is a genuinely new event and both should be told about — it's a
+        // stable, unchanging OFF that must stay silent, not a returning one.
+        val off = snap(GameState.OFF, 0, 0)
+        val pre = snap(GameState.PRE, 0, 0)
+        assertEquals(listOf(ScoreDiff.Kind.OFF), kinds(pre, off))
+        assertTrue(kinds(off, off).isEmpty())
+    }
 }

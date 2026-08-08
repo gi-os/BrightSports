@@ -135,7 +135,9 @@ object ScoreWatcher {
                 newEntries += PendingQueue.Entry(
                     // A reminder is useless late, so only score news is delayed.
                     dueAt = now + when (alert.kind) {
-                        ScoreDiff.Kind.SOON, ScoreDiff.Kind.START -> 0L
+                        // A delay clearing isn't a score to protect from spoilers —
+                        // it's the answer to "is it back on yet", which is useless late.
+                        ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED -> 0L
                         else -> delay
                     },
                     gameId = game.id,

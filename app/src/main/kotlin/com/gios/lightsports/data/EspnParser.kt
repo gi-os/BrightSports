@@ -244,11 +244,25 @@ object EspnParser {
             .filter { it.isNotEmpty() }.joinToString("/").takeIf { it.isNotEmpty() }
     }
 
-    private fun state(type: JSONObject?): GameState = when (type?.optString("state")) {
-        "in" -> GameState.LIVE
-        "post" -> if (type.optBoolean("completed", true)) GameState.FINAL else GameState.OFF
-        "pre" -> if (type.optString("name").contains("POSTPONED")) GameState.OFF else GameState.PRE
-        else -> GameState.PRE
+    /**
+     * The delay/suspension names ride on top of an ordinary `state` value rather than
+     * replacing it — confirmed live: a rain delay reports `state: "in"`, `completed:
+     * false`, `name: "STATUS_RAIN_DELAY"`, which is indistinguishable from a normal
+     * live game unless the name is checked first. Without this a delay carries no
+     * state change at all: no alert when it starts, and nothing to tell "still
+     * delayed" apart from "back and nobody said so."
+     */
+    private fun state(type: JSONObject?): GameState {
+        val name = type?.optString("name").orEmpty().uppercase()
+        if (listOf("DELAY", "SUSPEND", "POSTPON", "CANCEL").any { it in name }) {
+            return GameState.OFF
+        }
+        return when (type?.optString("state")) {
+            "in" -> GameState.LIVE
+            "post" -> if (type.optBoolean("completed", true)) GameState.FINAL else GameState.OFF
+            "pre" -> GameState.PRE
+            else -> GameState.PRE
+        }
     }
 
     // ---------------------------------------------------------------- racing

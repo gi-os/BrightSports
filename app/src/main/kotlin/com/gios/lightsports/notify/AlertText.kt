@@ -42,6 +42,9 @@ object AlertText {
                 listOfNotNull(at, game.broadcast).joinToString(" · ")
             }
             ScoreDiff.Kind.OFF -> game.statusDetail.ifEmpty { "Postponed" }
+            // The one-time "it's back on" alert that pairs with OFF. The current score
+            // is already in the title, so the body just needs to say play resumed.
+            ScoreDiff.Kind.RESUMED -> "Resuming"
             ScoreDiff.Kind.FINAL -> game.statusDetail.ifEmpty { "Final" }
             ScoreDiff.Kind.PERIOD -> boundaryLabel(league.kind, game)
             ScoreDiff.Kind.SCORE -> game.statusDetail.ifEmpty {

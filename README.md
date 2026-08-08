@@ -83,7 +83,7 @@ Twenty-two leagues, four **keyless** public JSON providers — no account, no ke
   `stats.womensprobaseballleague.com/v1/games` and `/v1/teams`, the same endpoints the
   league's own public game centre calls from the browser.
 
-### Five endpoint traps, all silent — worth knowing before touching the parsers
+### Six endpoint traps, all silent — worth knowing before touching the parsers
 
 1. **ESPN's `teams` endpoint silently ignores its own `groups` filter.**
    `teams?groups=80` for college football answers 200 with a full team list — just not
@@ -116,6 +116,17 @@ Twenty-two leagues, four **keyless** public JSON providers — no account, no ke
    the per-session `status.type.state` string plus the event `endDate`, never the
    `completed` flag. Those same two events also publish no finishing order, so a podium
    can legitimately come back empty.
+6. **A delay or suspension rides on top of the ordinary state, on both providers, rather
+   than replacing it** — confirmed live on both sides. ESPN reports a rain delay as
+   `state: "in"`, `completed: false`, `name: "STATUS_RAIN_DELAY"`: identical to a normal
+   live game unless the name is checked. MLB StatsAPI is worse: a postponed game reports
+   `abstractGameState: "Final"` (reads as a completed game, and refires a FINAL alert
+   with the body "Postponed" every time a pending reschedule flips the feed between
+   `Preview` and `Final`), and a suspended one reports `"Live"` (reads as an ordinary
+   game in progress, so the pause carries no alert and neither does it clearing). Both
+   parsers now check the delay/suspend/postpone/cancel wording first and map all of it
+   to `GameState.OFF`, which is also what makes a resume alert possible at all —
+   `ScoreDiff.Kind.RESUMED` fires exactly once on the transition back to `LIVE`.
 
 Also: ESPN omits seconds from timestamps (`2026-07-29T16:10Z`), which stock
 `ISO_INSTANT` rejects — one lenient `DateTimeFormatterBuilder` covers all three
@@ -303,6 +314,7 @@ Issues and PRs welcome.
 | Version | Change |
 | --- | --- |
 | v1.12.24 | Add the big-five European soccer leagues, both UEFA cups, and FBS college football |
+| v1.13.25 | Stop repeating a delay notification, and say when the game is back |
 | v1.10.18 | Track the WPBL, on the league's own stats feed |
 | v1.9.17 | Silence a followed team without unfollowing it |
 | v1.8.16 | Rewrite the README for v1.8.15 (docs) |

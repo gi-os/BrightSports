@@ -11,7 +11,7 @@ import com.gios.lightsports.model.Loudness
  */
 object ScoreDiff {
 
-    enum class Kind { SOON, START, SCORE, PERIOD, FINAL, OFF }
+    enum class Kind { SOON, START, SCORE, PERIOD, FINAL, OFF, RESUMED }
 
     /** The minimum of a game needed to tell what changed since last time. */
     data class Snapshot(
@@ -150,6 +150,13 @@ object ScoreDiff {
         }
         if (now.state == GameState.OFF && prev.state != GameState.OFF) {
             out += Kind.OFF
+        }
+        // The other half of the pair above: a delay or suspension clearing, reported
+        // exactly once. Without this the only signal a postponed-or-delayed game ever
+        // gives again is silence — nothing distinguishes "still delayed" from "back on
+        // and nobody said so."
+        if (prev.state == GameState.OFF && now.state == GameState.LIVE) {
+            out += Kind.RESUMED
         }
         var marked = prev.markedPeriod
         if (prev.state == GameState.LIVE && now.state == GameState.LIVE) {

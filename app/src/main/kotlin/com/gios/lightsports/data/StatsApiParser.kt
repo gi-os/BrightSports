@@ -138,18 +138,28 @@ object StatsApiParser {
         )
     }
 
-    private fun state(status: JSONObject?): GameState =
-        when (status?.optString("abstractGameState")) {
+    /**
+     * `detailedState` has to be checked before `abstractGameState`, not nested inside
+     * a `"Preview"` branch — confirmed live, StatsAPI does not restrict these words to
+     * games that haven't started. A postponed MiLB game reports `abstractGameState:
+     * "Final"` (which without this check reads as a completed game, not a rainout,
+     * and fires a FINAL alert that repeats every time the reschedule flips the feed
+     * back through "Preview" and forward again); a suspended one reports `"Live"`, so
+     * the delay itself would otherwise carry no state change — and therefore no
+     * one-time alert and no resume alert either — at all.
+     */
+    private fun state(status: JSONObject?): GameState {
+        val detailed = status?.optString("detailedState").orEmpty()
+        if (detailed.contains("Postponed") || detailed.contains("Cancelled") ||
+            detailed.contains("Suspended") || detailed.contains("Delayed")
+        ) return GameState.OFF
+        return when (status?.optString("abstractGameState")) {
             "Live" -> GameState.LIVE
             "Final" -> GameState.FINAL
-            "Preview" -> {
-                val detailed = status.optString("detailedState")
-                if (detailed.contains("Postponed") || detailed.contains("Cancelled") ||
-                    detailed.contains("Suspended")
-                ) GameState.OFF else GameState.PRE
-            }
+            "Preview" -> GameState.PRE
             else -> GameState.PRE
         }
+    }
 
     private fun statusDetail(status: JSONObject?, line: JSONObject?): String {
         val detailed = status?.optString("detailedState").orEmpty()
