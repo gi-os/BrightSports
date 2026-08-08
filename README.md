@@ -126,7 +126,11 @@ Twenty-two leagues, four **keyless** public JSON providers — no account, no ke
    game in progress, so the pause carries no alert and neither does it clearing). Both
    parsers now check the delay/suspend/postpone/cancel wording first and map all of it
    to `GameState.OFF`, which is also what makes a resume alert possible at all —
-   `ScoreDiff.Kind.RESUMED` fires exactly once on the transition back to `LIVE`.
+   `ScoreDiff.Kind.RESUMED` fires exactly once on the transition back to `LIVE`. The
+   WPBL's own status string had the identical bug by design: `"in progress" ||
+   "delay" -> LIVE`, so an active weather delay ("In Progress - Weather Delay") read
+   as an ordinary live game too, for the same underlying reason — checked in the wrong
+   order against a status string that names two states in one sentence.
 
 Also: ESPN omits seconds from timestamps (`2026-07-29T16:10Z`), which stock
 `ISO_INSTANT` rejects — one lenient `DateTimeFormatterBuilder` covers all three
@@ -315,6 +319,7 @@ Issues and PRs welcome.
 | --- | --- |
 | v1.12.24 | Add the big-five European soccer leagues, both UEFA cups, and FBS college football |
 | v1.13.25 | Stop repeating a delay notification, and say when the game is back |
+| v1.14.26 | Fix the WPBL's own version of the same delay bug |
 | v1.10.18 | Track the WPBL, on the league's own stats feed |
 | v1.9.17 | Silence a followed team without unfollowing it |
 | v1.8.16 | Rewrite the README for v1.8.15 (docs) |

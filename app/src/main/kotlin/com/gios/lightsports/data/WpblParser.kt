@@ -147,17 +147,23 @@ object WpblParser {
      * fallback, so a status Presto spells a new way still lands somewhere sane.
      *
      * "Final - Weather Delay" is why final is tested before delay: a game stopped for
-     * rain and then played out carries both words, and it is over.
+     * rain and then played out carries both words, and it is over. "Delay" is tested
+     * before "in progress" for the same reason in the other direction — a game still
+     * paused mid-innings carries both words too ("In Progress - Weather Delay"), and
+     * that one is not over, or live, or anything to keep quiet about: it is OFF, same
+     * as the ESPN and StatsAPI providers once their own delay wording was fixed to
+     * stop reading as an ordinary live game (see the endpoint-traps list above).
      */
     private fun state(status: String, code: Int): GameState {
         val s = status.lowercase(Locale.US)
         return when {
             s.startsWith("final") || s.contains("complete") -> GameState.FINAL
-            s.contains("in progress") || s.contains("delay") -> GameState.LIVE
+            s.contains("postponed") || s.contains("cancel") || s.contains("suspended") ||
+                s.contains("delay")
+            -> GameState.OFF
+            s.contains("in progress") -> GameState.LIVE
             s.contains("not started") || s.contains("scheduled") || s.contains("pregame") ->
                 GameState.PRE
-            s.contains("postponed") || s.contains("cancel") || s.contains("suspended") ->
-                GameState.OFF
             code == -2 -> GameState.PRE
             code == -1 -> GameState.LIVE
             code == 0 -> GameState.FINAL

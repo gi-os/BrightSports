@@ -97,6 +97,26 @@ class WpblTest {
     }
 
     @Test
+    fun `an active weather delay is off, not an ordinary live game`() {
+        // "In Progress - Weather Delay" carries both words the way "Final - Weather
+        // Delay" does, and the order the branches are checked in matters the same way
+        // in both directions: final wins when the game is actually over, and delay
+        // wins over "in progress" when it is not. Getting this backwards is what let a
+        // paused game sit in LIVE with no state change to hang a notification off —
+        // none when it stopped, and nothing to say when it started back up either.
+        val body = """
+        {"games":[{"game_id":"1","home_team_id":"a","away_team_id":"b",
+          "home_team_name":"A","away_team_name":"B","counts_in_standings":true,
+          "status":"In Progress - Weather Delay","scheduled_start":"2026-08-02T23:30:00Z",
+          "state":{"home_score":2,"away_score":1},
+          "presto_data":{"statusCode":-1,"score":{"away":"1","home":"2"}}}]}
+        """.trimIndent()
+        val g = WpblParser.parseGames(league, body, fromMillis = NOW - DAY, toMillis = NOW + DAY)
+            .single()
+        assertEquals(GameState.OFF, g.state)
+    }
+
+    @Test
     fun `the inning comes from the status string, which leads the state block`() {
         val g = window().first { it.id == "qk2oug9ikob2a1hl" }
         assertEquals(GameState.LIVE, g.state)
