@@ -88,6 +88,15 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_NOTIFY_STARTS, true)
         set(v) = sp.edit().putBoolean(KEY_NOTIFY_STARTS, v).apply()
 
+    /**
+     * Whether a score puts the box up over whatever the phone is showing (see
+     * `ScoreAlert`). Off keeps the buzz and the shade notification — the record — but
+     * never draws over the screen or wakes it. On by default.
+     */
+    var alertBoxEnabled: Boolean
+        get() = sp.getBoolean(KEY_ALERT_BOX, true)
+        set(v) = sp.edit().putBoolean(KEY_ALERT_BOX, v).apply()
+
     val effectiveDelayMillis: Long
         get() = if (delayEnabled) delayMinutes * 60_000L else 0L
 
@@ -108,5 +117,6 @@ class Prefs(context: Context) {
         private const val KEY_DELAY = "delay_minutes"
         private const val KEY_DELAY_ON = "delay_enabled"
         private const val KEY_NOTIFY_STARTS = "notify_starts"
+        private const val KEY_ALERT_BOX = "alert_box"
     }
 }

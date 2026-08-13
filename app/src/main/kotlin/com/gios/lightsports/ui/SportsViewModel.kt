@@ -155,4 +155,8 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     fun setNotifyStarts(enabled: Boolean) {
         prefs.notifyStarts = enabled
     }
+
+    fun setAlertBoxEnabled(enabled: Boolean) {
+        prefs.alertBoxEnabled = enabled
+    }
 }

@@ -9,6 +9,7 @@ import android.os.VibrationEffect
 import android.os.VibratorManager
 import android.provider.Settings
 import android.util.Log
+import com.gios.lightsports.data.Prefs
 
 /**
  * The alert side of a score: a buzz, and a box over whatever the phone is showing.
@@ -54,6 +55,12 @@ object ScoreAlert {
     fun show(context: Context, entry: PendingQueue.Entry) {
         buzz(context)
         val app = context.applicationContext
+        // The box is optional (Settings); the buzz above and the notification the
+        // caller already posted are not. One SharedPreferences read per alert.
+        if (!Prefs(app).alertBoxEnabled) {
+            Log.d(TAG, "on-screen alert off; notification only")
+            return
+        }
         if (!Settings.canDrawOverlays(app)) {
             // Expected on a phone that was never plugged into a computer; the
             // notification already went out, so this is not an error.

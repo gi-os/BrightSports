@@ -37,6 +37,7 @@ fun SettingsScreen(
 ) {
     var notify by remember { mutableStateOf(prefs.notificationsEnabled) }
     var starts by remember { mutableStateOf(prefs.notifyStarts) }
+    var alertBox by remember { mutableStateOf(prefs.alertBoxEnabled) }
     var delayOn by remember { mutableStateOf(prefs.delayEnabled) }
     var delay by remember { mutableIntStateOf(prefs.delayMinutes) }
     val scroll = rememberScrollState()
@@ -72,6 +73,17 @@ fun SettingsScreen(
             onClick = {
                 starts = !starts
                 vm.setNotifyStarts(starts)
+            },
+        )
+        Rule()
+        MenuRow(
+            label = "On-screen alert",
+            detail = if (alertBox) "[ ON ]" else "OFF",
+            sub = "The box over the screen when a score lands. Off keeps the buzz " +
+                "and the notification, but nothing appears over what you're doing",
+            onClick = {
+                alertBox = !alertBox
+                vm.setAlertBoxEnabled(alertBox)
             },
         )
         Rule()
