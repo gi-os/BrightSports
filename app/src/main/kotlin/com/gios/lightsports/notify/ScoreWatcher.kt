@@ -39,6 +39,9 @@ object ScoreWatcher {
     /** Wake up this far before a scheduled start so the tip-off alert is on time. */
     private const val LEAD = 15L * 60 * 1000
 
+    /** How long a game's notification stays in the shade after the game ends. */
+    private const val CLEANUP_DELAY = 60L * 60 * 1000
+
     // ------------------------------------------------------------- scheduling
 
     private fun pendingIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
@@ -85,6 +88,7 @@ object ScoreWatcher {
     fun poll(context: Context) {
         val prefs = Prefs(context)
         val queue = PendingQueue(File(context.filesDir, "pending.json"))
+        val janitor = Janitor(File(context.filesDir, "cleanup.json"))
 
         if (!prefs.notificationsEnabled || prefs.follows.isEmpty()) {
             queue.clear()
@@ -119,6 +123,13 @@ object ScoreWatcher {
                 markedPeriod = was?.markedPeriod ?: 0,
             )
             next[game.id] = snapshot
+            // Scheduled on the FINAL *transition*, before the silence filter: the
+            // lingering card might be an earlier score alert from before the team
+            // was silenced, and it should still leave the shade an hour after the
+            // game ends. Cancelling a notification that never existed is a no-op.
+            if (was != null && was.state != GameState.FINAL && snapshot.state == GameState.FINAL) {
+                janitor.schedule(game.id, now + CLEANUP_DELAY)
+            }
             if (!game.involves(notifyKeys)) continue
             val alerts = ScoreDiff.alerts(
                 prev = was,
@@ -156,6 +167,9 @@ object ScoreWatcher {
             val snapshot = ScoreDiff.Snapshot(key, race.leagueId, race.state, null, null, 0)
             next[key] = snapshot
             val prev = previous[key]
+            if (prev != null && prev.state != GameState.FINAL && race.state == GameState.FINAL) {
+                janitor.schedule(key, now + CLEANUP_DELAY)
+            }
             if ("${race.leagueId}:series" !in notifyKeys) continue
             if (prev != null && prev.state != GameState.FINAL && race.state == GameState.FINAL) {
                 newEntries += PendingQueue.Entry(
@@ -175,7 +189,16 @@ object ScoreWatcher {
         queue.add(newEntries)
 
         val (due, waiting) = queue.takeDue(now)
-        for (entry in due) Notifier.post(context, entry)
+        for (entry in due) {
+            Notifier.post(context, entry)
+            // A FINAL held back by the spoiler delay can post after the hour the
+            // transition started; rescheduling from the post gives the card its
+            // full hour in the shade either way.
+            if (entry.kind == ScoreDiff.Kind.FINAL) {
+                janitor.schedule(entry.gameId, now + CLEANUP_DELAY)
+            }
+        }
+        janitor.sweep(context, now)
 
         val scheduleWake = Feed.nextWakeMillis(
             games = games,
@@ -185,7 +208,11 @@ object ScoreWatcher {
             idleIntervalMillis = IDLE_INTERVAL,
         )
         val queueWake = waiting.minOfOrNull { it.dueAt }
-        armAt(context, minOf(scheduleWake, queueWake ?: Long.MAX_VALUE))
+        val cleanupWake = janitor.nextDue()
+        armAt(
+            context,
+            minOf(scheduleWake, queueWake ?: Long.MAX_VALUE, cleanupWake ?: Long.MAX_VALUE),
+        )
     }
 
     // ----------------------------------------------------------------- store
