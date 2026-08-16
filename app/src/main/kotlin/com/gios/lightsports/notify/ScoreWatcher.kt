@@ -159,7 +159,11 @@ object ScoreWatcher {
                 soonSent = was?.soonSent == true,
                 markedPeriod = was?.markedPeriod ?: 0,
             )
-            next[game.id] = snapshot
+            // **Advanced rather than stored raw.** The delay debounce counts consecutive OFF polls,
+            // and the poll that increments that count is by definition one that produces no alert —
+            // so storing the raw snapshot here would reset the count on every quiet poll and it
+            // would never reach the threshold.
+            next[game.id] = ScoreDiff.advanced(was, snapshot)
             // Scheduled on the FINAL *transition*, before the silence filter: the
             // lingering card might be an earlier score alert from before the team
             // was silenced, and it should still leave the shade an hour after the
@@ -291,6 +295,11 @@ object ScoreWatcher {
                     startMillis = o.optLong("start"),
                     soonSent = o.optBoolean("soon"),
                     markedPeriod = o.optInt("marked"),
+                    // Persisted, and it has to be: the alarm path detects a delay in a broadcast
+                    // receiver that dies seconds later, so a counter held only in memory would
+                    // start again from zero at every poll and never confirm anything.
+                    offPolls = o.optInt("offPolls"),
+                    offAnnounced = o.optBoolean("offSaid"),
                 )
             }
             return out
@@ -306,6 +315,8 @@ object ScoreWatcher {
                     .put("start", s.startMillis)
                     .put("soon", s.soonSent)
                     .put("marked", s.markedPeriod)
+                    .put("offPolls", s.offPolls)
+                    .put("offSaid", s.offAnnounced)
                 if (s.home != null) o.put("home", s.home)
                 if (s.away != null) o.put("away", s.away)
                 root.put(key, o)

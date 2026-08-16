@@ -2,7 +2,7 @@
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
-`com.gios.lightsports`. Current released version: **v1.18**.
+`com.gios.lightsports`. Current released version: **v1.19**.
 
 ## Install via BrightMarket
 
@@ -369,6 +369,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.19 | A delay has to hold for two polls before it interrupts, so a replay review stops buzzing twice |
 | v1.18 | Poll every 30–60s during a game, on a foreground service, instead of Doze's nine-minute floor |
 | v1.17 | Notifications clear an hour after the game ends |
 | v1.16 | The on-screen alert box can be turned off |

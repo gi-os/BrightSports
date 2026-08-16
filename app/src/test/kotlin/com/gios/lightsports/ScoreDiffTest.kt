@@ -329,11 +329,35 @@ class ScoreDiffTest {
         )
     }
 
+    /**
+     * A run of polls, threaded exactly the way `ScoreWatcher` threads them: the snapshot an alert
+     * carries is stored when there is one, [ScoreDiff.advanced] when there is not.
+     *
+     * Needed because the delay debounce is the one piece of state that moves on a *silent* poll, so
+     * comparing two snapshots in isolation cannot see it at all.
+     */
+    /** "This poll said nothing", typed, because a bare emptyList() cannot be inferred here. */
+    private val quiet = emptyList<ScoreDiff.Kind>()
+
+    private fun run(
+        first: ScoreDiff.Snapshot,
+        vararg rest: ScoreDiff.Snapshot,
+    ): List<List<ScoreDiff.Kind>> {
+        var prev = first
+        return rest.map { now ->
+            val alerts = ScoreDiff.alerts(prev, now, Loudness.EVERY_SCORE, notifyStarts = true)
+            prev = alerts.firstOrNull()?.snapshot ?: ScoreDiff.advanced(prev, now)
+            alerts.map { it.kind }
+        }
+    }
+
     @Test
-    fun `a postponement is reported`() {
+    fun `a postponement is reported, once it has held`() {
+        val pre = snap(GameState.PRE, 0, 0)
+        val off = snap(GameState.OFF, 0, 0)
         assertEquals(
-            listOf(ScoreDiff.Kind.OFF),
-            kinds(snap(GameState.PRE, 0, 0), snap(GameState.OFF, 0, 0)),
+            listOf(quiet, listOf(ScoreDiff.Kind.OFF), quiet),
+            run(pre, off, off, off),
         )
     }
 
@@ -341,21 +365,40 @@ class ScoreDiffTest {
     fun `a delay is reported once and stays silent while it drags on`() {
         // The exact complaint this covers: a game stuck in a rain delay for forty
         // minutes must not repeat the same "delayed" notification every poll.
+        val live = snap(GameState.LIVE, 2, 1, period = 5)
+        val off = snap(GameState.OFF, 2, 1, period = 5)
         assertEquals(
-            listOf(ScoreDiff.Kind.OFF),
-            kinds(snap(GameState.LIVE, 2, 1, period = 5), snap(GameState.OFF, 2, 1, period = 5)),
+            listOf(quiet, listOf(ScoreDiff.Kind.OFF), quiet, quiet),
+            run(live, off, off, off, off),
         )
-        assertTrue(
-            kinds(snap(GameState.OFF, 2, 1, period = 5), snap(GameState.OFF, 2, 1, period = 5))
-                .isEmpty(),
-        )
+    }
+
+    /**
+     * **The fault this debounce exists for.** ESPN's delay and suspension names ride on top of an
+     * ordinary live game, and baseball throws them constantly — a replay review, a pitching change,
+     * ninety seconds of tarp. Since v1.18 polls every thirty to sixty seconds rather than every two
+     * to nine minutes, those blips started being caught, and each one was two buzzes: "delayed",
+     * then "back on", in an inning where nobody had scored.
+     */
+    @Test
+    fun `a delay that clears before it is confirmed is never mentioned`() {
+        val live = snap(GameState.LIVE, 2, 1, period = 5)
+        val off = snap(GameState.OFF, 2, 1, period = 5)
+        assertEquals(listOf(quiet, quiet), run(live, off, live))
     }
 
     @Test
     fun `play resuming after a delay is its own one-time alert`() {
+        val live = snap(GameState.LIVE, 2, 1, period = 5)
+        val off = snap(GameState.OFF, 2, 1, period = 5)
         assertEquals(
-            listOf(ScoreDiff.Kind.RESUMED),
-            kinds(snap(GameState.OFF, 2, 1, period = 5), snap(GameState.LIVE, 2, 1, period = 5)),
+            listOf(
+                quiet,
+                listOf(ScoreDiff.Kind.OFF),
+                listOf(ScoreDiff.Kind.RESUMED),
+                quiet,
+            ),
+            run(live, off, off, live, live),
         )
     }
 
@@ -368,7 +411,24 @@ class ScoreDiffTest {
         // stable, unchanging OFF that must stay silent, not a returning one.
         val off = snap(GameState.OFF, 0, 0)
         val pre = snap(GameState.PRE, 0, 0)
-        assertEquals(listOf(ScoreDiff.Kind.OFF), kinds(pre, off))
-        assertTrue(kinds(off, off).isEmpty())
+        assertEquals(
+            listOf(
+                quiet,
+                listOf(ScoreDiff.Kind.OFF),
+                quiet,
+                quiet,
+                listOf(ScoreDiff.Kind.OFF),
+            ),
+            run(pre, off, off, pre, off, off),
+        )
+    }
+
+    /** A run is never held back by any of this. Only the delay pair is debounced. */
+    @Test
+    fun `the debounce does not touch scoring`() {
+        assertEquals(
+            listOf(listOf(ScoreDiff.Kind.SCORE)),
+            run(snap(GameState.LIVE, 2, 1, period = 5), snap(GameState.LIVE, 3, 1, period = 5)),
+        )
     }
 }

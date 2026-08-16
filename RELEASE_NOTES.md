@@ -1,47 +1,38 @@
-## BrightSports v1.18 — Scores while the game is still on
+## BrightSports v1.19 — a delay has to mean it before it interrupts you
 
-**During a game the app now checks every 30 to 60 seconds instead of every nine minutes.**
+**The phone was buzzing during innings where nothing happened.** Twice, usually: "delayed", then
+"back on", a minute apart, in the middle of a baseball game nobody had scored in.
 
-The old delay was not the two-minute interval the code said it was. Background polling runs
-on `setAndAllowWhileIdle`, the one alarm that fires while the phone is asleep, and the
-system throttles that to roughly one firing every nine minutes once the screen has been off
-a while. So the interval was two minutes on paper and nine in a pocket, and the spoiler
-delay stacked on top of it: a run scored to open an inning could land on the phone after
-the inning had ended. Settings said so out loud, which made it honest but no faster.
+Nothing was wrong with the score logic. Baseball has never marked innings — `markPeriods` is false
+for MLB and all four MiLB levels and always has been — and a score alert needs a run to actually
+change. The buzzes were the delay pair, and v1.18 is what let them through.
 
-A foreground service is not throttled. So the alarm chain still keeps the schedule, and the
-moment a followed team is actually playing, a service takes over and polls properly. It
-stops itself at the final whistle. Nothing changes on an evening with no games: still one
-check every three hours, still one fifteen minutes before the next start.
+ESPN does not report a delay as its own state. It rides on top of an ordinary live game: `state:
+"in"`, `completed: false`, and a *name* of `STATUS_RAIN_DELAY` or `STATUS_DELAYED`. Anything
+carrying one of those names reads as OFF, which is right — it is how a rain delay gets announced at
+all. What changed is how often the app looks. Until v1.18 background polling sat on Doze's
+nine-minute floor, so a delay lasting ninety seconds was invisible: the game was live at one poll
+and live at the next, and nothing was ever said. v1.18 dropped that to thirty to sixty seconds
+during a live game, and baseball generates these constantly — a replay review, a pitching change, a
+groundskeeper on the tarp. Each one now landed squarely inside a poll interval, and each one was
+two notifications about nothing.
 
-The cadence is tiered rather than flat, because a poll is the expensive thing — a cold
-radio, two or three fetches, a wakelock. A minute apart during an ordinary game. Thirty
-seconds when one is close and late: past regulation always counts, and inside regulation
-what counts as close is per sport, since one goal in the third period is the whole sport
-and six runs in the ninth is over. Up to five minutes while waiting on a first pitch that
-has not happened yet, closing in as the scheduled time arrives — a start time is a plan,
-not a promise.
+**A delay now has to survive two consecutive polls before it is worth interrupting for.** The first
+sighting is recorded and nothing is said. If it is still there on the next poll it is announced
+exactly as before; if it has cleared, neither half ever fires — no "delayed", and no "back on"
+either, because the end of something you were never told about is not news.
 
-A foreground service has to show a card, so the card was made worth having: it carries the
-live score for as long as the game runs, and goes when it ends. **Unless the spoiler delay
-is on** — then it shows the matchup and the period and no score at all. The entire point of
-that setting is that the phone must not get ahead of a stream running two minutes behind,
-and a card sitting in the shade with the current score on it would walk straight through
-it.
+That last part is why this is two pieces of state rather than a counter. "Resumed" is keyed on
+whether the delay was actually *announced*, not on the previous state, so a blip cannot leave an
+orphaned all-clear behind it. Both are written to the snapshot file, because the alarm path detects
+a delay inside a broadcast receiver that dies seconds later — a count held in memory would restart
+at zero on every poll and never confirm anything. For the same reason the watcher now stores the
+*advanced* snapshot rather than the raw one: the poll that increments this count is, by definition,
+the poll that stays silent, and the old code only wrote back a snapshot when something had fired.
 
-Three things stop it being a battery leak. It only runs for games that are allowed to
-interrupt, so a team you have silenced never raises it. It gives up after six hours and
-hands back to the alarms — a provider leaving a game stuck at LIVE is not hypothetical
-here, ESPN did it to two Grands Prix for a whole season. And the wakelock is held across
-the fetch only, never across a sleep.
+The threshold costs a real rain delay one poll of lateness, which during a live game is thirty to
+sixty seconds. That is the right way round: the fault is a phone buzzing about nothing, and a rain
+delay is still a rain delay a minute later. Scores, finals, starts and period marks are untouched —
+only the delay pair waits.
 
-Handing over works in both directions. While the service is up, the alarm stops fetching
-and just keeps a fifteen-minute backstop in the diary, so a service the system kills for
-memory is picked up rather than lost; and however the service dies, the last thing it does
-is re-arm the alarm. The slow path is still there underneath, unchanged, which is what
-makes the fast one safe to attempt: Android refuses background foreground-service starts
-outside a short list of exemptions, and a refusal here is logged and ignored, not crashed
-on.
-
-**Live updates** in Settings turns the whole thing off and puts the app back on alarms
-alone, card and all.
+Reported by Giovanni: baseball notifications arriving for innings with no runs in them.

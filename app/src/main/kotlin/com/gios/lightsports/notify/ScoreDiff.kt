@@ -37,7 +37,39 @@ object ScoreDiff {
          * reminders for one kickoff.
          */
         val soonSent: Boolean = false,
+        /**
+         * How many polls in a row this game has read as [GameState.OFF].
+         *
+         * The provider's delay and suspension names ride on top of an ordinary live game — see
+         * `EspnParser.state` — and baseball produces them constantly: a replay review, a pitching
+         * change, a groundskeeper on the tarp for ninety seconds. Every one of those is a delay for
+         * exactly as long as it takes to clear, and announcing on the first sighting turned each of
+         * them into two buzzes with no run scored between them.
+         *
+         * Counted rather than timed because a poll is the only clock this has. See [OFF_CONFIRM].
+         */
+        val offPolls: Int = 0,
+        /**
+         * Whether the delay was actually announced.
+         *
+         * The other half of the debounce: "back on" is only news if "off" was, so a blip that
+         * cleared before it was ever mentioned must not produce a [Kind.RESUMED] either.
+         */
+        val offAnnounced: Boolean = false,
     )
+
+    /**
+     * How many consecutive polls a delay has to survive before it is worth interrupting for.
+     *
+     * Two, which the live ticker turns into roughly one to two minutes — long enough that a review
+     * or a pitching change is gone before it counts, short enough that a real rain delay is still
+     * news while it matters. A genuine suspension lasts an hour and does not care about the wait.
+     *
+     * The alarm chain polls far slower, so on a build the ticker cannot run on this is a longer wait
+     * for the same certainty. That is the right way round: the fault being fixed is a phone buzzing
+     * about nothing, and the cost of it is being told about a real rain delay one poll late.
+     */
+    const val OFF_CONFIRM = 2
 
     /**
      * The period that has just ended, or null if none has.
@@ -92,6 +124,25 @@ object ScoreDiff {
         return "HALFTIME" in name || text == "ht" || text == "half" || text == "halftime"
     }
 
+    /**
+     * The snapshot to store, whether or not anything was worth announcing.
+     *
+     * **Separate from [alerts] because the delay counter has to advance on a quiet poll.** Every
+     * other "already said that" marker only ever changes on a poll that produced an alert, so
+     * `ScoreWatcher` could store the alert's snapshot and be done. A count of consecutive OFF polls
+     * is the opposite: the poll that increments it is precisely the one that stays silent, and a
+     * counter reset by every quiet poll would never reach two.
+     */
+    fun advanced(prev: Snapshot?, now: Snapshot): Snapshot {
+        if (prev == null) return now
+        if (now.state != GameState.OFF) return now.copy(offPolls = 0, offAnnounced = false)
+        val polls = prev.offPolls + 1
+        return now.copy(
+            offPolls = polls,
+            offAnnounced = prev.offAnnounced || polls >= OFF_CONFIRM,
+        )
+    }
+
     fun snapshot(game: Game, soonSent: Boolean = false, markedPeriod: Int = 0) = Snapshot(
         gameId = game.id,
         leagueId = game.leagueId,
@@ -138,8 +189,21 @@ object ScoreDiff {
             nowMillis >= now.startMillis - leadMillis &&
             nowMillis < now.startMillis
 
+        // Advanced before anything can return early, because the poll that confirms a delay is by
+        // definition one where the state has not changed — and that is the branch below that used
+        // to return without looking at anything.
+        val moved = advanced(prev, now)
+        // Announced on the poll that reaches the threshold, and only that one.
+        val announceOff = moved.state == GameState.OFF &&
+            moved.offAnnounced &&
+            !prev.offAnnounced
+
         if (prev.state == now.state && prev.state != GameState.LIVE) {
-            return if (soon) listOf(Alert(Kind.SOON, now.copy(soonSent = true))) else emptyList()
+            val quiet = mutableListOf<Kind>()
+            if (soon) quiet += Kind.SOON
+            if (announceOff) quiet += Kind.OFF
+            val held = moved.copy(soonSent = soon || moved.soonSent)
+            return quiet.map { Alert(it, held) }
         }
 
         val out = mutableListOf<Kind>()
@@ -148,14 +212,18 @@ object ScoreDiff {
         if (prev.state == GameState.PRE && now.state == GameState.LIVE && notifyStarts) {
             out += Kind.START
         }
-        if (now.state == GameState.OFF && prev.state != GameState.OFF) {
+        if (announceOff) {
             out += Kind.OFF
         }
         // The other half of the pair above: a delay or suspension clearing, reported
         // exactly once. Without this the only signal a postponed-or-delayed game ever
         // gives again is silence — nothing distinguishes "still delayed" from "back on
         // and nobody said so."
-        if (prev.state == GameState.OFF && now.state == GameState.LIVE) {
+        //
+        // Keyed on whether the delay was ever *announced* rather than on the previous state, so a
+        // blip that cleared before it was worth mentioning does not come back as "resumed" — which
+        // would be a buzz about the end of something you were never told had started.
+        if (prev.offAnnounced && now.state == GameState.LIVE) {
             out += Kind.RESUMED
         }
         var marked = prev.markedPeriod
@@ -176,9 +244,9 @@ object ScoreDiff {
         if (now.state == GameState.FINAL && prev.state != GameState.FINAL) {
             out += Kind.FINAL
         }
-        // The snapshot the caller stores carries both bits of "already said that" — the
-        // pre-game nudge and the last period marked.
-        val stored = now.copy(soonSent = soon || now.soonSent, markedPeriod = marked)
+        // The snapshot the caller stores carries every bit of "already said that" — the pre-game
+        // nudge, the last period marked, and how long this delay has been going on.
+        val stored = moved.copy(soonSent = soon || moved.soonSent, markedPeriod = marked)
         return out.map { Alert(it, stored) }
     }
 
