@@ -7,6 +7,15 @@
     <!-- Alarms are re-armed after a reboot; nothing else survives one. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The live ticker. A foreground service is the only scheduling mechanism on this
+         phone that Doze does not throttle to a nine-minute floor, which is what makes a
+         30-60 second poll during a game possible at all. specialUse rather than dataSync
+         because dataSync is capped at six hours a day from API 35 and a Saturday of
+         college football is longer than that; the ticker caps itself instead, in
+         TickerPlan.MAX_RUNTIME. The wakelock is held across the fetch only. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Not for drawing over other apps as such: on Android 14 this appop is also what
          exempts the app from background-activity-start restrictions, which is the only
          way a sideloaded app gets the box up while the screen is off. Granted by adb,
@@ -56,6 +65,17 @@
                 <action android:name="com.gios.lightsports.POLL" />
             </intent-filter>
         </receiver>
+
+        <!-- Runs only while a followed team is actually playing, and stops itself at the
+             final whistle. See LiveTicker. -->
+        <service
+            android:name=".notify.LiveTicker"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Polls a live sports scoreboard every 30-60 seconds while a followed game is in progress, and stops when it ends." />
+        </service>
 
         <receiver
             android:name=".notify.BootReceiver"

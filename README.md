@@ -2,7 +2,7 @@
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
-`com.gios.lightsports`. Current released version: **v1.10.18**.
+`com.gios.lightsports`. Current released version: **v1.18**.
 
 ## Install via BrightMarket
 
@@ -109,7 +109,7 @@ Twenty-two leagues, four **keyless** public JSON providers — no account, no ke
    its table in the browser from finished games, so `WpblParser.standings` does the same
    over the same `counts_in_standings` flag. Line score, hits and errors are a separate
    ~35 KB request per game and are deliberately not fetched: the notification poll runs
-   every two minutes and shares this code path.
+   as often as every 30 seconds during a game and shares this code path.
 5. **ESPN leaves `completed:false` on F1 sessions of race weekends that finished months
    ago** — Bahrain and Saudi Arabia 2026 both do. Keying race state off that flag pinned
    both Grands Prix to LIVE at the top of the feed for the rest of the season. Fix: read
@@ -244,12 +244,52 @@ A pre-game nudge fires 15 minutes before a followed team's kickoff — the only 
 fires with nothing changed, so it's guarded by a flag persisted on the snapshot rather
 than a state transition (the lead window spans 7-8 polls).
 
-Runs on `AlarmManager.setAndAllowWhileIdle` — the only alarm that survives Doze, and its
-firing is what grants the short network window the poll needs. No repeating form exists,
-so each firing arms the next; both boot and app launch re-arm the chain, since a
-force-stop cancels every alarm an app owns. Expect roughly a 9-minute floor between checks
-once the screen's been off a while; `adb shell dumpsys deviceidle whitelist
-+com.gios.lightsports` removes the throttle.
+### Two clocks: the alarm chain, and the ticker
+
+Between games the app runs on `AlarmManager.setAndAllowWhileIdle` — the only alarm that
+survives Doze, and its firing is what grants the short network window the poll needs. No
+repeating form exists, so each firing arms the next; both boot and app launch re-arm the
+chain, since a force-stop cancels every alarm an app owns. Idle, that means a check every
+three hours, and one 15 minutes before the next scheduled start.
+
+That mechanism has a hard floor: the system throttles allow-while-idle alarms to roughly
+one firing every nine minutes once the screen's been off a while. The two-minute live
+interval was therefore two minutes on paper and nine in a pocket, and the spoiler delay
+stacked on top — a run could arrive after the inning it was scored in had ended.
+
+So the moment a followed, unsilenced team is actually playing, a foreground service
+(`notify/LiveTicker.kt`) takes the wheel. Foreground services aren't throttled, so it
+polls on `notify/TickerPlan.kt`'s cadence instead: **60s** during a game, **30s** when one
+is close and late (past regulation always counts; inside regulation the margin that counts
+as close is per sport — one goal in hockey, six points in basketball, two runs in
+baseball), and up to **5 min** while waiting on a first pitch that hasn't happened yet. It
+stops itself at the final whistle and hands the chain back, so an evening with nothing on
+costs exactly what it did before.
+
+Three things keep that from being a battery leak. It only runs for games that are allowed
+to alert, so a silenced team never raises it. It caps itself at six hours
+(`TickerPlan.MAX_RUNTIME`) — a provider that leaves a game stuck in `LIVE` is not
+hypothetical, see trap 5 — and hands back to alarms when the cap trips. And the wakelock
+is held across the fetch only, ~45s ceiling, never across a sleep.
+
+Handoff, both ways: `PollReceiver` skips its own fetch while the ticker is up and just
+re-arms a 15-minute backstop, so a service killed for memory is picked up rather than lost;
+`LiveTicker.onDestroy` always re-arms the alarm, whatever killed it. The service is started
+from the app's own refresh wherever possible — opening the app during a game is the one
+moment a foreground service start is unconditionally allowed, since Android 12 refuses
+background starts outside a short exemption list; the alarm's attempt is the fallback, and
+a refusal is logged and ignored rather than crashed on. `specialUse`, not `dataSync`: the
+latter is capped at six hours a day from API 35 and a Saturday of college football is
+longer than that.
+
+The card the service runs under carries the live score — **unless the spoiler delay is
+on**, in which case it carries the matchup and the period and nothing that would give the
+game away. A card in the shade with the score on it would walk straight through the one
+setting whose whole purpose is that the phone must not get ahead of the stream.
+
+Live updates can be turned off in Settings, which puts the app back on alarms alone.
+`adb shell dumpsys deviceidle whitelist +com.gios.lightsports` also removes the throttle,
+if you'd rather have no card at all.
 
 ## The wheel
 
@@ -329,6 +369,9 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.18 | Poll every 30–60s during a game, on a foreground service, instead of Doze's nine-minute floor |
+| v1.17 | Notifications clear an hour after the game ends |
+| v1.16 | The on-screen alert box can be turned off |
 | v1.12.24 | Add the big-five European soccer leagues, both UEFA cups, and FBS college football |
 | v1.13.25 | Stop repeating a delay notification, and say when the game is back |
 | v1.14.26 | Fix the WPBL's own version of the same delay bug |

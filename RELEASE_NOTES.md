@@ -1,30 +1,47 @@
-## LightSports v1.11 — Shake the phone to report a bug
+## BrightSports v1.18 — Scores while the game is still on
 
-**LightSports can now file its own bug reports, and you can say what went wrong in your own words.**
+**During a game the app now checks every 30 to 60 seconds instead of every nine minutes.**
 
-Until now only Roll, Notebook and Phono could do this. Every other app on the phone failed
-silently: you would notice something wrong on the subway, have nowhere to put it, and have
-forgotten it by the time you were near a computer. This is the same feature, ported.
+The old delay was not the two-minute interval the code said it was. Background polling runs
+on `setAndAllowWhileIdle`, the one alarm that fires while the phone is asleep, and the
+system throttles that to roughly one firing every nine minutes once the screen has been off
+a while. So the interval was two minutes on paper and nine in a pocket, and the spoiler
+delay stacked on top of it: a run scored to open an inning could land on the phone after
+the inning had ended. Settings said so out loud, which made it honest but no faster.
 
-Shake the phone twice — there and back, twice — and a sheet comes up. Pick what happened from
-five chips, and add a note if you have something to add. The note is optional but it is the part
-that carries anything: "Something looks wrong" is a shrug, and what you type becomes the title of
-the issue. Under it the report carries the screen you were on, the app and firmware versions,
-free space, heap, and the stack trace if the app died the last time you had it open.
+A foreground service is not throttled. So the alarm chain still keeps the schedule, and the
+moment a followed team is actually playing, a service takes over and polls properly. It
+stops itself at the final whistle. Nothing changes on an evening with no games: still one
+check every three hours, still one fifteen minutes before the next start.
 
-Three things raise the sheet. A shake, because you noticed something. A crash last run, asked
-once on the next launch, because that is the only moment the stack trace is still worth anything.
-And a failure the app noticed by itself — those are the reports that otherwise never get filed,
-because a screen that quietly came back empty looks ordinary.
+The cadence is tiered rather than flat, because a poll is the expensive thing — a cold
+radio, two or three fetches, a wakelock. A minute apart during an ordinary game. Thirty
+seconds when one is close and late: past regulation always counts, and inside regulation
+what counts as close is per sport, since one goal in the third period is the whole sport
+and six runs in the ninth is over. Up to five minutes while waiting on a first pitch that
+has not happened yet, closing in as the scheduled time arrives — a start time is a plan,
+not a promise.
 
-Reports queue on disk before anything is sent, always. A phone that reports a freeze is by
-definition a phone that was just misbehaving, and a report that exists only in flight is the one
-report guaranteed to be lost. If there is no network, or this build has no reporting key, it
-waits on the phone until a build that does installs over it.
+A foreground service has to show a card, so the card was made worth having: it carries the
+live score for as long as the game runs, and goes when it ends. **Unless the spoiler delay
+is on** — then it shows the matchup and the period and no score at all. The entire point of
+that setting is that the phone must not get ahead of a stream running two minutes behind,
+and a card sitting in the shade with the current score on it would walk straight through
+it.
 
-The gesture is tuned to be hard to trigger by accident: it counts reversals rather than force,
-because setting the phone down hard clears any threshold a shake clears, but only a shake
-*reverses*. Walking never fires it. That arithmetic now has unit tests in every app that has the
-feature.
+Three things stop it being a battery leak. It only runs for games that are allowed to
+interrupt, so a team you have silenced never raises it. It gives up after six hours and
+hands back to the alarms — a provider leaving a game stuck at LIVE is not hypothetical
+here, ESPN did it to two Grands Prix for a whole season. And the wakelock is held across
+the fetch only, never across a sleep.
 
-The accelerometer only runs while you are looking at the app.
+Handing over works in both directions. While the service is up, the alarm stops fetching
+and just keeps a fifteen-minute backstop in the diary, so a service the system kills for
+memory is picked up rather than lost; and however the service dies, the last thing it does
+is re-arm the alarm. The slow path is still there underneath, unchanged, which is what
+makes the fast one safe to attempt: Android refuses background foreground-service starts
+outside a short list of exemptions, and a refusal here is logged and ignored, not crashed
+on.
+
+**Live updates** in Settings turns the whole thing off and puts the app back on alarms
+alone, card and all.

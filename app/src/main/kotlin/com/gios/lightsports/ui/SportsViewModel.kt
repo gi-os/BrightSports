@@ -12,7 +12,9 @@ import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
+import com.gios.lightsports.notify.LiveTicker
 import com.gios.lightsports.notify.ScoreWatcher
+import com.gios.lightsports.notify.TickerPlan
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -75,7 +77,30 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 // and worth saying so rather than showing a bare "no games".
                 offline = prefs.follows.isNotEmpty() && games.isEmpty() && races.isEmpty(),
             )
+            syncTicker(games)
         }
+    }
+
+    /**
+     * Start the ticker off the back of a refresh, if there is something to tick for.
+     *
+     * Opening the app during a game is both the commonest way to find out one is on and
+     * the one moment a foreground service is unconditionally allowed to start — from the
+     * background, Android 12 onwards refuses outside a short list of exemptions. So the
+     * screen the user is already looking at does the honours, and the alarm chain's
+     * attempt is the fallback rather than the other way round.
+     */
+    private fun syncTicker(games: List<Game> = _feed.value.games) {
+        val app = getApplication<Application>()
+        val watched = games.filter { it.involves(prefs.notifyKeys) }
+        val wanted = prefs.notificationsEnabled && prefs.liveUpdatesEnabled &&
+            TickerPlan.shouldRun(watched, System.currentTimeMillis(), ScoreWatcher.LEAD)
+        // Only ever started from here, never stopped: a refresh that came back empty
+        // because the train went into a tunnel looks identical to a game having ended,
+        // and pulling the service down on the strength of that would leave the rest of
+        // the game on the nine-minute floor. The ticker's own poll ends it, and the
+        // settings below stop it outright when the user actually says so.
+        if (wanted) LiveTicker.start(app)
     }
 
     fun loadTeams(league: League) {
@@ -111,6 +136,13 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     fun toggleMute(key: String) {
         prefs.toggleMute(key)
         _muted.value = prefs.muted
+        // Silencing the only live team should take its card down with it; unsilencing
+        // one mid-game should put it up.
+        if (prefs.muted.isEmpty() || _feed.value.games.any { it.involves(prefs.notifyKeys) }) {
+            syncTicker()
+        } else {
+            LiveTicker.stop(getApplication())
+        }
     }
 
     fun gameById(id: String): Game? = _feed.value.games.firstOrNull { it.id == id }
@@ -140,8 +172,19 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setNotificationsEnabled(enabled: Boolean) {
         prefs.notificationsEnabled = enabled
-        if (enabled) ScoreWatcher.ensureArmed(getApplication())
-        else ScoreWatcher.cancel(getApplication())
+        if (enabled) {
+            ScoreWatcher.ensureArmed(getApplication())
+            syncTicker()
+        } else {
+            ScoreWatcher.cancel(getApplication())
+            LiveTicker.stop(getApplication())
+        }
+    }
+
+    fun setLiveUpdatesEnabled(enabled: Boolean) {
+        prefs.liveUpdatesEnabled = enabled
+        // Turning it off should clear the card now, not at the end of the game.
+        if (enabled) syncTicker() else LiveTicker.stop(getApplication())
     }
 
     fun setDelayEnabled(enabled: Boolean) {

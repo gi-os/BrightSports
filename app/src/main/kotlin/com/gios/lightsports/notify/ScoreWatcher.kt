@@ -30,14 +30,22 @@ object ScoreWatcher {
     private const val TAG = "ScoreWatcher"
     const val ACTION_POLL = "com.gios.lightsports.POLL"
 
-    /** While a followed game is live. Doze throttles idle alarms to ~9 min anyway. */
+    /**
+     * While a followed game is live — and, in practice, a floor rather than an interval:
+     * Doze throttles allow-while-idle alarms to roughly one firing every nine minutes.
+     * That is what [LiveTicker] exists to get out from under; this is what the app falls
+     * back to when the service cannot run.
+     */
     private const val LIVE_INTERVAL = 2L * 60 * 1000
 
     /** Nothing live: the longest the app will go without checking the schedule. */
     private const val IDLE_INTERVAL = 3L * 60 * 60 * 1000
 
-    /** Wake up this far before a scheduled start so the tip-off alert is on time. */
-    private const val LEAD = 15L * 60 * 1000
+    /**
+     * Wake up this far before a scheduled start so the tip-off alert is on time, and the
+     * width of the window the live ticker treats as "something is about to happen".
+     */
+    const val LEAD = 15L * 60 * 1000
 
     /** How long a game's notification stays in the shade after the game ends. */
     private const val CLEANUP_DELAY = 60L * 60 * 1000
@@ -77,15 +85,39 @@ object ScoreWatcher {
         val prefs = Prefs(context)
         if (!prefs.notificationsEnabled || prefs.follows.isEmpty()) {
             cancel(context)
+            // Nothing to watch: the ticker has no business being up, and it holds a
+            // wakelock and a card in the shade until somebody says so.
+            LiveTicker.stop(context)
             return
         }
         armAt(context, System.currentTimeMillis() + LIVE_INTERVAL)
     }
 
+    /**
+     * What one poll found, for whoever asked for it.
+     *
+     * The alarm chain uses [nextWakeMillis] and ignores the rest; the ticker uses
+     * [active] to decide whether to keep going, [tickerIntervalMillis] for how long to
+     * sleep, and [lines] for the card.
+     */
+    data class Outcome(
+        /** A followed, unsilenced game is live or about to be. */
+        val active: Boolean,
+        val nextWakeMillis: Long,
+        val tickerIntervalMillis: Long,
+        val lines: List<String>,
+    )
+
     // ------------------------------------------------------------------ poll
 
-    /** Blocking. Call from a background thread that holds a wakelock. */
-    fun poll(context: Context) {
+    /**
+     * Blocking. Call from a background thread that holds a wakelock.
+     *
+     * @param armNext whether to schedule the next alarm before returning. False when the
+     * ticker is driving, since it sleeps on its own clock and a second alarm firing
+     * underneath it would poll everything twice.
+     */
+    fun poll(context: Context, armNext: Boolean = true): Outcome {
         val prefs = Prefs(context)
         val queue = PendingQueue(File(context.filesDir, "pending.json"))
         val janitor = Janitor(File(context.filesDir, "cleanup.json"))
@@ -93,7 +125,12 @@ object ScoreWatcher {
         if (!prefs.notificationsEnabled || prefs.follows.isEmpty()) {
             queue.clear()
             cancel(context)
-            return
+            return Outcome(
+                active = false,
+                nextWakeMillis = 0L,
+                tickerIntervalMillis = 0L,
+                lines = emptyList(),
+            )
         }
 
         val now = System.currentTimeMillis()
@@ -209,9 +246,25 @@ object ScoreWatcher {
         )
         val queueWake = waiting.minOfOrNull { it.dueAt }
         val cleanupWake = janitor.nextDue()
-        armAt(
-            context,
-            minOf(scheduleWake, queueWake ?: Long.MAX_VALUE, cleanupWake ?: Long.MAX_VALUE),
+        val wake = minOf(scheduleWake, queueWake ?: Long.MAX_VALUE, cleanupWake ?: Long.MAX_VALUE)
+        if (armNext) armAt(context, wake)
+
+        // Only games that are allowed to interrupt count towards running the ticker. A
+        // silenced team stays in the feed and gets its snapshot kept up to date above,
+        // but it will not put a service and a card up for a game it is never going to
+        // say anything about.
+        val watched = games.filter { it.involves(notifyKeys) }
+        val showScores = !prefs.delayEnabled
+        return Outcome(
+            active = prefs.liveUpdatesEnabled &&
+                TickerPlan.shouldRun(watched, now, LEAD),
+            nextWakeMillis = wake,
+            tickerIntervalMillis = TickerPlan.intervalMillis(watched, now) {
+                Leagues.byId(it.leagueId)?.kind
+            },
+            lines = watched.filter { it.state == GameState.LIVE }.map {
+                TickerPlan.line(it, Leagues.byId(it.leagueId)?.kind, showScores)
+            },
         )
     }
 
@@ -269,11 +322,23 @@ object ScoreWatcher {
  */
 class PollReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val pending = goAsync()
         val app = context.applicationContext
+
+        // The ticker is already polling faster than this alarm ever could. Don't fetch
+        // everything a second time — just keep an alarm in the diary, so a service the
+        // system kills for memory is picked up within the quarter hour rather than never.
+        if (LiveTicker.running) {
+            ScoreWatcher.armAt(app, System.currentTimeMillis() + LiveTicker.BACKSTOP)
+            return
+        }
+
+        val pending = goAsync()
         Thread {
             try {
-                ScoreWatcher.poll(app)
+                val outcome = ScoreWatcher.poll(app)
+                // Something is on. Hand over to the foreground service, which is not
+                // subject to the nine-minute Doze floor this alarm is.
+                if (outcome.active) LiveTicker.start(app)
             } catch (t: Throwable) {
                 Log.w("PollReceiver", "poll failed", t)
                 // Never leave the chain broken: a failed poll still arms the next one.

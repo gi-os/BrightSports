@@ -38,6 +38,7 @@ fun SettingsScreen(
     var notify by remember { mutableStateOf(prefs.notificationsEnabled) }
     var starts by remember { mutableStateOf(prefs.notifyStarts) }
     var alertBox by remember { mutableStateOf(prefs.alertBoxEnabled) }
+    var live by remember { mutableStateOf(prefs.liveUpdatesEnabled) }
     var delayOn by remember { mutableStateOf(prefs.delayEnabled) }
     var delay by remember { mutableIntStateOf(prefs.delayMinutes) }
     val scroll = rememberScrollState()
@@ -87,6 +88,18 @@ fun SettingsScreen(
             },
         )
         Rule()
+        MenuRow(
+            label = "Live updates",
+            detail = if (live) "[ ON ]" else "OFF",
+            sub = "While a followed team is playing, check every 30–60 seconds instead " +
+                "of every nine minutes. A quiet card sits in the shade for as long as " +
+                "the game does, and goes when it ends",
+            onClick = {
+                live = !live
+                vm.setLiveUpdatesEnabled(live)
+            },
+        )
+        Rule()
 
         SectionHeader("SPOILER DELAY")
         MenuRow(
@@ -131,9 +144,10 @@ fun SettingsScreen(
                 "HockeyTech for the PWHL",
         )
         Text(
-            "Background polling runs on an inexact alarm, the only kind that fires " +
-                "while the phone is asleep. Expect roughly a nine minute floor between " +
-                "checks when the screen has been off a while.",
+            "Between games the app runs on an inexact alarm, the only kind that fires " +
+                "while the phone is asleep, and the system holds those to roughly a " +
+                "nine minute floor. Live updates step around that for the couple of " +
+                "hours a game lasts; with it off, the nine minutes apply all the time.",
             style = MaterialTheme.typography.bodyMedium,
             color = Dim,
             modifier = Modifier.padding(16.dp),

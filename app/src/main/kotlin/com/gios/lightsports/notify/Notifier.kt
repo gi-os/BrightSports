@@ -21,6 +21,7 @@ object Notifier {
 
     const val CHANNEL_SCORES = "scores"
     const val CHANNEL_SCHEDULE = "schedule"
+    const val CHANNEL_LIVE = "live"
 
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -44,6 +45,59 @@ object Notifier {
                 enableVibration(false)
             },
         )
+        // IMPORTANCE_LOW: this card is the receipt for a foreground service, not news.
+        // It must be visible — that is the deal a foreground service makes — but it
+        // should never be the reason the phone lights up. The alerts do that.
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_LIVE, "Live updates", NotificationManager.IMPORTANCE_LOW,
+            ).apply {
+                description = "Shown while a followed game is in progress"
+                enableVibration(false)
+                setShowBadge(false)
+            },
+        )
+    }
+
+    /**
+     * The ongoing card the live ticker runs under.
+     *
+     * @param lines one per live game, already written by [TickerPlan.line] — which is
+     * where the decision about whether they carry a score lives.
+     */
+    fun tickerNotification(
+        context: Context,
+        title: String,
+        lines: List<String>,
+    ): Notification {
+        ensureChannels(context)
+        val tap = PendingIntent.getActivity(
+            context,
+            TICKER_REQUEST,
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        val builder = Notification.Builder(context, CHANNEL_LIVE)
+            .setSmallIcon(R.drawable.ic_stat_score)
+            .setContentTitle(lines.firstOrNull() ?: title)
+            .setContentIntent(tap)
+            .setOngoing(true)
+            // No timestamp: a card that has been up for two hours saying "2:04 PM" reads
+            // as a stale notification rather than a running one.
+            .setShowWhen(false)
+            .setOnlyAlertOnce(true)
+        // The first line is the headline; the rest only exist on a doubleheader evening.
+        if (lines.size > 1) {
+            builder.setContentText(lines.drop(1).joinToString(" · "))
+            builder.setStyle(Notification.BigTextStyle().bigText(lines.joinToString("\n")))
+        }
+        return builder.build()
+    }
+
+    /** Redraw the ticker card in place. Silent by channel, so it never re-alerts. */
+    fun updateTicker(context: Context, id: Int, lines: List<String>) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.notify(id, tickerNotification(context, "Live", lines))
     }
 
     fun post(context: Context, entry: PendingQueue.Entry) {
@@ -84,4 +138,6 @@ object Notifier {
         // failure to draw it still leaves the score in the shade.
         ScoreAlert.show(context, entry)
     }
+
+    private const val TICKER_REQUEST = 0x5D07
 }

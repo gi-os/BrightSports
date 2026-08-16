@@ -89,6 +89,18 @@ class Prefs(context: Context) {
         set(v) = sp.edit().putBoolean(KEY_NOTIFY_STARTS, v).apply()
 
     /**
+     * Whether to run the foreground ticker while a followed game is in progress.
+     *
+     * On, the app polls every 30–60 seconds during a game instead of waiting out Doze's
+     * nine-minute floor, and shows a quiet ongoing card for as long as it does. Off is
+     * the behaviour every release before this one had: alarms only, slower, and nothing
+     * in the shade between alerts.
+     */
+    var liveUpdatesEnabled: Boolean
+        get() = sp.getBoolean(KEY_LIVE_UPDATES, true)
+        set(v) = sp.edit().putBoolean(KEY_LIVE_UPDATES, v).apply()
+
+    /**
      * Whether a score puts the box up over whatever the phone is showing (see
      * `ScoreAlert`). Off keeps the buzz and the shade notification — the record — but
      * never draws over the screen or wakes it. On by default.
@@ -118,5 +130,6 @@ class Prefs(context: Context) {
         private const val KEY_DELAY_ON = "delay_enabled"
         private const val KEY_NOTIFY_STARTS = "notify_starts"
         private const val KEY_ALERT_BOX = "alert_box"
+        private const val KEY_LIVE_UPDATES = "live_updates"
     }
 }
