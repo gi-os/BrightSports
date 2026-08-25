@@ -8,3 +8,6 @@
 /captures
 .externalNativeBuild
 .cxx
+
+# The release keystore is a CI secret now, decoded at build time. Never commit it.
+keystore/*.jks

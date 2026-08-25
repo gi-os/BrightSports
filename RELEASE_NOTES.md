@@ -1,3 +1,36 @@
+## BrightSports v1.20 — a new signing key, and one reinstall to take it
+
+**You have to uninstall BrightSports and install it again.** Not an update — a full
+uninstall first. Android identifies an app by its package name *and* the certificate it was
+signed with, so a build signed with a different key is a different app as far as the phone
+is concerned. Installing this one over the old one fails with a bare `Failure: Invalid` and
+no explanation. Uninstall, then install; it is a one-time cost and no release after this one
+asks for it again.
+
+Uninstalling clears the app's data, which here means your followed teams, alert settings and
+the score snapshot the background poller keeps. Note down what you follow before you start.
+
+**Why.** The release key was committed to this repository with its password written three
+lines under it in `app/build.gradle.kts`. Anyone who cloned it could build an APK that
+Android would accept as an update to the one on your phone — which is the entire protection
+Android offers, handed out with the source. The old key is retired. The new one is a CI
+secret: the workflow decodes it at build time, `keystore/*.jks` is gitignored so a checkout
+cannot commit it back, and the certificate the release actually carries is checked against
+`signing-fingerprint.txt` before anything is published.
+
+A build without the secret — a branch check, a local clone — still compiles and still
+produces an APK. It just is not signed with the release key and will not install over one.
+That is the right way for it to fail.
+
+**Also in this build.** Every GitHub Action the workflows use is pinned to a commit SHA
+rather than a moving tag, so a retagged or compromised action cannot quietly change what
+builds your APK. `check.yml` declares read-only permissions. And the release body is these
+notes now rather than an auto-generated commit list — `RELEASE_NOTES.md` was being written
+every version and read by nothing, which is why a release this disruptive could otherwise
+have shipped with no warning on it at all.
+
+Scores, leagues, alerts and the notification janitor are untouched.
+
 ## BrightSports v1.19 — a delay has to mean it before it interrupts you
 
 **The phone was buzzing during innings where nothing happened.** Twice, usually: "delayed", then

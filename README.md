@@ -335,10 +335,12 @@ python3 scripts/generate_icon.py      # only if the launcher mark changes
 ```
 
 Every push to `main` cuts a GitHub Release — **a push is a release trigger, not a
-cosmetic action**. The APK is signed with the committed keystore
-(`keystore/lightsports.jks`), and CI fails if the certificate drifts from
+cosmetic action**. The release key is a CI secret (`KEYSTORE_B64` /
+`KEYSTORE_PASSWORD`), decoded to `keystore/lightsports.jks` at build time and gitignored
+so it cannot be committed back; CI fails if the certificate drifts from
 `signing-fingerprint.txt` (an Obtainium update otherwise dies with a bare
-`Failure: Invalid`).
+`Failure: Invalid`). A build without the secret still compiles — the release APK is just
+unsigned and will not install over a real one.
 
 **Only the pure-Kotlin sources are type-checked locally** — Compose files reach a
 compiler for the first time in CI, so a missing import survives a green local run. A grep
@@ -369,6 +371,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.20 | New signing key, no longer committed to the repo — **uninstall and reinstall once** |
 | v1.19 | A delay has to hold for two polls before it interrupts, so a replay review stops buzzing twice |
 | v1.18 | Poll every 30–60s during a game, on a foreground service, instead of Doze's nine-minute floor |
 | v1.17 | Notifications clear an hour after the game ends |
