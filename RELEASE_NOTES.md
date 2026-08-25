@@ -1,5 +1,26 @@
+## BrightSports v1.21 — the new key is withdrawn; this installs over what you have
+
+**No uninstall. This is an ordinary update.** v1.20 was signed with a brand-new certificate, which
+meant it could only be installed by removing the app first and losing followed teams, alert settings and the score snapshot.
+That cost was not worth what it bought, so it has been withdrawn. v1.21 is signed with the same
+certificate every release before v1.20 used, and it installs straight over the copy on your phone.
+
+If you already uninstalled and installed v1.20, this one will not go over it — uninstall once more
+and install v1.21, and that is the end of it.
+
+**What this does and does not fix.** The signing key is no longer committed to this repository and
+the file is gitignored, so a fresh clone does not hand it out. But it is still in this repository's
+git history and always will be, so treat it as public: anyone determined enough can still build an
+APK this phone would accept as an update. Closing that for real needs an APK Signature Scheme v3
+rotation — signing with a new key while carrying a proof-of-rotation signed by the old one, which
+Android accepts as a normal update — and that is a separate change, done carefully, not bundled in
+behind an uninstall.
+
+Everything else in v1.20 stands and is still here.
+
 ## BrightSports v1.20 — a new signing key, and one reinstall to take it
 
+**Withdrawn.** The key change described below was reverted in v1.21; see the top of this file. The rest of this release stands.
 **You have to uninstall BrightSports and install it again.** Not an update — a full
 uninstall first. Android identifies an app by its package name *and* the certificate it was
 signed with, so a build signed with a different key is a different app as far as the phone
