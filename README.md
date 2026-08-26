@@ -1,3 +1,5 @@
+<img src="docs/icon.png" alt="" width="72" align="left" />
+
 # BrightSports
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
