@@ -95,6 +95,9 @@ class MainActivity : ComponentActivity() {
         // A force-stop cancels every alarm the app owns, so launching is the reliable
         // moment to put the polling chain back.
         ScoreWatcher.ensureArmed(this)
+        // Anything whose hour is up, cleared now rather than at the next alarm. The alarm
+        // not having fired is the whole reason a stale card is still there to look at.
+        ScoreWatcher.sweepStale(this)
 
         val openGameId = intent?.getStringExtra(EXTRA_GAME_ID)
 

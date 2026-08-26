@@ -132,12 +132,15 @@ object Notifier {
 
         // One notification id per game, so a second score replaces the first rather
         // than stacking six cards for one baseball game.
-        manager.notify(entry.gameId.hashCode(), notification)
+        manager.notify(cardId(entry.gameId), notification)
 
         // The notification is the record; the box is the alert. Raised after, so a
         // failure to draw it still leaves the score in the shade.
         ScoreAlert.show(context, entry)
     }
+
+    /** The id every alert for one game shares, so a newer card replaces the older one. */
+    fun cardId(gameId: String): Int = gameId.hashCode()
 
     private const val TICKER_REQUEST = 0x5D07
 }

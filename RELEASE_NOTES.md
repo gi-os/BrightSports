@@ -1,3 +1,37 @@
+## BrightSports v1.23 — one card per game, and it leaves after an hour
+
+Two reports, one cause: a score from yesterday still on the lock screen, and two cards for the
+same match — the score, and a "starting soon" sitting next to it.
+
+**The removal was scheduled on the full-time whistle, and only if the phone saw it.** A card got a
+removal time on the one poll where the game went from live to final. Miss that poll — asleep, in
+Doze, out of signal — and nothing ever wrote one: once the game rolled out of the scoreboard
+window its snapshot went too, so the transition could never be observed again, and the card sat
+there indefinitely. A Phillies game from the day before is exactly that.
+
+**The clock now starts when a card is posted**, which needs no transition to be caught. Every later
+card for the same game pushes it out, and so does the game still being in progress — so a quiet
+second half never loses the score, and the rule ends up being the simple one: **an hour after the
+last thing worth saying.**
+
+**And the shade is now a second source of truth.** Anything in it that nothing is tracking and that
+is over an hour old gets cleared. That is what removes the cards already stuck on your phone, which
+no amount of new tracking would have reached. The live ticker's own card is excluded — it is the
+receipt for a running service, not news.
+
+**"Starting soon" goes at kickoff.** It had no way to leave: with a league set to final-only there
+is no later card to replace it, so it stayed in the shade beside the score for the whole game and
+read as two notifications about one match. It is dropped the moment the game goes live.
+
+**And it is never posted late.** Being *due* and being *still true* are different questions, and a
+phone that was asleep is the gap between them — a "starts in 15 minutes" held in the queue used to
+post on the next wake-up, announcing a game already in the second inning. Schedule alerts now carry
+an expiry: "starting soon" dies at kickoff, "they're under way" after ten minutes. A score has no
+expiry, because a score is still a score whenever you read it.
+
+**Opening the app sweeps.** A poll is what normally clears things, and a poll needs an alarm that
+fired — which is precisely what has not been happening on a phone showing yesterday's game.
+
 ## BrightSports v1.22 — one box for a goal, not two
 
 BrightControl v3.65 grew a heads-up box of its own. It reads the shade and puts the same box over

@@ -50,6 +50,14 @@ object ScoreWatcher {
     /** How long a game's notification stays in the shade after the game ends. */
     private const val CLEANUP_DELAY = 60L * 60 * 1000
 
+    /**
+     * How long "they have started" or "it is back on" stays true.
+     *
+     * Ten minutes. Long enough to survive a poll that ran late, short enough that it can
+     * never be the thing announcing a game you are already watching.
+     */
+    private const val FRESH_WINDOW = 10L * 60 * 1000
+
     // ------------------------------------------------------------- scheduling
 
     private fun pendingIntent(context: Context): PendingIntent = PendingIntent.getBroadcast(
@@ -117,6 +125,21 @@ object ScoreWatcher {
      * ticker is driving, since it sleeps on its own clock and a second alarm firing
      * underneath it would poll everything twice.
      */
+    /**
+     * Clear anything whose hour is up, without polling anything.
+     *
+     * Called when the app opens. A poll is what normally sweeps, and a poll needs an alarm
+     * that fired -- which is exactly what has not been happening on a phone showing a card
+     * from yesterday. Opening the app is the one moment the user has told us they are
+     * looking at it, and a sweep costs one file read.
+     */
+    fun sweepStale(context: Context) {
+        runCatching {
+            Janitor(File(context.filesDir, "cleanup.json"))
+                .sweep(context, System.currentTimeMillis())
+        }
+    }
+
     fun poll(context: Context, armNext: Boolean = true): Outcome {
         val prefs = Prefs(context)
         val queue = PendingQueue(File(context.filesDir, "pending.json"))
@@ -164,12 +187,22 @@ object ScoreWatcher {
             // so storing the raw snapshot here would reset the count on every quiet poll and it
             // would never reach the threshold.
             next[game.id] = ScoreDiff.advanced(was, snapshot)
-            // Scheduled on the FINAL *transition*, before the silence filter: the
-            // lingering card might be an earlier score alert from before the team
-            // was silenced, and it should still leave the shade an hour after the
-            // game ends. Cancelling a notification that never existed is a no-op.
-            if (was != null && was.state != GameState.FINAL && snapshot.state == GameState.FINAL) {
+            // A card for a game that is still going keeps its hour topped up, so a quiet
+            // second half never loses the score. Everything else -- a game that has
+            // finished, or one that has dropped out of the feed entirely -- lets the clock
+            // run down and goes an hour after the last thing worth saying. Before the
+            // silence filter, because a lingering card might be from before the team was
+            // silenced and should still leave the shade.
+            if (snapshot.state != GameState.FINAL && janitor.has(game.id)) {
                 janitor.schedule(game.id, now + CLEANUP_DELAY)
+            }
+            // Kickoff. "Starting soon" has stopped being true, and with a league set to
+            // final-only there is no later alert to replace the card -- so it sat in the
+            // shade for the whole game, next to the score, reading as two notifications
+            // about one match. Dropped here rather than left to expire, because it is not
+            // stale, it is wrong.
+            if (was?.state == GameState.PRE && snapshot.state == GameState.LIVE) {
+                janitor.drop(context, game.id)
             }
             if (!game.involves(notifyKeys)) continue
             val alerts = ScoreDiff.alerts(
@@ -191,6 +224,19 @@ object ScoreWatcher {
                         // it's the answer to "is it back on yet", which is useless late.
                         ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED -> 0L
                         else -> delay
+                    },
+                    // Being due is not the same as being still true, and a phone that was
+                    // asleep is the gap between them. See [PendingQueue.Entry.expiresAt].
+                    expiresAt = when (alert.kind) {
+                        // At kickoff, exactly. After that it is not a reminder, it is a
+                        // wrong statement about a game already under way.
+                        ScoreDiff.Kind.SOON -> game.startMillis
+                        // "They're under way" is worth knowing for a few minutes and not
+                        // for an afternoon.
+                        ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED ->
+                            now + FRESH_WINDOW
+                        // A score is still a score whenever you read it.
+                        else -> 0L
                     },
                     gameId = game.id,
                     leagueId = game.leagueId,
@@ -232,12 +278,15 @@ object ScoreWatcher {
         val (due, waiting) = queue.takeDue(now)
         for (entry in due) {
             Notifier.post(context, entry)
-            // A FINAL held back by the spoiler delay can post after the hour the
-            // transition started; rescheduling from the post gives the card its
-            // full hour in the shade either way.
-            if (entry.kind == ScoreDiff.Kind.FINAL) {
-                janitor.schedule(entry.gameId, now + CLEANUP_DELAY)
-            }
+            // The clock starts at the post, for every kind. Tracking only FINALs meant a
+            // card whose full time was never observed -- a phone asleep, in Doze, or out of
+            // signal at the whistle -- was invisible to the janitor forever, and once the
+            // game left the scoreboard window its snapshot went too, so the transition
+            // could never be seen again. Yesterday's score stayed on the lock screen.
+            //
+            // Every later post for the same game moves this out, and so does the game still
+            // being live, so the rule is simply: an hour after the last thing worth saying.
+            janitor.schedule(entry.gameId, now + CLEANUP_DELAY)
         }
         janitor.sweep(context, now)
 

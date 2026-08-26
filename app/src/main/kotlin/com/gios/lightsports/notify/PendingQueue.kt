@@ -21,6 +21,17 @@ class PendingQueue(private val file: File) {
         val kind: ScoreDiff.Kind,
         val title: String,
         val body: String,
+        /**
+         * When this stops being true, or 0 for "never".
+         *
+         * Separate from [dueAt], and it exists because *due* and *still true* are not the
+         * same question. "Starts in 15 minutes" is due immediately and stops being true at
+         * kickoff — and the gap between those two is every way a phone can fail to run a
+         * poll: Doze, no signal, a screen that stayed off. The entry sat in the queue and
+         * posted on the next wake-up, which announced that a game was about to start while
+         * it was in the second inning, next to the card carrying its score.
+         */
+        val expiresAt: Long = 0L,
     )
 
     fun load(): List<Entry> {
@@ -37,6 +48,7 @@ class PendingQueue(private val file: File) {
                 kind = kind,
                 title = o.optString("title"),
                 body = o.optString("body"),
+                expiresAt = o.optLong("expiresAt"),
             )
         }
     }
@@ -51,7 +63,8 @@ class PendingQueue(private val file: File) {
                     .put("leagueId", e.leagueId)
                     .put("kind", e.kind.name)
                     .put("title", e.title)
-                    .put("body", e.body),
+                    .put("body", e.body)
+                    .put("expiresAt", e.expiresAt),
             )
         }
         runCatching { file.writeText(array.toString()) }
@@ -68,11 +81,16 @@ class PendingQueue(private val file: File) {
      * Supersedes earlier alerts for the same game: if two goals go in during a five
      * minute delay, one notification carrying the current score is the useful thing,
      * not two stale ones. A final always wins over a score from the same game.
+     *
+     * Anything past its [Entry.expiresAt] is dropped rather than posted.
      */
     fun takeDue(nowMillis: Long): Pair<List<Entry>, List<Entry>> {
         val all = prune(load())
         val (due, waiting) = all.partition { it.dueAt <= nowMillis }
         val collapsed = due
+            // Dropped rather than posted late. See [Entry.expiresAt] -- a reminder about a
+            // game that has already started is worse than no reminder, because it is wrong.
+            .filter { it.expiresAt == 0L || nowMillis < it.expiresAt }
             .groupBy { it.gameId }
             .values
             .map { forGame ->
