@@ -1,3 +1,22 @@
+## BrightSports v1.22 — one box for a goal, not two
+
+BrightControl v3.65 grew a heads-up box of its own. It reads the shade and puts the same box over
+the screen for whatever posted — including the notification this app raises a moment before it
+draws its own. So with both switched on, a goal was one buzz and **two boxes**, one landing on top
+of the other.
+
+**This one now stands aside.** BrightControl says who is drawing the box; when it is, the box here
+is skipped. The setting is untouched — it still reads as yours, and the row shows CONTROL rather
+than pretending to be on while nothing appears. Turn banners off over there and this app's box
+comes straight back, with nothing to set here.
+
+**The buzz and the notification never change.** Both happen before the gate, and both have to: the
+notification is the record BrightControl reads and the janitor clears an hour after full time. If
+BrightControl's listener grant ever lapses, this app has still buzzed and still filled the shade.
+
+**And it checks BrightControl is really there.** A remembered claim from an app that has since been
+uninstalled would have silenced this box for good, with nothing on the phone to explain why.
+
 ## BrightSports v1.21 — the new key is withdrawn; this installs over what you have
 
 **No uninstall. This is an ordinary update.** v1.20 was signed with a brand-new certificate, which

@@ -61,6 +61,12 @@ object ScoreAlert {
             Log.d(TAG, "on-screen alert off; notification only")
             return
         }
+        // BrightControl draws this box for every app now, off the notification posted a moment
+        // ago. Drawing ours as well is the same score twice, one box on top of the other.
+        if (AlertOwner.ownedElsewhere(app)) {
+            Log.d(TAG, "BrightControl owns the box; notification only")
+            return
+        }
         if (!Settings.canDrawOverlays(app)) {
             // Expected on a phone that was never plugged into a computer; the
             // notification already went out, so this is not an error.

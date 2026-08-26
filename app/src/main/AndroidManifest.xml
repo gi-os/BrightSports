@@ -22,6 +22,14 @@
          since LightOS has no Settings screen for it. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- BrightControl, so `getPackageInfo` can answer whether it is still installed. It draws
+         the on-screen box for every app now and tells this one to stand down; a remembered
+         claim from an app that has since been removed would silence this app's box for good.
+         See notify/AlertOwner.kt. -->
+    <queries>
+        <package android:name="com.gios.lightcontrol" />
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
@@ -56,6 +64,21 @@
             android:showWhenLocked="true"
             android:turnScreenOn="true"
             android:theme="@style/Theme.LightSports.Alert" />
+
+        <!-- BrightControl saying whether it is drawing the on-screen box for every app.
+             Exported because the sender is another app, and it must be: BrightControl addresses
+             it with setPackage, which still needs the receiver reachable across the UID boundary.
+
+             Nothing here is trusted with anything. The only thing this can do is stop this app
+             drawing its own box; the buzz and the notification are never gated on it, so a forged
+             broadcast costs a box and cannot silence a score. See notify/AlertOwner.kt. -->
+        <receiver
+            android:name=".notify.AlertOwnerReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.gios.lightcontrol.action.ALERTS_OWNED" />
+            </intent-filter>
+        </receiver>
 
         <!-- The scoreboard poll. Not exported: only this app's own alarm triggers it. -->
         <receiver

@@ -20,8 +20,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
 import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.hw.WheelScroll
+import com.gios.lightsports.notify.AlertOwner
 import com.gios.lightsports.ui.theme.Dim
 
 private val DELAY_CHOICES = listOf(0, 2, 5, 10, 15, 30)
@@ -38,6 +40,7 @@ fun SettingsScreen(
     var notify by remember { mutableStateOf(prefs.notificationsEnabled) }
     var starts by remember { mutableStateOf(prefs.notifyStarts) }
     var alertBox by remember { mutableStateOf(prefs.alertBoxEnabled) }
+    val alertsOwned = AlertOwner.ownedElsewhere(LocalContext.current)
     var live by remember { mutableStateOf(prefs.liveUpdatesEnabled) }
     var delayOn by remember { mutableStateOf(prefs.delayEnabled) }
     var delay by remember { mutableIntStateOf(prefs.delayMinutes) }
@@ -79,9 +82,22 @@ fun SettingsScreen(
         Rule()
         MenuRow(
             label = "On-screen alert",
-            detail = if (alertBox) "[ ON ]" else "OFF",
-            sub = "The box over the screen when a score lands. Off keeps the buzz " +
-                "and the notification, but nothing appears over what you're doing",
+            // A third state, and it is not this app's to set. Saying ON while nothing appeared
+            // would be a toggle that lies — and the setting really is still on, which is why this
+            // is said out loud rather than quietly flipped.
+            detail = when {
+                alertsOwned -> "CONTROL"
+                alertBox -> "[ ON ]"
+                else -> "OFF"
+            },
+            sub = if (alertsOwned) {
+                "BrightControl puts the box up for every app now, so this one stands aside. " +
+                    "Turn banners off there to bring this one back. The buzz and the " +
+                    "notification are unchanged either way"
+            } else {
+                "The box over the screen when a score lands. Off keeps the buzz " +
+                    "and the notification, but nothing appears over what you're doing"
+            },
             onClick = {
                 alertBox = !alertBox
                 vm.setAlertBoxEnabled(alertBox)

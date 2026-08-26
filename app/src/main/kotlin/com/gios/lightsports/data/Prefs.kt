@@ -109,6 +109,19 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_ALERT_BOX, true)
         set(v) = sp.edit().putBoolean(KEY_ALERT_BOX, v).apply()
 
+    /**
+     * Whether BrightControl has claimed the on-screen box for every app on the phone.
+     *
+     * Written only by [com.gios.lightsports.notify.AlertOwnerReceiver], never by a settings
+     * screen: this is not a preference, it is a fact about another app, and [alertBoxEnabled]
+     * stays exactly where the user left it so turning BrightControl's banners off gives the box
+     * straight back. Read through [com.gios.lightsports.notify.AlertOwner.ownedElsewhere], which
+     * also checks the claimant is still installed.
+     */
+    var alertsOwnedElsewhere: Boolean
+        get() = sp.getBoolean(KEY_ALERTS_OWNED, false)
+        set(v) = sp.edit().putBoolean(KEY_ALERTS_OWNED, v).apply()
+
     val effectiveDelayMillis: Long
         get() = if (delayEnabled) delayMinutes * 60_000L else 0L
 
@@ -130,6 +143,7 @@ class Prefs(context: Context) {
         private const val KEY_DELAY_ON = "delay_enabled"
         private const val KEY_NOTIFY_STARTS = "notify_starts"
         private const val KEY_ALERT_BOX = "alert_box"
+        private const val KEY_ALERTS_OWNED = "alerts_owned"
         private const val KEY_LIVE_UPDATES = "live_updates"
     }
 }
