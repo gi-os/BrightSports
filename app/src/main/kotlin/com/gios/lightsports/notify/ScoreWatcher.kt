@@ -68,16 +68,41 @@ object ScoreWatcher {
     )
 
     /**
-     * `setAndAllowWhileIdle` rather than `setExactAndAllowWhileIdle`: inexact is the
-     * variant that needs no SCHEDULE_EXACT_ALARM permission, and a score notification
-     * is already being held back on purpose.
+     * `setExactAndAllowWhileIdle`, and not for the exactness.
+     *
+     * Both variants are throttled to roughly one firing every nine minutes in Doze, so
+     * on the clock they are the same alarm. The difference is the other rule: a
+     * broadcast delivered by an *exact* alarm is exempt from the Android 12 restriction
+     * on starting a foreground service from the background. The inexact one is not.
+     *
+     * That is the whole reason scores were still landing ten minutes late with the
+     * ticker shipped and switched on. [PollReceiver] would find a live game, call
+     * [LiveTicker.start], and be refused -- silently, on a sleeping phone, which is the
+     * only phone the ticker was ever written for. The 30-60 second poll worked whenever
+     * the app was open and never once when it was in a pocket.
+     *
+     * Falls back to the inexact form if exact alarms are refused, because a slow chain
+     * beats a broken one.
      */
     fun armAt(context: Context, triggerAtMillis: Long) {
         val manager = context.getSystemService(AlarmManager::class.java) ?: return
         val at = maxOf(triggerAtMillis, System.currentTimeMillis() + 30_000)
-        runCatching {
-            manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pendingIntent(context))
-        }.onFailure { Log.w(TAG, "could not arm alarm", it) }
+        val intent = pendingIntent(context)
+        val exact = Health.exactAlarms(context)
+        val armed = runCatching {
+            if (exact) {
+                manager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent)
+            } else {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent)
+            }
+        }.isSuccess
+        // A SecurityException here means the exact-alarm appop was revoked between the
+        // check and the call. One retry on the variant that can never be revoked.
+        if (!armed) {
+            runCatching {
+                manager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, intent)
+            }.onFailure { Log.w(TAG, "could not arm alarm", it) }
+        }
     }
 
     fun cancel(context: Context) {
@@ -141,6 +166,11 @@ object ScoreWatcher {
     }
 
     fun poll(context: Context, armNext: Boolean = true): Outcome {
+        // armNext is false only when the ticker is driving, which makes it the one
+        // reliable signal of which half of the app is doing the work. Recorded rather
+        // than logged: a phone in a pocket has no logcat attached, and "which path am I
+        // on" was unanswerable for three releases.
+        Health.recordPoll(context, if (armNext) Health.SOURCE_ALARM else Health.SOURCE_TICKER)
         val prefs = Prefs(context)
         val queue = PendingQueue(File(context.filesDir, "pending.json"))
         val janitor = Janitor(File(context.filesDir, "cleanup.json"))

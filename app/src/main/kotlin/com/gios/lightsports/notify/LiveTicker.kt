@@ -71,10 +71,19 @@ class LiveTicker : Service() {
         // precisely the state this app shipped in until now.
         if (!promoted) {
             Log.w(TAG, "not allowed to go foreground; leaving it to the alarm chain")
+            Health.recordTicker(this, allowed = false)
+            // **The hand-back must be short.** onDestroy arms the next alarm from
+            // handBackAt, and a zero there means BACKSTOP -- fifteen minutes. So a
+            // refused ticker did not merely fail to speed the app up, it pushed the
+            // next poll from two minutes out to fifteen, and did it again on every
+            // poll that found a live game. The slow path was being made slower by the
+            // fast path failing to start.
+            handBackAt = System.currentTimeMillis() + REFUSED_RETRY
             stopSelf()
             return START_NOT_STICKY
         }
 
+        Health.recordTicker(this, allowed = true)
         running = true
         startedAt = System.currentTimeMillis()
         val app = applicationContext
@@ -167,6 +176,15 @@ class LiveTicker : Service() {
         const val BACKSTOP = 15L * 60_000
 
         /**
+         * Where the alarm chain resumes when the system refuses to promote the service.
+         *
+         * Two minutes, matching the chain's own live interval, so a refusal costs the
+         * speed-up and nothing else. Doze will round it up to about nine; the point is
+         * that it is not rounded up from fifteen.
+         */
+        const val REFUSED_RETRY = 2L * 60_000
+
+        /**
          * Read from the alarm receiver to decide whether to poll at all. A stale `true`
          * costs one skipped alarm poll; the backstop re-arms either way.
          */
@@ -179,7 +197,13 @@ class LiveTicker : Service() {
             if (running) return
             runCatching {
                 context.startForegroundService(Intent(context, LiveTicker::class.java))
-            }.onFailure { Log.w(TAG, "could not start", it) }
+            }.onFailure {
+                // Android 12 onwards throws here rather than at startForeground when the
+                // caller is in the background, so onStartCommand never runs and the
+                // refusal would otherwise leave no trace anywhere.
+                Log.w(TAG, "could not start", it)
+                runCatching { Health.recordTicker(context, allowed = false) }
+            }
         }
 
         fun stop(context: Context) {

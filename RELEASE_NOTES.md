@@ -1,3 +1,43 @@
+## BrightSports v1.24 — the live check was being refused, and nothing said so
+
+Scores were still landing ten minutes late with the live ticker shipped, switched on, and working
+perfectly whenever anyone looked at it. That last part is the whole bug.
+
+**An inexact alarm cannot start a foreground service.** There are two ways this app checks a score:
+the alarm chain, which survives Doze and is throttled to roughly one firing every nine minutes, and
+the live ticker, which is not throttled and checks every thirty to sixty seconds. The alarm chain is
+what hands over to the ticker when a followed game starts. Android 12 onwards refuses a foreground
+service started from the background — unless the broadcast that started it came from an **exact**
+alarm. This app used the inexact variant, deliberately, because it needs no permission.
+
+So the handover was refused every time the phone was asleep. Which is the only phone the ticker was
+ever written for. Open the app during a game and the ticker came straight up, because a visible
+activity is allowed to start one; put the phone in a pocket and it never ran at all. The app had two
+speeds and reached the fast one exactly when you were already looking at the score.
+
+**Alarms are exact now.** Not for the precision — both variants sit under the same nine-minute Doze
+floor and nothing about the schedule changes. It is for the exemption that comes with them. The
+permission is granted at install and asks the user nothing.
+
+**And a refusal was making things slower, not merely not faster.** When the service could not go
+foreground it stopped itself, and stopping is what arms the next alarm — from a field that was still
+zero, which means the fifteen-minute backstop. So every poll that found a live game pushed the next
+one from two minutes out to fifteen, over and over, for the length of the game. A refused fast path
+was actively degrading the slow one. It hands back at two minutes now.
+
+**Settings can finally answer "why was that late".** A new Delivery section says which of the two
+paths ran last and how long ago — *Live — every 30–60s* or *Alarms — up to 9 min* — and, underneath,
+what is standing in the way if anything is. None of this was visible before: a refusal was one line
+in a logcat nobody has attached to a phone in their pocket.
+
+**Battery optimisation is one tap.** An app the phone has stopped putting to sleep is not in Doze at
+all, so the nine-minute floor stops existing and the alarm chain runs at its stated two minutes even
+if the ticker never comes up. Optional, asked for from Settings and never at launch. If LightOS
+opens nothing, the row gives you the adb line.
+
+Worth checking while you are in there: **the spoiler delay is on by default at five minutes**, and it
+is added to everything above.
+
 ## BrightSports v1.23 — one card per game, and it leaves after an hour
 
 Two reports, one cause: a score from yesterday still on the lock screen, and two cards for the
