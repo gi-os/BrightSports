@@ -13,7 +13,7 @@
          What it buys is the other half of the rule: a broadcast delivered by an exact
          alarm is exempt from the Android 12 restriction on starting a foreground service
          from the background. Without it PollReceiver's handover to LiveTicker was refused
-         on a sleeping phone -- which is the one moment the ticker exists for -- and the
+         on a sleeping phone, which is the one moment the ticker exists for, and the
          app quietly stayed on the nine-minute floor for the whole game.
          USE_EXACT_ALARM is granted at install from API 33; SCHEDULE_EXACT_ALARM covers
          the phones below that and is capped so the two never both apply. -->
