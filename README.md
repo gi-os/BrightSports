@@ -374,6 +374,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.26 | The screen stays awake while a live game is open and updating itself, so it doesn't sleep between the 15-second refreshes |
 | v1.25 | FCS college football, Grand Slam tennis, and a game screen that refreshes itself every 15 seconds |
 | v1.20 | New signing key, no longer committed to the repo — **uninstall and reinstall once** |
 | v1.19 | A delay has to hold for two polls before it interrupts, so a replay review stops buzzing twice |

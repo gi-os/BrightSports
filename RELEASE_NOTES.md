@@ -1,3 +1,16 @@
+## BrightSports v1.26 — the score screen stays awake while it's updating
+
+**A live game no longer lets the panel sleep out from under itself.**
+
+Open a live game — or one about to start — and the screen re-fetches every fifteen seconds.
+Until now that only worked as long as the phone's own screen timeout hadn't fired, so a game
+you were watching tick along would dim and lock between refreshes, and the fifteen seconds you
+were promised became "whenever you next wake it up." While a game is open and tracking, the
+screen now stays on; leave the game, or open a final that's settled and no longer updating, and
+the panel sleeps normally again. Same keep-awake as the rest of the fleet — it rides the screen
+flag, not a wakelock, so there's no battery cost beyond the screen being on, which is the thing
+you asked for.
+
 ## BrightSports v1.25 — FCS, the Grand Slams, and a score screen that keeps up
 
 Three additions, none of them a fix.

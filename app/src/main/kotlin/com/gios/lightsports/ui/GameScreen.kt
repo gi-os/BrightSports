@@ -46,6 +46,11 @@ fun GameScreen(game: Game, tracking: Boolean = false) {
     val scroll = rememberScrollState()
     WheelScroll(scroll)
 
+    // A screen that is re-fetching every fifteen seconds is only useful if it hasn't
+    // gone to sleep between refreshes. A settled game you are just reading is not
+    // tracking, so the panel is free to sleep on that one.
+    KeepAwake(tracking)
+
     Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
         Text(
             listOfNotNull(

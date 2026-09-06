@@ -14,9 +14,11 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -26,6 +28,23 @@ import com.gios.lightsports.ui.theme.RuleGrey
 @Composable
 fun Rule(modifier: Modifier = Modifier) =
     HorizontalDivider(modifier = modifier, color = RuleGrey, thickness = 1.dp)
+
+/**
+ * Holds the panel awake while [active].
+ *
+ * A live game screen re-fetches every fifteen seconds, and the only version of that worth
+ * having is one the screen does not sleep through. Scoped to the flag rather than to the
+ * screen itself, so a final, settled game — open for reading, not updating — still lets
+ * the panel sleep as normal.
+ */
+@Composable
+fun KeepAwake(active: Boolean) {
+    val view = LocalView.current
+    DisposableEffect(active) {
+        view.keepScreenOn = active
+        onDispose { view.keepScreenOn = false }
+    }
+}
 
 @Composable
 fun SectionHeader(text: String) {
