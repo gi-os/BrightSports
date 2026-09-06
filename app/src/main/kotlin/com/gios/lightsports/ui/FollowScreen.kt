@@ -98,17 +98,17 @@ fun FollowScreen(
         if (openLeague.hasEvents) {
             EventToggles(openLeague, follows, muted, onToggle, onToggleMute)
         }
-        SearchField(query) { query = it }
+        SearchField(query, hint = "${openLeague.followNoun} name") { query = it }
         Rule()
         when {
             teams == null -> EmptyState("Loading teams…")
-            teams.isEmpty() -> EmptyState("Couldn't load the team list.\nCheck your connection.")
+            teams.isEmpty() -> EmptyState("Couldn't load the ${openLeague.followNoun} list.\nCheck your connection.")
             else -> {
                 val filtered = if (query.isBlank()) teams else teams.filter {
                     it.displayName.contains(query, true) || it.abbrev.contains(query, true)
                 }
                 if (filtered.isEmpty()) {
-                    EmptyState("No team matches “$query”.")
+                    EmptyState("No ${openLeague.followNoun} matches “$query”.")
                 } else {
                     LazyColumn(Modifier.fillMaxSize(), state = teamList) {
                         for (team in filtered) {
@@ -136,7 +136,7 @@ fun FollowScreen(
                         }
                         item {
                             Text(
-                                "Hold a followed team to keep it in the feed without alerts",
+                                "Hold a followed ${openLeague.followNoun} to keep it in the feed without alerts",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Faint,
                                 modifier = Modifier.fillMaxWidth().padding(16.dp),
@@ -168,7 +168,7 @@ private fun EventToggles(
     Column(Modifier.fillMaxWidth()) {
         SectionHeader("EVENTS")
         MenuRow(
-            label = "Championship games",
+            label = league.championshipLabel,
             detail = state(championship, follows, muted),
             sub = league.championshipExample,
             dim = championship !in follows,
@@ -179,7 +179,7 @@ private fun EventToggles(
         )
         Rule()
         MenuRow(
-            label = "Special games",
+            label = league.specialLabel,
             detail = state(special, follows, muted),
             sub = league.specialExample,
             dim = special !in follows,
@@ -189,7 +189,7 @@ private fun EventToggles(
             } else null,
         )
         Rule()
-        SectionHeader("TEAMS")
+        SectionHeader(if (league.followNoun == "team") "TEAMS" else "${league.followNoun.uppercase()}S")
     }
 }
 
@@ -236,7 +236,7 @@ private fun FollowSummary(
 }
 
 @Composable
-private fun SearchField(value: String, onChange: (String) -> Unit) {
+private fun SearchField(value: String, hint: String, onChange: (String) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -257,7 +257,7 @@ private fun SearchField(value: String, onChange: (String) -> Unit) {
             decorationBox = { inner ->
                 if (value.isEmpty()) {
                     Text(
-                        "team name",
+                        hint,
                         style = MaterialTheme.typography.bodyLarge,
                         color = Dim,
                         maxLines = 1,

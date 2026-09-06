@@ -28,6 +28,7 @@ import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.notify.AlertText
+import com.gios.lightsports.notify.TickerPlan
 import com.gios.lightsports.ui.theme.Dim
 import com.gios.lightsports.ui.theme.Faint
 import com.gios.lightsports.util.Fmt
@@ -38,7 +39,7 @@ import java.time.ZoneId
  * handful of facts worth knowing before watching it.
  */
 @Composable
-fun GameScreen(game: Game) {
+fun GameScreen(game: Game, tracking: Boolean = false) {
     val zone = ZoneId.systemDefault()
     val league = Leagues.byId(game.leagueId)
     val kind = league?.kind ?: SportKind.BASEBALL
@@ -58,6 +59,16 @@ fun GameScreen(game: Game) {
             color = Dim,
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 16.dp),
         )
+        if (tracking) {
+            // Says so once rather than counting down: a ticking "12s ago" on a matte
+            // panel is a distraction from the score it sits next to.
+            Text(
+                "Updating every ${TickerPlan.SCREEN_INTERVAL / 1000} seconds",
+                style = MaterialTheme.typography.labelSmall,
+                color = Faint,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         Spacer(Modifier.height(14.dp))
         BigScore(game.away, game.home, game.state != GameState.PRE)
         Spacer(Modifier.height(18.dp))
@@ -70,10 +81,12 @@ fun GameScreen(game: Game) {
         }
 
         SectionHeader("DETAILS")
-        game.note?.let { MenuRow("Series", detail = null, sub = it) }
+        game.note?.let {
+            MenuRow(if (kind == SportKind.TENNIS) "Round" else "Series", detail = null, sub = it)
+        }
         MenuRow("First pitch".takeIf { kind == SportKind.BASEBALL } ?: "Start",
             detail = Fmt.time(game.startMillis, zone))
-        game.venue?.let { MenuRow("Venue", sub = it) }
+        game.venue?.let { MenuRow(if (kind == SportKind.TENNIS) "Court" else "Venue", sub = it) }
         game.broadcast?.let { MenuRow("TV", detail = it) }
         game.away.record?.let { MenuRow(game.away.short, detail = it) }
         game.home.record?.let { MenuRow(game.home.short, detail = it) }
@@ -85,6 +98,7 @@ private fun lineScoreTitle(kind: SportKind) = when (kind) {
     SportKind.BASEBALL -> "BY INNING"
     SportKind.HOCKEY -> "BY PERIOD"
     SportKind.SOCCER -> "BY HALF"
+    SportKind.TENNIS -> "BY SET"
     else -> "BY QUARTER"
 }
 
@@ -162,10 +176,17 @@ private fun LineScoreTable(game: Game, kind: SportKind) {
     }
 }
 
-private fun totalLabel(kind: SportKind) = if (kind == SportKind.BASEBALL) "R" else "T"
+private fun totalLabel(kind: SportKind) = when (kind) {
+    SportKind.BASEBALL -> "R"
+    // Sets, not points: the total column is the match score.
+    SportKind.TENNIS -> "S"
+    else -> "T"
+}
 
 private fun periodHeader(kind: SportKind, period: Int): String = when (kind) {
     SportKind.BASEBALL -> period.toString()
+    // "Set 3" is the alert wording; the 28dp cell takes two characters.
+    SportKind.TENNIS -> "S$period"
     else -> AlertText.periodLabel(kind, period)
 }
 

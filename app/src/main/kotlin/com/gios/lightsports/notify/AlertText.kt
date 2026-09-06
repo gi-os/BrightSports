@@ -45,13 +45,31 @@ object AlertText {
             // The one-time "it's back on" alert that pairs with OFF. The current score
             // is already in the title, so the body just needs to say play resumed.
             ScoreDiff.Kind.RESUMED -> "Resuming"
-            ScoreDiff.Kind.FINAL -> game.statusDetail.ifEmpty { "Final" }
+            // A tennis score is the sets, written out: "6-3 1-6 1-0 · 3rd". The title
+            // carries sets won, which on its own says nothing about how the set went.
+            ScoreDiff.Kind.FINAL -> if (league.kind == SportKind.TENNIS) {
+                listOf(setLine(game), game.statusDetail.ifEmpty { "Final" })
+                    .filter { it.isNotEmpty() }.joinToString(" · ")
+            } else {
+                game.statusDetail.ifEmpty { "Final" }
+            }
             ScoreDiff.Kind.PERIOD -> boundaryLabel(league.kind, game)
-            ScoreDiff.Kind.SCORE -> game.statusDetail.ifEmpty {
-                periodLabel(league.kind, game.period)
+            ScoreDiff.Kind.SCORE -> if (league.kind == SportKind.TENNIS) {
+                listOf(setLine(game), game.statusDetail).filter { it.isNotEmpty() }
+                    .joinToString(" · ")
+            } else {
+                game.statusDetail.ifEmpty { periodLabel(league.kind, game.period) }
             }
         }
         return if (detail.isEmpty()) prefix else "$prefix · $detail"
+    }
+
+    /** Games per set, away first to match the title: "6-3 1-6 1-0". */
+    fun setLine(game: Game): String {
+        val sets = maxOf(game.away.lineScore.size, game.home.lineScore.size)
+        return (0 until sets).joinToString(" ") { i ->
+            "${game.away.lineScore.getOrNull(i) ?: "0"}-${game.home.lineScore.getOrNull(i) ?: "0"}"
+        }
     }
 
     /**
@@ -92,6 +110,7 @@ object AlertText {
             SportKind.SOCCER -> if (period > 2) ot(period - 2) else "H$period"
             SportKind.BASEBALL -> ordinal(period)
             SportKind.RACING -> "Lap $period"
+            SportKind.TENNIS -> "Set $period"
         }
     }
 

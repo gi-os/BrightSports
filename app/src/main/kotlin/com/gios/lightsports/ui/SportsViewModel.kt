@@ -148,6 +148,38 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     fun gameById(id: String): Game? = _feed.value.games.firstOrNull { it.id == id }
 
     /**
+     * Re-fetch one game for the screen that has it open, and return the fresh copy.
+     *
+     * Only that game's league is fetched — a screen on a Mets game has no business
+     * pulling four soccer scoreboards every fifteen seconds. The result is folded back
+     * into the feed in place so the list behind the screen agrees with it; a change of
+     * state (the final whistle) triggers a full refresh, since the game belongs in a
+     * different section now and the ticker may have work to do.
+     */
+    suspend fun track(game: Game): Game? {
+        val league = Leagues.byId(game.leagueId) ?: return null
+        val now = System.currentTimeMillis()
+        val zone = ZoneId.systemDefault()
+        val fresh = withContext(Dispatchers.IO) { repo.games(league, now, zone) }
+        val updated = fresh.firstOrNull { it.id == game.id } ?: return null
+        if (updated == game) return updated
+        val state = _feed.value
+        _feed.value = state.copy(
+            games = state.games.map { if (it.id == updated.id) updated else it },
+            sections = state.sections.map { section ->
+                section.copy(items = section.items.map { item ->
+                    if (item is Feed.Item.GameItem && item.game.id == updated.id) {
+                        Feed.Item.GameItem(updated)
+                    } else item
+                })
+            },
+            updatedAt = now,
+        )
+        if (updated.state != game.state) refresh()
+        return updated
+    }
+
+    /**
      * A follow key as a human name. Falls back to the league and the raw id when the
      * team list hasn't loaded — better a rough label than a team that seems to vanish.
      */

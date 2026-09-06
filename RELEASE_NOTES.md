@@ -1,3 +1,28 @@
+## BrightSports v1.25 — FCS, the Grand Slams, and a score screen that keeps up
+
+Three additions, none of them a fix.
+
+**FCS college football.** UC Davis, Montana, the Ivies, the SWAC — the 128 programs a division
+below the FBS list the app already had. Same ESPN feed, filtered with `groups=81` the way FBS is
+with `80`. When an FCS side plays up in September (Hampton at Maryland) the game is in both feeds,
+and it shows once per team you follow, not twice. It sits next to FBS under College Football.
+
+**Tennis: the four Grand Slams, singles and doubles.** A new Tennis section in My Teams. Follow
+players — the roster is the ATP and WTA top 150 plus everyone in the current draws, so a
+qualifier on a run is in the picker the week it matters — and a doubles pair counts for either
+name. Two category toggles stand in for the usual championship and special stars: **Finals**
+(every draw's final) and **Quarterfinals onward**. The score is sets, with games per set as the
+line score and tiebreaks printed the way a scoreline prints them, 7(7)-6(3). The feed row reads
+`US OPEN · WS · QF · 3rd`; the detail screen names the court and the round. Alerts fire on each
+set won and carry the full scoreline. Standings shows the two rankings. Tour stops between the
+slams are not carried — forty tournaments a year was more feed than anyone asked for.
+
+**The open game updates itself.** Open a live game and it re-fetches every fifteen seconds for as
+long as it is in progress, and says so under the header. Only that game's league is fetched, and it
+stops the moment you leave the screen. A match about to start polls too, so the flip to live
+happens in front of you. The background ticker is unchanged: this is for when the screen is on and
+the phone is in your hand.
+
 ## BrightSports v1.24 — the live check was being refused, and nothing said so
 
 Scores were still landing ten minutes late with the live ticker shipped, switched on, and working

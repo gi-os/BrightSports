@@ -124,6 +124,8 @@ object Feed {
         for (game in games) {
             busy += "${game.leagueId}:${game.home.teamId}"
             busy += "${game.leagueId}:${game.away.teamId}"
+            // A doubles pair counts for both its players.
+            for (id in game.home.memberIds + game.away.memberIds) busy += "${game.leagueId}:$id"
         }
         // Racing is followed as a series, so any race at all counts as the series being
         // accounted for.

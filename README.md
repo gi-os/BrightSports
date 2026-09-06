@@ -62,12 +62,13 @@ and caches are plain files, so there's no annotation processor in the build at a
 |---|---|
 | Majors | MLB, NFL, NBA, NHL, MLS (+ Leagues Cup, U.S. Open Cup) |
 | Soccer | EPL, LaLiga, Bundesliga, Serie A, Ligue 1, UEFA Champions League, UEFA Europa League |
-| College football | FBS (~140 teams, filtered from ESPN's ~750-team college football feed) |
+| College football | FBS (~140 teams) and FCS (~128 teams), each filtered from ESPN's ~750-team college football feed |
+| Tennis | The four Grand Slams, singles and doubles, off ESPN's ATP/WTA scoreboards; follow players, finals, or quarterfinals onward |
 | Women's | WNBA, NWSL, PWHL, WPBL |
 | Minor league baseball | Triple-A, Double-A, High-A, Single-A |
 | Racing | Formula 1 |
 
-Twenty-two leagues, four **keyless** public JSON providers — no account, no key to paste in:
+Twenty-four leagues, four **keyless** public JSON providers — no account, no key to paste in:
 
 - **ESPN site API** — the majors, the European soccer leagues, college football, the
   women's leagues (except PWHL), F1.
@@ -373,6 +374,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.25 | FCS college football, Grand Slam tennis, and a game screen that refreshes itself every 15 seconds |
 | v1.20 | New signing key, no longer committed to the repo — **uninstall and reinstall once** |
 | v1.19 | A delay has to hold for two polls before it interrupts, so a replay review stops buzzing twice |
 | v1.18 | Poll every 30–60s during a game, on a foreground service, instead of Doze's nine-minute floor |

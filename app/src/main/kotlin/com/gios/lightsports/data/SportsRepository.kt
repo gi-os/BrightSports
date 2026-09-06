@@ -4,6 +4,7 @@ import android.content.Context
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.Provider
+import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.model.RaceEvent
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
@@ -32,6 +33,7 @@ class SportsRepository(context: Context) {
      * subway, which is exactly where someone edits their teams.
      */
     fun teams(league: League): List<TeamRef> {
+        if (league.kind == SportKind.TENNIS) return players(league)
         // A league with a `groups` filter (college football) needs the standings
         // tree instead of the plain teams endpoint, which ignores that filter — see
         // League.espnGroup.
@@ -70,6 +72,34 @@ class SportsRepository(context: Context) {
         }.getOrDefault(emptyList())
     }
 
+    /**
+     * Tennis has no roster endpoint, so the followable list is assembled: the top 150 of
+     * each tour from the rankings, cached a week like a team list, plus everyone in the
+     * draws on the scoreboard right now, cached a day so a qualifier who reaches the
+     * second week is in the picker while it matters. Ranked players come first so the
+     * names people actually look for are at the top.
+     */
+    private fun players(league: League): List<TeamRef> {
+        val paths = listOfNotNull(league.espnPath, league.espnAltPath)
+        val ranked = paths.flatMap { path ->
+            Http.cached(
+                cacheDir, "rankings-${path.substringAfterLast('/')}.json",
+                EspnParser.rankingsUrl(path), TEAM_CACHE_MILLIS,
+            )?.let { body ->
+                runCatching { EspnParser.parseRankedPlayers(league.id, body) }
+                    .getOrDefault(emptyList())
+            }.orEmpty()
+        }
+        val drawn = Http.cached(
+            cacheDir, "draws-${league.id}.json",
+            EspnParser.tennisScoreboardUrl(league.espnPath.orEmpty()), SEASON_CACHE_MILLIS,
+        )?.let { body ->
+            runCatching { EspnParser.parseTennisPlayers(league.id, body) }
+                .getOrDefault(emptyList())
+        }.orEmpty()
+        return (ranked + drawn).distinctBy { it.teamId }
+    }
+
     /** Racing has no followable clubs; the series itself is the thing to follow. */
     fun isFollowableAsWhole(league: League): Boolean = league.isRacing
 
@@ -80,6 +110,7 @@ class SportsRepository(context: Context) {
      * the moment it lands.
      */
     fun games(league: League, nowMillis: Long, zone: ZoneId): List<Game> {
+        if (league.kind == SportKind.TENNIS) return matches(league)
         val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
         val from = today.minusDays(BACK_DAYS)
         val to = today.plusDays(AHEAD_DAYS)
@@ -131,6 +162,18 @@ class SportsRepository(context: Context) {
         }.getOrDefault(emptyList())
 
         return leagueGames + cupGames(league, from.format(ymd), to.format(ymd))
+    }
+
+    /**
+     * A Grand Slam is one event on both tour scoreboards, identical down to the match
+     * ids — confirmed against the 2026 US Open, 625 matches on each side, all shared. So
+     * one fetch covers men, women and mixed, and the second path is only consulted for
+     * the rankings. The window is applied by the feed: the tournament comes back whole.
+     */
+    private fun matches(league: League): List<Game> {
+        val body = Http.get(EspnParser.tennisScoreboardUrl(league.espnPath.orEmpty()))
+            ?: return emptyList()
+        return runCatching { EspnParser.parseTennis(league, body) }.getOrDefault(emptyList())
     }
 
     /**
@@ -190,6 +233,14 @@ class SportsRepository(context: Context) {
         return runCatching {
             when (league.provider) {
                 Provider.ESPN -> {
+                    // Tennis has no table; the rankings are the nearest thing, one per
+                    // tour, and they turn over weekly so they are not cached.
+                    if (league.kind == SportKind.TENNIS) {
+                        return listOfNotNull(league.espnPath, league.espnAltPath).flatMap { path ->
+                            Http.get(EspnParser.rankingsUrl(path))
+                                ?.let { EspnParser.parseRankings(it) }.orEmpty()
+                        }
+                    }
                     val body = Http.get(EspnParser.standingsUrl(league)) ?: return emptyList()
                     if (league.isRacing) EspnParser.parseRacingStandings(body)
                     else EspnParser.parseStandings(league, body)

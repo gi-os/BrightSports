@@ -43,7 +43,9 @@ import com.gios.lightsports.report.ReportOverlay
 import com.gios.lightsports.ui.BarItem
 import com.gios.lightsports.ui.FeedScreen
 import com.gios.lightsports.ui.FollowScreen
+import com.gios.lightsports.notify.TickerPlan
 import com.gios.lightsports.ui.GameScreen
+import kotlinx.coroutines.delay
 import com.gios.lightsports.ui.LightBottomBar
 import com.gios.lightsports.ui.LightTopBar
 import com.gios.lightsports.ui.Rule
@@ -177,6 +179,23 @@ private fun App(openGameId: String?) {
         }
     }
 
+    // Live track: while a game is open, re-fetch it every fifteen seconds for as long
+    // as it is in progress (or about to be), and once a minute otherwise to notice it
+    // starting. Keyed on the id so opening another game restarts the loop, and the
+    // effect is cancelled with the screen, so nothing polls once you leave.
+    LaunchedEffect(openGame?.id) {
+        val id = openGame?.id ?: return@LaunchedEffect
+        while (true) {
+            val current = openGame?.takeIf { it.id == id } ?: break
+            val polling = TickerPlan.screenShouldPoll(
+                current, System.currentTimeMillis(), ScoreWatcher.LEAD,
+            )
+            delay(if (polling) TickerPlan.SCREEN_INTERVAL else TickerPlan.SCREEN_IDLE_INTERVAL)
+            if (openGame?.id != id) break
+            if (polling) vm.track(current)?.let { openGame = it }
+        }
+    }
+
     // LightOS supplies the back gesture; the SDK's own screens expect it to unwind the
     // stack rather than leave the app, so it is handled wherever there is a level to
     // pop and left alone at the root.
@@ -226,7 +245,12 @@ private fun App(openGameId: String?) {
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
-                game != null -> GameScreen(game)
+                game != null -> GameScreen(
+                    game,
+                    tracking = TickerPlan.screenShouldPoll(
+                        game, System.currentTimeMillis(), ScoreWatcher.LEAD,
+                    ),
+                )
                 standing != null -> TeamStatsScreen(standing.first, standing.second)
                 teamsOpen -> FollowScreen(
                     openLeague = openLeague,

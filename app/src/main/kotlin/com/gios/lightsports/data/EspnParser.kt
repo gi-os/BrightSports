@@ -54,6 +54,19 @@ object EspnParser {
 
     fun raceUrl(league: League, year: Int): String = "$SITE/${league.espnPath}/scoreboard?dates=$year"
 
+    /**
+     * No date window on purpose. The tennis scoreboard answers with whole tournaments,
+     * not days — a Grand Slam is one event holding every match of the fortnight — and a
+     * `dates=` range only returns events whose first or last day falls inside it.
+     * Confirmed live: `20260904-20260906`, mid-US Open, came back empty, while the bare
+     * URL returned the tournament in progress. Gzipped it is about 150 KB, less than an
+     * FBS Saturday.
+     */
+    fun tennisScoreboardUrl(path: String): String = "$SITE/$path/scoreboard"
+
+    /** Top 150 of a tour. `tennis/atp` gives the men, `tennis/wta` the women. */
+    fun rankingsUrl(path: String): String = "$SITE/$path/rankings"
+
     // ---------------------------------------------------------------- teams
 
     fun parseTeams(leagueId: String, body: String): List<TeamRef> {
@@ -321,6 +334,265 @@ object EspnParser {
                 podium = podium,
                 circuit = e.optJSONObject("circuit")?.optString("fullName")?.takeIf { it.isNotEmpty() },
             )
+        }
+        return out
+    }
+
+    // ---------------------------------------------------------------- tennis
+
+    /**
+     * Every match of every major in the scoreboard, as games.
+     *
+     * A competitor is an `athlete` in singles and a `roster` of two in doubles, and in
+     * both cases the score that decides the match is sets won, which ESPN does not total
+     * — it marks each set in `linescores` with `winner`, and the count of those is the
+     * score. Games per set become the line score, so the detail screen reads 6-3 1-6 1-0
+     * the way a tennis score is written. Qualifying rounds are dropped: they run the week
+     * before, against names nobody follows, and would triple the pre-tournament feed.
+     */
+    fun parseTennis(league: League, body: String): List<Game> {
+        val events = JSONObject(body).optJSONArray("events") ?: return emptyList()
+        val out = mutableListOf<Game>()
+        for (e in events.objects()) {
+            if (!e.optBoolean("major", false)) continue
+            val tournament = e.optString("shortName").ifEmpty { e.optString("name") }
+            for (grouping in (e.optJSONArray("groupings") ?: JSONArray()).objects()) {
+                val draw = grouping.optJSONObject("grouping")?.optString("displayName").orEmpty()
+                for (comp in (grouping.optJSONArray("competitions") ?: JSONArray()).objects()) {
+                    val roundName = comp.optJSONObject("round")?.optString("displayName").orEmpty()
+                    if ("qualifying" in roundName.lowercase()) continue
+                    var home: Side? = null
+                    var away: Side? = null
+                    for (c in (comp.optJSONArray("competitors") ?: JSONArray()).objects()) {
+                        val side = tennisSide(c) ?: continue
+                        if (c.optString("homeAway") == "home") home = side else away = side
+                    }
+                    if (home == null || away == null) continue
+
+                    val status = comp.optJSONObject("status")
+                    val type = status?.optJSONObject("type")
+                    val eventClass = when (roundName.lowercase()) {
+                        "final" -> EventClass.CHAMPIONSHIP
+                        "quarterfinal", "semifinal" -> EventClass.SHOWCASE
+                        else -> EventClass.NONE
+                    }
+                    val venue = comp.optJSONObject("venue")
+                    out += Game(
+                        id = "t-" + comp.optString("id"),
+                        leagueId = league.id,
+                        state = state(type),
+                        startMillis = Iso.millis(comp.optString("date")),
+                        statusDetail = type?.optString("shortDetail")
+                            ?.ifEmpty { type.optString("detail") }.orEmpty(),
+                        period = status?.optInt("period") ?: 0,
+                        statusName = type?.optString("name")?.takeIf { it.isNotEmpty() },
+                        home = home,
+                        away = away,
+                        // The court is the venue that matters; "New York, USA" is the
+                        // tournament's, and the tournament is already on the line.
+                        venue = venue?.optString("court")?.takeIf { it.isNotEmpty() }
+                            ?: venue?.optString("fullName")?.takeIf { it.isNotEmpty() },
+                        broadcast = broadcast(comp),
+                        note = listOf(draw, roundName).filter { it.isNotEmpty() }
+                            .joinToString(" · ").takeIf { it.isNotEmpty() },
+                        // "US Open · WS · QF": the tournament earns the league's slot on
+                        // the row, and the draw and round have to fit beside the clock.
+                        eventTitle = listOfNotNull(
+                            tournament,
+                            drawCode(draw),
+                            roundCode(roundName),
+                        ).joinToString(" · "),
+                        eventClass = eventClass,
+                        competition = tournament,
+                    )
+                }
+            }
+        }
+        return out
+    }
+
+    /** "Women's Singles" -> "WS", "Mixed Doubles" -> "XD". */
+    internal fun drawCode(draw: String): String? {
+        val d = draw.lowercase()
+        if (d.isEmpty()) return null
+        val gender = when {
+            d.startsWith("men") -> "M"
+            d.startsWith("women") -> "W"
+            d.startsWith("mixed") -> "X"
+            else -> return draw
+        }
+        val form = when {
+            "doubles" in d -> "D"
+            "singles" in d -> "S"
+            else -> return draw
+        }
+        return gender + form
+    }
+
+    /** "Round 3" -> "R3", "Quarterfinal" -> "QF", "Final" -> "FINAL". */
+    internal fun roundCode(round: String): String? {
+        val r = round.lowercase().trim()
+        if (r.isEmpty()) return null
+        return when {
+            r == "final" -> "FINAL"
+            r.startsWith("semi") -> "SF"
+            r.startsWith("quarter") -> "QF"
+            r.startsWith("round of ") -> "R" + r.removePrefix("round of ")
+            r.startsWith("round ") -> "R" + r.removePrefix("round ")
+            else -> round
+        }
+    }
+
+    private fun tennisSide(c: JSONObject): Side? {
+        val athlete = c.optJSONObject("athlete")
+        val roster = c.optJSONObject("roster")
+        val pair = roster?.optJSONArray("athletes")?.objects().orEmpty()
+        val displayName: String
+        val short: String
+        val members: List<String>
+        when {
+            athlete != null -> {
+                displayName = athlete.optString("displayName")
+                short = athlete.optString("shortName").ifEmpty { displayName }
+                members = emptyList()
+            }
+            roster != null && pair.isNotEmpty() -> {
+                displayName = roster.optString("displayName")
+                    .ifEmpty { pair.joinToString(" / ") { it.optString("displayName") } }
+                short = roster.optString("shortDisplayName")
+                    .ifEmpty { pair.joinToString(" / ") { it.optString("shortName") } }
+                // A pair's id is the two athlete ids joined, "1013-2319"; the roster
+                // entries carry them only in the player-card link.
+                members = c.optString("id").split('-').filter { it.isNotEmpty() }
+            }
+            else -> return null
+        }
+        if (displayName.isEmpty()) return null
+        val sets = c.optJSONArray("linescores")?.objects().orEmpty()
+        val started = sets.isNotEmpty()
+        val seed = c.optJSONObject("curatedRank")?.optInt("current", 0)?.takeIf { it > 0 }
+        return Side(
+            teamId = c.optString("id"),
+            displayName = displayName,
+            short = short,
+            abbrev = tennisAbbrev(displayName, pair.isNotEmpty()),
+            // Sets won. Null before the first set, so a match that hasn't started shows
+            // no score rather than 0-0.
+            score = if (started) sets.count { it.optBoolean("winner", false) } else null,
+            record = seed?.let { "($it)" },
+            lineScore = sets.map { set ->
+                val games = fmtNum(set.optDouble("value", 0.0))
+                // 7(7) — the tiebreak points, the way a scoreline prints them.
+                val tiebreak = set.optInt("tiebreak", -1).takeIf { it >= 0 }
+                if (tiebreak != null) "$games($tiebreak)" else games
+            },
+            memberIds = members,
+        )
+    }
+
+    /**
+     * Three letters of the surname, the way a club has a three-letter code: the line
+     * score header is 28dp wide and "C. Gauff" does not fit in it. A pair takes the first
+     * letter of each surname plus a slash.
+     */
+    private fun tennisAbbrev(displayName: String, doubles: Boolean): String {
+        if (doubles) {
+            return displayName.split('/').map { it.trim().substringAfterLast(' ').take(1) }
+                .filter { it.isNotEmpty() }.joinToString("/").uppercase()
+        }
+        return displayName.trim().substringAfterLast(' ').take(3).uppercase()
+    }
+
+    /**
+     * The players in the scoreboard's draws, singles and doubles, as followables. The
+     * flag stands in for the crest. Deduplicated with the rankings by the repository.
+     */
+    fun parseTennisPlayers(leagueId: String, body: String): List<TeamRef> {
+        val events = JSONObject(body).optJSONArray("events") ?: return emptyList()
+        val out = mutableListOf<TeamRef>()
+        for (e in events.objects()) {
+            for (grouping in (e.optJSONArray("groupings") ?: JSONArray()).objects()) {
+                for (comp in (grouping.optJSONArray("competitions") ?: JSONArray()).objects()) {
+                    for (c in (comp.optJSONArray("competitors") ?: JSONArray()).objects()) {
+                        c.optJSONObject("athlete")?.let { a ->
+                            playerRef(leagueId, c.optString("id"), a)?.let { out += it }
+                        }
+                        val pair = c.optJSONObject("roster")?.optJSONArray("athletes")?.objects()
+                            .orEmpty()
+                        val ids = c.optString("id").split('-')
+                        if (pair.size == ids.size) {
+                            pair.zip(ids).forEach { (a, id) ->
+                                playerRef(leagueId, id, a)?.let { out += it }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return out.distinctBy { it.teamId }.sortedBy { it.displayName }
+    }
+
+    /** The top 150 of one tour as followables, in ranking order. */
+    fun parseRankedPlayers(leagueId: String, body: String): List<TeamRef> {
+        val out = mutableListOf<TeamRef>()
+        for (ranking in (JSONObject(body).optJSONArray("rankings") ?: JSONArray()).objects()) {
+            for (rank in (ranking.optJSONArray("ranks") ?: JSONArray()).objects()) {
+                val a = rank.optJSONObject("athlete") ?: continue
+                playerRef(leagueId, a.optString("id"), a)?.let { out += it }
+            }
+        }
+        return out.distinctBy { it.teamId }
+    }
+
+    private fun playerRef(leagueId: String, id: String, a: JSONObject): TeamRef? {
+        if (id.isEmpty()) return null
+        val name = a.optString("displayName").takeIf { it.isNotEmpty() } ?: return null
+        // The rankings feed spells it `shortname`; the scoreboard `shortName`.
+        val short = a.optString("shortName").ifEmpty { a.optString("shortname") }.ifEmpty { name }
+        return TeamRef(
+            leagueId = leagueId,
+            teamId = id,
+            displayName = name,
+            short = short,
+            abbrev = tennisAbbrev(name, doubles = false),
+            // The scoreboard wraps the flag in an object with an `href`; the rankings
+            // feed sends the bare URL under the same key.
+            logoUrl = (a.optJSONObject("flag")?.optString("href") ?: a.optString("flag"))
+                .takeIf { it.isNotEmpty() },
+        )
+    }
+
+    /**
+     * One tour's ranking as a standings table. Rank, name, points, and the move since
+     * last week in the long-press sheet.
+     */
+    fun parseRankings(body: String): List<StandingsGroup> {
+        val out = mutableListOf<StandingsGroup>()
+        for (ranking in (JSONObject(body).optJSONArray("rankings") ?: JSONArray()).objects()) {
+            val rows = (ranking.optJSONArray("ranks") ?: JSONArray()).objects().mapNotNull { r ->
+                val a = r.optJSONObject("athlete") ?: return@mapNotNull null
+                val current = r.optInt("current", 0)
+                val previous = r.optInt("previous", 0)
+                val points = fmtNum(r.optDouble("points", 0.0))
+                StandingsRow(
+                    rank = current.toString(),
+                    name = a.optString("displayName"),
+                    abbrev = tennisAbbrev(a.optString("displayName"), doubles = false),
+                    values = listOf(points),
+                    teamId = a.optString("id"),
+                    allStats = listOfNotNull(
+                        "Rank" to current.toString(),
+                        "Points" to points,
+                        if (previous > 0) "Last week" to previous.toString() else null,
+                        a.optString("citizenshipCountry").takeIf { it.isNotEmpty() }
+                            ?.let { "Country" to it },
+                        a.optInt("age", 0).takeIf { it > 0 }?.let { "Age" to it.toString() },
+                    ),
+                )
+            }
+            if (rows.isNotEmpty()) {
+                out += StandingsGroup(ranking.optString("name"), listOf("PTS"), rows)
+            }
         }
         return out
     }

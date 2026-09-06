@@ -29,6 +29,26 @@ object TickerPlan {
     const val WARMUP_INTERVAL = 5L * 60_000
 
     /**
+     * How often the game screen re-fetches while it is open on a live game.
+     *
+     * Faster than the ticker because the cost model is different: the screen is on, the
+     * radio is already awake, and the person is looking at the number. Fifteen seconds is
+     * about the gap between a pitch and the next one landing in the feed.
+     */
+    const val SCREEN_INTERVAL = 15_000L
+
+    /** How long the screen waits before checking again whether a game has gone live. */
+    const val SCREEN_IDLE_INTERVAL = 60_000L
+
+    /**
+     * Whether an open game screen should be re-fetching. Live, or close enough to the
+     * start that the flip to live is what the person is waiting on.
+     */
+    fun screenShouldPoll(game: Game, nowMillis: Long, leadMillis: Long): Boolean =
+        game.state == GameState.LIVE ||
+            (game.state == GameState.PRE && game.startMillis in nowMillis..(nowMillis + leadMillis))
+
+    /**
      * The ticker gives up after this long and hands back to the alarm chain.
      *
      * A provider that leaves a game stuck in LIVE is not hypothetical — ESPN did exactly
@@ -98,6 +118,9 @@ object TickerPlan {
         SportKind.HOCKEY -> 3
         SportKind.SOCCER -> 2
         SportKind.RACING -> 0
+        // The third set is the earliest a match can end in either format, and past it
+        // every set is a deciding one for somebody.
+        SportKind.TENNIS -> 3
     }
 
     /**
@@ -111,6 +134,8 @@ object TickerPlan {
         SportKind.HOCKEY -> 1
         SportKind.SOCCER -> 1
         SportKind.RACING -> 0
+        // Sets. A set apart is one set from over either way.
+        SportKind.TENNIS -> 1
     }
 
     /**

@@ -4,7 +4,7 @@ package com.gios.lightsports.model
  * What kind of game this is. Drives two things only: how a period is spelled
  * ("Bot 7th" vs "Q3" vs "P2"), and how loud the notifications are allowed to be.
  */
-enum class SportKind { BASEBALL, FOOTBALL, BASKETBALL, HOCKEY, SOCCER, RACING }
+enum class SportKind { BASEBALL, FOOTBALL, BASKETBALL, HOCKEY, SOCCER, RACING, TENNIS }
 
 enum class GameState { PRE, LIVE, FINAL, OFF }
 
@@ -53,6 +53,13 @@ data class League(
     /** ESPN `sports/<path>` fragment, e.g. `baseball/mlb`. */
     val espnPath: String? = null,
     /**
+     * A second ESPN path whose games are folded into the same league. Tennis is the one
+     * user: ESPN keeps the men's and women's tours at `tennis/atp` and `tennis/wta`, and a
+     * Grand Slam appears under both with its own half of the draw. One league in the
+     * picker, two fetches underneath.
+     */
+    val espnAltPath: String? = null,
+    /**
      * ESPN's `groups` filter, e.g. `"80"` for FBS college football. Confirmed live:
      * the scoreboard and standings endpoints both honor it (`groups=` on the former,
      * singular `group=` on the latter — no relation between the two spellings), but the
@@ -78,6 +85,15 @@ data class League(
     /** Shown under the toggles so the choice isn't abstract. */
     val championshipExample: String? = null,
     val specialExample: String? = null,
+    /**
+     * What the two category toggles are called. "Championship games" and "Special games"
+     * fit every team league; tennis has no all-star weekend and its championship is just
+     * the final, so it names its rounds instead.
+     */
+    val championshipLabel: String = "Championship games",
+    val specialLabel: String = "Special games",
+    /** What one followable thing is called in the picker: a team, or a player. */
+    val followNoun: String = "team",
     /** Knockout competitions whose games are folded into this league's feed. */
     val cups: List<Cup> = emptyList(),
     /**
@@ -115,6 +131,11 @@ data class Side(
     val lineScore: List<String> = emptyList(),
     val hits: Int? = null,
     val errors: Int? = null,
+    /**
+     * The people making up this side when it isn't a club: a doubles pair. A follow on
+     * either player matches the pair, so following Gauff gets her doubles too.
+     */
+    val memberIds: List<String> = emptyList(),
 )
 
 data class Game(
@@ -156,6 +177,8 @@ data class Game(
     fun involves(teamKeys: Set<String>): Boolean {
         if ("$leagueId:${home.teamId}" in teamKeys) return true
         if ("$leagueId:${away.teamId}" in teamKeys) return true
+        if (home.memberIds.any { "$leagueId:$it" in teamKeys }) return true
+        if (away.memberIds.any { "$leagueId:$it" in teamKeys }) return true
         return when (eventClass) {
             EventClass.SHOWCASE -> "$leagueId:special" in teamKeys
             EventClass.CHAMPIONSHIP -> "$leagueId:championship" in teamKeys

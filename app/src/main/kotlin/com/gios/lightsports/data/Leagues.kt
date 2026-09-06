@@ -10,7 +10,8 @@ import com.gios.lightsports.model.SportKind
  * Every league the app knows about, and where its data comes from.
  *
  * Four providers, all keyless public JSON:
- *  - ESPN's site API covers the men's and women's majors and Formula 1.
+ *  - ESPN's site API covers the men's and women's majors, college football, Formula 1
+ *    and the Grand Slams.
  *  - MLB's StatsAPI is the only free source for the four full-season MiLB levels;
  *    ESPN has no minor-league scoreboard at all.
  *  - The PWHL is not on ESPN either. It runs on HockeyTech/LeagueStat, whose feed
@@ -177,10 +178,53 @@ object Leagues {
         markPeriods = true,
     )
 
+    /**
+     * FCS, the division below. Same feed, `groups=81`. The FCS scoreboard carries every
+     * game an FCS side plays, including the September trips to FBS money games
+     * (Hampton at Maryland), so a followed FCS team never drops out of view when it
+     * plays up — and the same fixture is also in the FBS feed, which is fine: each
+     * league's list is filtered to its own follows, so it appears once per team you
+     * follow in it, not twice.
+     */
+    val FCS = League(
+        id = "fcs", name = "NCAA Division I FCS Football", short = "FCS",
+        kind = SportKind.FOOTBALL, provider = Provider.ESPN,
+        espnPath = "football/college-football", espnGroup = "81",
+        markPeriods = true,
+    )
+
+    /**
+     * The four Grand Slams, singles and doubles, off ESPN's two tour scoreboards.
+     *
+     * Tennis breaks the shape the rest of this file assumes in three ways, all handled
+     * in [EspnParser.parseTennis]: a tournament is one event holding six hundred
+     * matches rather than one game each; the sides are athletes (or a doubles pair, as
+     * a `roster`) rather than teams; and the score that matters is sets, with games per
+     * set as the line score. Only `major: true` events are kept — the tour stops in
+     * between would be forty more tournaments a year.
+     *
+     * The categories reuse the two event toggles under different names: the finals of
+     * every draw as the "championship", and the quarterfinals and semifinals as the
+     * "special" tier. The roster is the ATP and WTA top 150 plus whoever is in the
+     * current draws, so a qualifier on a run is followable the day it matters.
+     */
+    val TENNIS = League(
+        id = "tennis", name = "Grand Slam tennis", short = "TENNIS",
+        kind = SportKind.TENNIS, provider = Provider.ESPN,
+        espnPath = "tennis/atp", espnAltPath = "tennis/wta",
+        hasEvents = true,
+        championshipLabel = "Finals",
+        championshipExample = "Every final: singles, doubles, mixed",
+        specialLabel = "Quarterfinals onward",
+        specialExample = "Quarterfinals and semifinals of every draw",
+        followNoun = "player",
+    )
+
     val all: List<League> = listOf(
         MLB, NFL, NBA, NHL, MLS, F1,
         EPL, LALIGA, BUNDESLIGA, SERIE_A, LIGUE_1, UCL, UEL,
-        CFB,
+        CFB, FCS,
+        TENNIS,
         WNBA, NWSL, PWHL, WPBL,
         AAA, AA, HIGH_A, SINGLE_A,
     )
@@ -189,7 +233,8 @@ object Leagues {
     val sections: List<Pair<String, List<League>>> = listOf(
         "MAJOR" to listOf(MLB, NFL, NBA, NHL, MLS),
         "SOCCER" to listOf(EPL, LALIGA, BUNDESLIGA, SERIE_A, LIGUE_1, UCL, UEL),
-        "COLLEGE FOOTBALL" to listOf(CFB),
+        "COLLEGE FOOTBALL" to listOf(CFB, FCS),
+        "TENNIS" to listOf(TENNIS),
         "WOMEN'S" to listOf(WNBA, NWSL, PWHL, WPBL),
         "MINOR LEAGUE BASEBALL" to listOf(AAA, AA, HIGH_A, SINGLE_A),
         "RACING" to listOf(F1),
