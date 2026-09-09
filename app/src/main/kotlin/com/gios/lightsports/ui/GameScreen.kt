@@ -349,7 +349,8 @@ private fun ScoreHeader(
         )
         if (game.state == GameState.PRE) {
             Text(
-                if (game.neutralSite) "VS" else "AT",
+                // A match has no host; a neutral-site game has one in name only.
+                if (game.neutralSite || kind == SportKind.TENNIS) "VS" else "AT",
                 style = Marks.bigDash,
                 color = Faint,
                 modifier = Modifier.padding(horizontal = 12.dp),

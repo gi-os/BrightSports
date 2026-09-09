@@ -253,10 +253,13 @@ fun GameRow(
         // The third line: what is happening (live), what to expect (pre-game), or what
         // happened (final). One line each, none of them when there is nothing to say.
         val third = when (game.state) {
-            GameState.LIVE -> situationLine(game, kind)
+            // A tennis score is the sets written out: "6-3 1-6 1-0". The column at the
+            // right is sets won, which alone says nothing about how the match went.
+            GameState.LIVE, GameState.FINAL -> if (kind == SportKind.TENNIS) {
+                AlertText.setLine(game).takeIf { it.isNotEmpty() }
+            } else if (game.state == GameState.LIVE) situationLine(game, kind) else game.headline
             GameState.PRE -> listOfNotNull(game.odds, game.overUnder?.let { "O/U $it" }, game.weather)
                 .joinToString(" · ").takeIf { it.isNotEmpty() }
-            GameState.FINAL -> game.headline
             GameState.OFF -> null
         }
         if (third != null || (live && situation?.isRedZone == true)) {
@@ -359,6 +362,7 @@ fun TeamMark(
                 color = if (dimmed) Dim else Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f, fill = false),
             )
         } else {
             Text(
@@ -398,25 +402,29 @@ private fun TeamLine(
     timeouts: Int? = null,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TeamMark(side, kind, logoUrl, dimmed, modifier = Modifier.weight(1f, fill = false))
-        Spacer(Modifier.width(12.dp))
-        // "#7 · 2-0 · BALL": the poll rank, the record, and who has it.
-        val facts = listOfNotNull(
-            side.rank?.let { "#$it" },
-            side.record,
-            "BALL".takeIf { hasBall },
-        ).joinToString(" · ")
-        if (facts.isNotEmpty()) {
-            Text(
-                facts,
-                style = MaterialTheme.typography.labelSmall,
-                color = if (hasBall) Dim else Faint,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
-        } else {
-            Spacer(Modifier.weight(1f))
+        // The mark and its facts share one weighted slot so the score is pinned to the
+        // right edge whatever the name's width. Two weighted siblings did not do that:
+        // a mark that does not fill its share leaves the gap where it stood, and the
+        // score column wandered by team.
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            TeamMark(side, kind, logoUrl, dimmed, modifier = Modifier.weight(1f, fill = false))
+            // "#7 · 2-0 · BALL": the poll rank, the record, and who has it.
+            val facts = listOfNotNull(
+                side.rank?.let { "#$it" },
+                side.record,
+                "BALL".takeIf { hasBall },
+            ).joinToString(" · ")
+            if (facts.isNotEmpty()) {
+                Spacer(Modifier.width(12.dp))
+                Text(
+                    facts,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (hasBall) Dim else Faint,
+                    maxLines = 1,
+                )
+            }
         }
+        Spacer(Modifier.width(12.dp))
         if (timeouts != null) {
             Timeouts(timeouts, dimmed)
             Spacer(Modifier.width(14.dp))

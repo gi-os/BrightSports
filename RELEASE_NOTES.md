@@ -1,3 +1,9 @@
+## BrightSports v2.0 patch — the score column, and tennis
+
+**Scores line up again.** On the feed, the score of each row sat a different distance from the right edge depending on the team name. The mark and the record now share one slot and the score is pinned to the edge, as in the mock.
+
+**Tennis reads like tennis.** A live or finished match shows the set line under the two names ("6-3 1-6 1-0"). The column at the right stays sets won. Long names shorten with an ellipsis instead of pushing the score off the row. A match that has not started shows VS between the players, not AT.
+
 ## BrightSports v2.0 — every sport gets its strip
 
 Part four closes the football work and carries the same game screen to the other sports. The strip under the score is the one part that changes per sport. The header, the last plays and the line score stay the same.

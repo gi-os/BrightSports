@@ -401,6 +401,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.0.45 | Fix: the feed's score column is pinned to the right edge; tennis rows carry the set line and VS |
 | v2.0 | Per-sport strips on the game screen: the baseball diamond and count, soccer shots/possession and a timeline of goals and cards, basketball leaders and shooting, hockey shots on goal |
 | v1.29 | Week paging in the feed with a WEEK N title, a team season page with W/L rows and the bye, and a BYE · NEXT row for idle football teams |
 | v1.28 | Game screen: marks and score header, the football field with ball and first-down marker, last plays from ESPN's play-by-play, a scoring summary from the game summary |
