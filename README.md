@@ -183,6 +183,11 @@ SDK artifacts sit on GitHub Packages behind a token and this ships as a plain AP
   just no alerts. The notifier matches against follows *minus* silenced, which is why a
   derby still alerts — Yankees–Mets with the Mets silenced matches on the Yankees.
   Silencing one team never silences a game the other is in.
+- **Team** — tap a mark on the game screen (or an idle team in the feed) for the team's
+  season: the record, the division and place, and a row per week with the result, the
+  live score, the next kickoff or BYE. Backed by `teams/<id>/schedule`, cached six hours;
+  the body is the scoreboard shape with two quirks (`score` is an object, the network is
+  `media.shortName`) so one parser serves both.
 - **Standings** — followed leagues only, your team's row inverts. **Hold a row** for
   every stat the provider sent — three or four times what fits the table: run
   differential, streaks, home/away splits, a driver's points at every round.
@@ -386,6 +391,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.29 | Week paging in the feed with a WEEK N title, a team season page with W/L rows and the bye, and a BYE · NEXT row for idle football teams |
 | v1.28 | Game screen: marks and score header, the football field with ball and first-down marker, last plays from ESPN's play-by-play, a scoring summary from the game summary |
 | v1.27 | Football: feed rows with possession, down and distance, timeouts and the line; alerts titled TD/FG/SAFETY with the play text; touchdown-only loudness; red zone and one-score alerts; day headers |
 | v1.26 | The screen stays awake while a live game is open and updating itself, so it doesn't sleep between the 15-second refreshes |

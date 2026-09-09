@@ -13,6 +13,9 @@ import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.Play
 import com.gios.lightsports.model.ScoringPlay
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.SportKind
+import com.gios.lightsports.model.TeamSeason
+import com.gios.lightsports.util.Fmt
 import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
@@ -32,15 +35,28 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = SportsRepository(app)
     val prefs = Prefs(app)
 
+    /** A followed team with nothing in the window: its name, and where it is instead. */
+    data class IdleTeam(val key: String, val label: String, val note: String? = null)
+
     data class FeedState(
         val loading: Boolean = false,
         val sections: List<Feed.Section> = emptyList(),
         val games: List<Game> = emptyList(),
         val updatedAt: Long = 0L,
         val offline: Boolean = false,
-        /** Followed teams with no fixture in the window, named for the feed's last row. */
-        val idle: List<String> = emptyList(),
+        /** Followed teams with no fixture in the window, for the feed's last rows. */
+        val idle: List<IdleTeam> = emptyList(),
+        /** Weeks away from this one: 0 is now, -1 last week, 1 next week. */
+        val weekOffset: Int = 0,
+        /** "WEEK 2", or "SEP 10 – 15" when the games in view carry no week number. */
+        val title: String = "SPORTS",
+        /** "SEP 10 – 15", plus "ALL FINAL" and "3–1 FOR YOUR TEAMS" on a week gone by. */
+        val subtitle: String? = null,
     )
+
+    /** One team's season, keyed `leagueId:teamId`. */
+    private val _seasons = MutableStateFlow<Map<String, TeamSeason>>(emptyMap())
+    val seasons: StateFlow<Map<String, TeamSeason>> = _seasons.asStateFlow()
 
     private val _feed = MutableStateFlow(FeedState())
     val feed: StateFlow<FeedState> = _feed.asStateFlow()
@@ -70,15 +86,40 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val _scoring = MutableStateFlow<Map<String, Pair<String, List<ScoringPlay>>>>(emptyMap())
     val scoring: StateFlow<Map<String, Pair<String, List<ScoringPlay>>>> = _scoring.asStateFlow()
 
-    fun refresh() {
+    fun refresh() = refresh(_feed.value.weekOffset)
+
+    /** Page the feed a week either way. Zero is this week. */
+    fun shiftWeek(delta: Int) {
+        val next = (_feed.value.weekOffset + delta).coerceIn(-4, 4)
+        if (next != _feed.value.weekOffset) refresh(next)
+    }
+
+    private fun refresh(weekOffset: Int) {
         if (_feed.value.loading) return
-        _feed.value = _feed.value.copy(loading = true)
+        _feed.value = _feed.value.copy(loading = true, weekOffset = weekOffset)
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val zone = ZoneId.systemDefault()
-            val (games, races) = withContext(Dispatchers.IO) { repo.followedGames(now, zone) }
-            val sections = Feed.build(games, races, now, zone)
-            val idle = Feed.idleFollows(prefs.follows, games, races) { key -> teamLabel(key) }
+            val shift = weekOffset * 7L
+            val (games, races) = withContext(Dispatchers.IO) { repo.followedGames(now, zone, shift) }
+            // A paged week widens the bucket window in that direction so the whole slate
+            // is kept; the other direction stays at its usual reach.
+            val back = SportsRepository.BACK_DAYS + 7L * maxOf(0, -weekOffset)
+            val ahead = (SportsRepository.AHEAD_DAYS - 1) + 7L * maxOf(0, weekOffset)
+            val sections = Feed.build(games, races, now, zone, backDays = back, aheadDays = ahead)
+            val idleKeys = Feed.idleFollows(prefs.follows, games, races) { key -> key }
+            val idle = idleKeys.mapNotNull { key -> teamLabel(key)?.let { IdleTeam(key, it) } }
+            val dayMillis = 24L * 60 * 60 * 1000
+            val fromMillis = now - SportsRepository.BACK_DAYS * dayMillis + shift * dayMillis
+            val toMillis = now + (SportsRepository.AHEAD_DAYS - 1) * dayMillis + shift * dayMillis
+            val range = Feed.weekTitle(emptyList(), fromMillis, toMillis, zone)
+            val title = if (games.isEmpty()) range else Feed.weekTitle(games, fromMillis, toMillis, zone)
+            val allFinal = games.isNotEmpty() && games.all { it.state == GameState.FINAL }
+            val subtitle = listOfNotNull(
+                range.takeIf { it != title },
+                "ALL FINAL".takeIf { allFinal },
+                Feed.recordLine(games, prefs.follows).takeIf { weekOffset != 0 || allFinal },
+            ).joinToString(" · ").takeIf { it.isNotEmpty() }
             _feed.value = FeedState(
                 loading = false,
                 sections = sections,
@@ -88,8 +129,48 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 // Followed teams but nothing came back: almost always the network,
                 // and worth saying so rather than showing a bare "no games".
                 offline = prefs.follows.isNotEmpty() && games.isEmpty() && races.isEmpty(),
+                weekOffset = weekOffset,
+                title = title,
+                subtitle = subtitle,
             )
-            syncTicker(games)
+            if (weekOffset == 0) syncTicker(games)
+            // A followed football team with no game this week is on its bye, or between
+            // a Monday night and the next Sunday. Its schedule says which, and what's next.
+            noteIdle(idle, now, zone)
+        }
+    }
+
+    /** Fill in "BYE · next vs BAL · Sun 9/20 4:25" for idle teams whose league has a schedule. */
+    private suspend fun noteIdle(idle: List<IdleTeam>, now: Long, zone: ZoneId) {
+        if (idle.isEmpty()) return
+        val noted = idle.map { team ->
+            val leagueId = team.key.substringBefore(':')
+            val teamId = team.key.substringAfter(':')
+            val league = Leagues.byId(leagueId) ?: return@map team
+            if (league.kind != SportKind.FOOTBALL) return@map team
+            val season = withContext(Dispatchers.IO) { repo.teamSeason(league, teamId) }
+                ?: return@map team
+            _seasons.value = _seasons.value + (team.key to season)
+            val next = season.next(now)
+            val onBye = season.byeWeek != null && next?.week?.let { it == season.byeWeek + 1 } == true
+            val nextText = next?.let { g ->
+                val home = g.home.teamId == teamId
+                val other = if (home) g.away else g.home
+                "next ${if (home) "vs" else "@"} ${other.abbrev} · ${Fmt.dayDate(g.startMillis, zone)} ${Fmt.time(g.startMillis, zone)}"
+            }
+            team.copy(note = listOfNotNull("BYE".takeIf { onBye }, nextText).joinToString(" · ").takeIf { it.isNotEmpty() })
+        }
+        // Only if the feed hasn't moved on under us.
+        if (_feed.value.idle.map { it.key } == idle.map { it.key }) {
+            _feed.value = _feed.value.copy(idle = noted)
+        }
+    }
+
+    fun loadSeason(league: League, teamId: String) {
+        val key = "${league.id}:$teamId"
+        viewModelScope.launch {
+            val season = withContext(Dispatchers.IO) { repo.teamSeason(league, teamId) } ?: return@launch
+            _seasons.value = _seasons.value + (key to season)
         }
     }
 

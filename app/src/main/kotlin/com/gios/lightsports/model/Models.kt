@@ -357,3 +357,36 @@ data class ScoringPlay(
     val awayScore: Int,
     val homeScore: Int,
 )
+
+/**
+ * One team's season as the provider lists it: every fixture, played or not, plus the
+ * bye week where the sport has one. Football is the reason this exists — a season is
+ * eighteen rows, and a bye is a row with nothing in it — but the endpoint answers for
+ * every ESPN league.
+ */
+data class TeamSeason(
+    val leagueId: String,
+    val teamId: String,
+    val games: List<Game>,
+    val byeWeek: Int? = null,
+    val fetchedAt: Long = 0L,
+) {
+    /** The first fixture still to be played. */
+    fun next(nowMillis: Long): Game? = games
+        .filter { it.state == GameState.PRE && it.startMillis > nowMillis }
+        .minByOrNull { it.startMillis }
+
+    /** Wins and losses so far, from the finals in the list. */
+    fun record(): Pair<Int, Int> {
+        var w = 0; var l = 0
+        for (g in games) {
+            if (g.state != GameState.FINAL) continue
+            val mine = if (g.home.teamId == teamId) g.home else g.away
+            val theirs = if (g.home.teamId == teamId) g.away else g.home
+            val a = mine.score ?: continue
+            val b = theirs.score ?: continue
+            if (a > b) w++ else if (b > a) l++
+        }
+        return w to l
+    }
+}

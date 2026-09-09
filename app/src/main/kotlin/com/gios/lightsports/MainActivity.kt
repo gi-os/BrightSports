@@ -52,6 +52,7 @@ import com.gios.lightsports.ui.Rule
 import com.gios.lightsports.ui.SettingsScreen
 import com.gios.lightsports.ui.SportsViewModel
 import com.gios.lightsports.ui.StandingsScreen
+import com.gios.lightsports.ui.TeamScreen
 import com.gios.lightsports.ui.TeamStatsScreen
 import com.gios.lightsports.ui.theme.LightSportsTheme
 
@@ -143,6 +144,9 @@ class MainActivity : ComponentActivity() {
  * Three places, because editing your teams is a thing you do twice a season and the
  * action bar should not carry it for the rest of the year. It lives under settings.
  */
+/** What the team page needs to open before its season has loaded. */
+private data class TeamPage(val league: League, val teamId: String, val name: String, val abbrev: String)
+
 private const val TAB_SCORES = 0
 private const val TAB_TABLE = 1
 private const val TAB_MORE = 2
@@ -164,6 +168,16 @@ private fun App(openGameId: String?) {
     var openLeague by remember { mutableStateOf<League?>(null) }
     var teamsOpen by remember { mutableStateOf(false) }
     var openStanding by remember { mutableStateOf<Pair<StandingsRow, League>?>(null) }
+    /** A team's season page: league, team id, display name, abbreviation. */
+    var openTeam by remember { mutableStateOf<TeamPage?>(null) }
+    val seasons by vm.seasons.collectAsState()
+
+    fun showTeam(league: League, teamId: String, name: String, abbrev: String) {
+        openTeam = TeamPage(league, teamId, name, abbrev)
+        vm.loadSeason(league, teamId)
+        vm.loadTeams(league)
+        if (standings[league.id] == null) vm.loadStandings(league)
+    }
 
     LaunchedEffect(Unit) {
         vm.refresh()
@@ -201,10 +215,12 @@ private fun App(openGameId: String?) {
     // LightOS supplies the back gesture; the SDK's own screens expect it to unwind the
     // stack rather than leave the app, so it is handled wherever there is a level to
     // pop and left alone at the root.
-    val canPop = openGame != null || openLeague != null || teamsOpen || openStanding != null
+    val canPop = openGame != null || openLeague != null || teamsOpen || openStanding != null ||
+        openTeam != null
     BackHandler(enabled = canPop) {
         when {
             openGame != null -> openGame = null
+            openTeam != null -> openTeam = null
             openStanding != null -> openStanding = null
             openLeague != null -> openLeague = null
             else -> teamsOpen = false
@@ -215,10 +231,15 @@ private fun App(openGameId: String?) {
         val game = openGame
         val league = openLeague
         val standing = openStanding
+        val team = openTeam
         when {
             game != null -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { openGame = null }, "Back"),
                 title = Leagues.byId(game.leagueId)?.short,
+            )
+            team != null -> LightTopBar(
+                left = BarItem.Icon(R.drawable.ic_back_white, { openTeam = null }, "Back"),
+                title = team.league.short,
             )
             standing != null -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { openStanding = null }, "Back"),
@@ -231,6 +252,13 @@ private fun App(openGameId: String?) {
             teamsOpen -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { teamsOpen = false }, "Back"),
                 title = "MY TEAMS",
+            )
+            // The scores tab pages by week: the chevrons move the window seven days, the
+            // title says which week is in view. Refresh is a tap on the UPDATED line.
+            tab == TAB_SCORES && follows.isNotEmpty() -> LightTopBar(
+                left = BarItem.Icon(R.drawable.ic_back_white, { vm.shiftWeek(-1) }, "Previous week"),
+                title = feed.title,
+                right = BarItem.Icon(R.drawable.ic_arrow_right_white, { vm.shiftWeek(1) }, "Next week"),
             )
             else -> LightTopBar(
                 title = when (tab) {
@@ -257,6 +285,23 @@ private fun App(openGameId: String?) {
                     scoring = scoring[game.id]?.second,
                     onLoadScoring = { vm.loadScoring(game) },
                     onLoadPlays = { Leagues.byId(game.leagueId)?.let { vm.loadPlays(it, game.id) } },
+                    onTeam = { side ->
+                        Leagues.byId(game.leagueId)?.let { l ->
+                            // The game closes behind the team page so back lands on the feed.
+                            openGame = null
+                            showTeam(l, side.teamId, side.displayName, side.abbrev)
+                        }
+                    },
+                )
+                team != null -> TeamScreen(
+                    league = team.league,
+                    teamId = team.teamId,
+                    displayName = team.name,
+                    abbrev = team.abbrev,
+                    logoUrl = logos["${team.league.id}:${team.teamId}"],
+                    season = seasons["${team.league.id}:${team.teamId}"],
+                    standings = standings[team.league.id],
+                    onGame = { openGame = it },
                 )
                 standing != null -> TeamStatsScreen(standing.first, standing.second)
                 teamsOpen -> FollowScreen(
@@ -280,6 +325,13 @@ private fun App(openGameId: String?) {
                     logos = logos,
                     onGame = { openGame = it },
                     onEditTeams = { teamsOpen = true },
+                    onRefresh = { vm.refresh() },
+                    onTeam = { key ->
+                        val l = Leagues.byId(key.substringBefore(':'))
+                        val id = key.substringAfter(':')
+                        val ref = teams[l?.id]?.firstOrNull { it.teamId == id }
+                        if (l != null) showTeam(l, id, ref?.displayName ?: id, ref?.abbrev ?: "")
+                    },
                 )
                 tab == TAB_TABLE -> StandingsScreen(
                     leagues = vm.followedLeagues(),
@@ -301,7 +353,7 @@ private fun App(openGameId: String?) {
 
         // A game fills the screen on its own; the action bar would only offer places to
         // go while you are reading a line score.
-        if (game == null) {
+        if (game == null && team == null) {
             Rule()
             fun go(target: Int) {
                 tab = target

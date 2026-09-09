@@ -2,6 +2,7 @@ package com.gios.lightsports.ui
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -75,6 +76,7 @@ fun GameScreen(
     scoring: List<ScoringPlay>? = null,
     onLoadScoring: () -> Unit = {},
     onLoadPlays: () -> Unit = {},
+    onTeam: (Side) -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val league = Leagues.byId(game.leagueId)
@@ -152,6 +154,7 @@ fun GameScreen(
             logos = logos,
             dimAway = final && !awayWon,
             dimHome = final && !homeWon,
+            onTeam = onTeam,
         )
 
         // ---- live football: the ball, the field, the drive
@@ -342,6 +345,7 @@ private fun ScoreHeader(
     logos: Map<String, String>,
     dimAway: Boolean,
     dimHome: Boolean,
+    onTeam: (Side) -> Unit,
 ) {
     val live = game.state == GameState.LIVE
     val showTimeouts = live && kind == SportKind.FOOTBALL && game.situation?.homeTimeouts != null
@@ -353,7 +357,7 @@ private fun ScoreHeader(
             side = game.away, kind = kind, logoUrl = logos["${game.leagueId}:${game.away.teamId}"],
             dimmed = dimAway, alignEnd = false,
             timeouts = if (showTimeouts) game.situation?.awayTimeouts else null,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).clickable { onTeam(game.away) },
         )
         if (game.state == GameState.PRE) {
             Text(
@@ -386,7 +390,7 @@ private fun ScoreHeader(
             side = game.home, kind = kind, logoUrl = logos["${game.leagueId}:${game.home.teamId}"],
             dimmed = dimHome, alignEnd = true,
             timeouts = if (showTimeouts) game.situation?.homeTimeouts else null,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).clickable { onTeam(game.home) },
         )
     }
 }

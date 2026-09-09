@@ -45,6 +45,19 @@ object EspnParser {
     fun teamsUrl(league: League): String = "$SITE/${league.espnPath}/teams?limit=400"
 
     /**
+     * One team's whole season. The body is `events[]` in the scoreboard's shape with two
+     * differences handled in [side] and [broadcast]: a finished game's `score` is an
+     * object, and the network sits under `media.shortName`. About 240 KB for an NFL team
+     * because every event carries both clubs' full records and logos.
+     */
+    fun scheduleUrl(league: League, teamId: String): String =
+        "$SITE/${league.espnPath}/teams/$teamId/schedule"
+
+    /** The schedule body's `byeWeek`, or null where the sport has none. */
+    fun parseByeWeek(body: String): Int? =
+        JSONObject(body).optInt("byeWeek", 0).takeIf { it > 0 }
+
+    /**
      * level=3 asks for divisions rather than conferences. Leagues without divisions
      * ignore it, so it is safe to send everywhere.
      */
@@ -360,10 +373,16 @@ object EspnParser {
             displayName = t.optString("displayName"),
             short = t.optString("shortDisplayName").ifEmpty { t.optString("name") },
             abbrev = t.optString("abbreviation").ifEmpty { t.optString("shortDisplayName").take(3) },
-            score = c.optString("score").toIntOrNull(),
+            // A string on the scoreboard, an object on a team's schedule.
+            score = c.optJSONObject("score")?.let { fmtNum(it.optDouble("value", Double.NaN)).toIntOrNull() }
+                ?: c.optString("score").toIntOrNull(),
             record = c.optJSONArray("records")?.objects()
                 ?.firstOrNull { it.optString("type") == "total" }
-                ?.optString("summary")?.takeIf { it.isNotEmpty() },
+                ?.optString("summary")?.takeIf { it.isNotEmpty() }
+                // The schedule spells it `record[]` with a `displayValue`.
+                ?: c.optJSONArray("record")?.objects()
+                    ?.firstOrNull { it.optString("type") == "total" }
+                    ?.optString("displayValue")?.takeIf { it.isNotEmpty() },
             lineScore = (c.optJSONArray("linescores") ?: JSONArray()).objects().map {
                 val display = it.optString("displayValue")
                 if (display.isNotEmpty()) display else fmtNum(it.optDouble("value", 0.0))
@@ -382,10 +401,17 @@ object EspnParser {
      */
     private fun broadcast(comp: JSONObject): String? {
         val casts = comp.optJSONArray("broadcasts")?.objects() ?: return null
-        val pick = casts.firstOrNull { it.optString("market") == "national" } ?: casts.firstOrNull()
-        val names = pick?.optJSONArray("names") ?: return null
-        return (0 until names.length()).map { names.optString(it) }
-            .filter { it.isNotEmpty() }.joinToString("/").takeIf { it.isNotEmpty() }
+        val pick = casts.firstOrNull {
+            it.optString("market") == "national" ||
+                it.optJSONObject("market")?.optString("type") == "National"
+        } ?: casts.firstOrNull() ?: return null
+        val names = pick.optJSONArray("names")
+        if (names != null) {
+            return (0 until names.length()).map { names.optString(it) }
+                .filter { it.isNotEmpty() }.joinToString("/").takeIf { it.isNotEmpty() }
+        }
+        // The team-schedule shape.
+        return pick.optJSONObject("media")?.optString("shortName")?.takeIf { it.isNotEmpty() }
     }
 
     /**

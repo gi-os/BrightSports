@@ -54,6 +54,8 @@ fun FeedScreen(
     logos: Map<String, String>,
     onGame: (Game) -> Unit,
     onEditTeams: () -> Unit,
+    onTeam: (String) -> Unit = {},
+    onRefresh: () -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
     val listState = rememberLazyListState()
@@ -93,13 +95,30 @@ fun FeedScreen(
         // The refresh control is an icon in the top bar now, so this line is the only
         // thing saying whether the screen can be trusted.
         item(key = "stamp") {
-            Text(
-                if (state.loading) "REFRESHING…"
-                else "UPDATED ${Fmt.ago(state.updatedAt, System.currentTimeMillis()).uppercase()}",
-                style = MaterialTheme.typography.labelSmall,
-                color = Faint,
-                modifier = Modifier.fillMaxWidth().padding(start = 16.dp, top = 10.dp),
-            )
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onRefresh)
+                    .padding(start = 16.dp, end = 16.dp, top = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Text(
+                    if (state.loading) "REFRESHING…"
+                    else "UPDATED ${Fmt.ago(state.updatedAt, System.currentTimeMillis()).uppercase()}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Faint,
+                    maxLines = 1,
+                )
+                if (state.subtitle != null) {
+                    Text(
+                        state.subtitle,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Faint,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.padding(start = 12.dp).weight(1f, fill = false),
+                    )
+                }
+            }
         }
         for (section in state.sections) {
             item(key = "h-${section.title}") { SectionHeader(section.title) }
@@ -117,18 +136,38 @@ fun FeedScreen(
             }
         }
         if (state.idle.isNotEmpty()) {
-            item(key = "idle") {
-                SectionHeader("NO GAME SCHEDULED")
-                for (team in state.idle) {
-                    Text(
-                        team,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Dim,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 10.dp),
-                    )
+            item(key = "idle-h") { SectionHeader("NO GAME THIS WEEK") }
+            for (team in state.idle) {
+                item(key = "idle-${team.key}") {
+                    // "Kansas City Chiefs" / "BYE · next vs BAL · Sun Sep 20 4:25 PM". Tap
+                    // for the team's season.
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onTeam(team.key) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TeamLogo(logos[team.key], size = 24.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                team.label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = Dim,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            if (team.note != null) {
+                                Text(
+                                    team.note.uppercase(),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = Faint,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    Rule()
                 }
             }
         }

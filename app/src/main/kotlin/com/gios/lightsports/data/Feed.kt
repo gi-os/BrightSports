@@ -57,6 +57,9 @@ object Feed {
         races: List<RaceEvent>,
         nowMillis: Long,
         zone: ZoneId,
+        /** How far back and ahead of today a game is kept. Widened when the feed is paged to another week. */
+        backDays: Long = RECENT_DAYS,
+        aheadDays: Long = UPCOMING_DAYS,
     ): List<Section> {
         val today = localDate(nowMillis, zone)
         // Keyed by bucket then day, so LIVE is one section and every other bucket is one
@@ -69,12 +72,12 @@ object Feed {
         }
 
         for (game in games) {
-            val bucket = bucketFor(game.state, game.startMillis, today, zone) ?: continue
+            val bucket = bucketFor(game.state, game.startMillis, today, zone, backDays, aheadDays) ?: continue
             add(bucket, game.startMillis, Item.GameItem(game))
         }
         for (race in races) {
             val at = race.sessionMillis ?: race.startMillis
-            val bucket = bucketFor(race.state, at, today, zone) ?: continue
+            val bucket = bucketFor(race.state, at, today, zone, backDays, aheadDays) ?: continue
             add(bucket, at, Item.RaceItem(race))
         }
 
@@ -130,6 +133,8 @@ object Feed {
         atMillis: Long,
         today: LocalDate,
         zone: ZoneId,
+        backDays: Long = RECENT_DAYS,
+        aheadDays: Long = UPCOMING_DAYS,
     ): Bucket? {
         if (atMillis <= 0L) return null
         if (state == GameState.LIVE) return Bucket.LIVE
@@ -138,10 +143,51 @@ object Feed {
         return when {
             days == 0L -> Bucket.TODAY
             days == 1L -> Bucket.TOMORROW
-            days in 2..UPCOMING_DAYS -> Bucket.UPCOMING
-            days < 0L && -days <= RECENT_DAYS -> Bucket.RECENT
+            days in 2..aheadDays -> Bucket.UPCOMING
+            days < 0L && -days <= backDays -> Bucket.RECENT
             else -> null
         }
+    }
+
+    /**
+     * The header for a paged feed: the football week when the games in view carry one,
+     * else the date range. "WEEK 2" over a week of NFL; "SEP 10 – 15" over a week of
+     * baseball. The NFL's week wins when college football, a week ahead in its own count,
+     * is in the same view.
+     */
+    fun weekTitle(games: List<Game>, fromMillis: Long, toMillis: Long, zone: ZoneId): String {
+        val weeks = games.filter { it.week != null }
+        if (weeks.isNotEmpty() && weeks.size * 2 >= games.size) {
+            val nfl = weeks.filter { it.leagueId == "nfl" }
+            val pick = (nfl.ifEmpty { weeks }).groupingBy { it.week!! }.eachCount()
+                .maxByOrNull { it.value }?.key
+            if (pick != null) return "WEEK $pick"
+        }
+        val from = localDate(fromMillis, zone)
+        val to = localDate(toMillis, zone)
+        val month = DateTimeFormatter.ofPattern("MMM d", Locale.US)
+        return if (from.month == to.month) {
+            "${from.format(month)} – ${to.dayOfMonth}".uppercase()
+        } else {
+            "${from.format(month)} – ${to.format(month)}".uppercase()
+        }
+    }
+
+    /** "3–1 FOR YOUR TEAMS": followed teams' results in a set of finals, or null when none are final. */
+    fun recordLine(games: List<Game>, follows: Set<String>): String? {
+        var w = 0; var l = 0
+        for (g in games) {
+            if (g.state != GameState.FINAL) continue
+            val h = g.home.score ?: continue
+            val a = g.away.score ?: continue
+            if (h == a) continue
+            val homeMine = "${g.leagueId}:${g.home.teamId}" in follows
+            val awayMine = "${g.leagueId}:${g.away.teamId}" in follows
+            if (homeMine && !awayMine) { if (h > a) w++ else l++ }
+            else if (awayMine && !homeMine) { if (a > h) w++ else l++ }
+        }
+        if (w + l == 0) return null
+        return "$w–$l FOR YOUR TEAMS"
     }
 
     /**

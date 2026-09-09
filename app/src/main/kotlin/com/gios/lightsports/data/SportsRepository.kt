@@ -10,6 +10,7 @@ import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.model.RaceEvent
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
+import com.gios.lightsports.model.TeamSeason
 import java.io.File
 import java.time.Instant
 import java.time.ZoneId
@@ -111,11 +112,12 @@ class SportsRepository(context: Context) {
      * Games for one league across a date window. Not cached — a scoreboard is stale
      * the moment it lands.
      */
-    fun games(league: League, nowMillis: Long, zone: ZoneId): List<Game> {
+    fun games(league: League, nowMillis: Long, zone: ZoneId, shiftDays: Long = 0L): List<Game> {
         if (league.kind == SportKind.TENNIS) return matches(league)
         val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
-        val from = today.minusDays(BACK_DAYS)
-        val to = today.plusDays(AHEAD_DAYS)
+        // The window slides by whole weeks: last week's results, next week's slate.
+        val from = today.minusDays(BACK_DAYS).plusDays(shiftDays)
+        val to = today.plusDays(AHEAD_DAYS).plusDays(shiftDays)
         val body = when (league.provider) {
             Provider.ESPN -> Http.get(
                 EspnParser.scoreboardUrl(league, from.format(ymd), to.format(ymd)),
@@ -241,7 +243,7 @@ class SportsRepository(context: Context) {
      * Leagues are fetched one at a time on purpose: a followed set usually touches two
      * or three leagues, and serialising them keeps the Doze allowlist window short.
      */
-    fun followedGames(nowMillis: Long, zone: ZoneId): Pair<List<Game>, List<RaceEvent>> {
+    fun followedGames(nowMillis: Long, zone: ZoneId, shiftDays: Long = 0L): Pair<List<Game>, List<RaceEvent>> {
         val follows = prefs.follows
         if (follows.isEmpty()) return emptyList<Game>() to emptyList()
         val gameOut = mutableListOf<Game>()
@@ -251,10 +253,32 @@ class SportsRepository(context: Context) {
             if (league.isRacing) {
                 raceOut += races(league, nowMillis, zone)
             } else {
-                gameOut += games(league, nowMillis, zone).filter { it.involves(follows) }
+                gameOut += games(league, nowMillis, zone, shiftDays).filter { it.involves(follows) }
             }
         }
         return gameOut to raceOut
+    }
+
+    /**
+     * One team's season. Cached six hours: the list changes when a game finishes, and a
+     * finished game is already in the feed, so the schedule can lag.
+     */
+    fun teamSeason(league: League, teamId: String): TeamSeason? {
+        if (league.provider != Provider.ESPN || league.isRacing) return null
+        if (league.kind == SportKind.TENNIS) return null
+        val body = Http.cached(
+            cacheDir, "season-${league.id}-$teamId.json",
+            EspnParser.scheduleUrl(league, teamId), SCHEDULE_CACHE_MILLIS,
+        ) ?: return null
+        return runCatching {
+            TeamSeason(
+                leagueId = league.id,
+                teamId = teamId,
+                games = EspnParser.parseScoreboard(league, body),
+                byeWeek = EspnParser.parseByeWeek(body),
+                fetchedAt = System.currentTimeMillis(),
+            )
+        }.getOrNull()
     }
 
     // ------------------------------------------------------------- standings
@@ -319,6 +343,7 @@ class SportsRepository(context: Context) {
     companion object {
         private const val TEAM_CACHE_MILLIS = 7L * 24 * 60 * 60 * 1000
         private const val SEASON_CACHE_MILLIS = 24L * 60 * 60 * 1000
+        private const val SCHEDULE_CACHE_MILLIS = 6L * 60 * 60 * 1000
 
         /** Enough history for "RECENT", enough future for a week of schedule. */
         const val BACK_DAYS = 4L

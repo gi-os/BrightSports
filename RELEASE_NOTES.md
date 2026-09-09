@@ -1,3 +1,15 @@
+## BrightSports v1.29 — the week, the team, and the bye
+
+Part three. The feed pages by week, every team has a season page, and a team on its bye says so.
+
+**Week paging.** The two chevrons in the top bar move the feed a week at a time, four weeks either way. The title reads the games in view. WEEK 2 over a week of NFL. SEP 10 – 15 over a week of baseball. The line under it shows the date range and ALL FINAL once the week ends. It also shows your teams' record for that week, as 3–1 FOR YOUR TEAMS. Refresh moved: tap the UPDATED line.
+
+**The team page.** Tap a team's mark on the game screen, or a team in NO GAME THIS WEEK, to open its season. The nickname in the scoreboard face, the record, and the division and place from the standings. Then a row per week. W or L with the score. A live score with the clock. The next kickoff with its network. Or BYE. Tap a row to open that game, played or not. Every ESPN league gets the page. Football lists all eighteen weeks. The others list their games.
+
+**The bye row.** A followed football team with no game in the window sat under NO GAME SCHEDULED with nothing else to say. It now reads BYE · NEXT VS BAL · SUN SEP 20 4:25 PM, from the team schedule.
+
+**What it costs.** The schedule for one NFL team is about 240 KB, because every event carries both clubs' records and logos. The app stores it for six hours. A game that finishes is already in the feed, so the schedule can lag without anyone noticing.
+
 ## BrightSports v1.28 — the game screen shows the field
 
 Part two of the football work. The game screen is new from the top down. The feed and the alerts stay as they were in v1.27.
