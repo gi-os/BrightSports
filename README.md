@@ -183,6 +183,16 @@ SDK artifacts sit on GitHub Packages behind a token and this ships as a plain AP
   just no alerts. The notifier matches against follows *minus* silenced, which is why a
   derby still alerts — Yankees–Mets with the Mets silenced matches on the Yankees.
   Silencing one team never silences a game the other is in.
+- **Game** — the two marks and the score in a condensed face (Barlow Condensed, bundled,
+  OFL), then the strip that changes per sport: the football field with the ball and the
+  first-down marker (`situation.possessionText` gives the spot, so the picture is drawn
+  from yards-to-goal whichever side has it), the baseball diamond and count, soccer shots
+  and possession, basketball leaders, hockey shots on goal. Under it the last six plays
+  from ESPN's core play-by-play (`plays?limit=8&sort=desc`, ~36 KB, fetched with each
+  15-second refresh while the screen is open on a live game and never in the background),
+  then a switch between the line score and the scoring summary (`summary?event=`,
+  ~580 KB, once per score, cached for good once final) or, for soccer, the timeline from
+  the scoreboard's own `details`.
 - **Team** — tap a mark on the game screen (or an idle team in the feed) for the team's
   season: the record, the division and place, and a row per week with the result, the
   live score, the next kickoff or BYE. Backed by `teams/<id>/schedule`, cached six hours;
@@ -191,7 +201,7 @@ SDK artifacts sit on GitHub Packages behind a token and this ships as a plain AP
 - **Standings** — followed leagues only, your team's row inverts. **Hold a row** for
   every stat the provider sent — three or four times what fits the table: run
   differential, streaks, home/away splits, a driver's points at every round.
-- **Settings** — my teams, notifications, spoiler delay.
+- **Settings** — my teams, notifications, football alerts (loudness and moments), delivery, spoiler delay.
 
 Crest loading (`ui/Logos.kt`, ~70 lines, no image library) downsamples on decode — ESPN
 serves 500px crests, a megabyte of ARGB_8888 for a 24dp view — so the cache is
@@ -391,6 +401,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.0 | Per-sport strips on the game screen: the baseball diamond and count, soccer shots/possession and a timeline of goals and cards, basketball leaders and shooting, hockey shots on goal |
 | v1.29 | Week paging in the feed with a WEEK N title, a team season page with W/L rows and the bye, and a BYE · NEXT row for idle football teams |
 | v1.28 | Game screen: marks and score header, the football field with ball and first-down marker, last plays from ESPN's play-by-play, a scoring summary from the game summary |
 | v1.27 | Football: feed rows with possession, down and distance, timeouts and the line; alerts titled TD/FG/SAFETY with the play text; touchdown-only loudness; red zone and one-score alerts; day headers |

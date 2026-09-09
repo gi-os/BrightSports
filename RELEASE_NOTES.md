@@ -1,3 +1,17 @@
+## BrightSports v2.0 — every sport gets its strip
+
+Part four closes the football work and carries the same game screen to the other sports. The strip under the score is the one part that changes per sport. The header, the last plays and the line score stay the same.
+
+**Baseball.** The diamond with the runners on it, the count in the scoreboard face, the outs as three squares, and who is up with their day so far ("B. Callahan batting · 1-2, 2B, RBI"). Under it, the pitcher and his line ("T. Adams pitching · 2.1 IP, 0 ER, H, 2 K, 2 BB"). The line score adds H and E columns. ESPN only. The minor leagues come from MLB StatsAPI, which has no situation block in the schedule the app polls.
+
+**Soccer.** Shots, shots on target and possession for each side. A TIMELINE view in place of SCORING: goals with the running score, penalties, own goals, yellow and red cards, newest first. It comes from the scoreboard's own `details` list, so it costs no extra request. A finished match opens on the timeline.
+
+**Basketball.** Each side's scoring leader ("BRUNSON 34 PTS") and shooting line (FG %, 3PT %, rebounds). The last plays come from the play-by-play. There is no scoring list. A basketball game has two hundred baskets and the summary is half a megabyte.
+
+**Hockey.** Shots on goal for each side and the save percentage. ESPN does not send shots as a team stat. The app derives them from the other side's saves plus this side's goals, which is the same number. Power-play state is not in the feed. The strip leaves it out rather than guess.
+
+**Everything else from v1.27 through v1.29** is in this build: the football feed rows, the TD/FG alerts, the touchdowns loudness, the red zone and one-score moments, the field, the scoring summary, week paging, the team page and the bye row.
+
 ## BrightSports v1.29 — the week, the team, and the bye
 
 Part three. The feed pages by week, every team has a season page, and a team on its bye says so.

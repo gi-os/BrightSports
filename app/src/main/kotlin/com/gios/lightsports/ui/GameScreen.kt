@@ -97,9 +97,9 @@ fun GameScreen(
     LaunchedEffect(game.id, live) { if (live) onLoadPlays() }
 
     // A finished game opens on the scoring summary, a live one on the line score.
-    var showScoring by remember(game.id) { mutableStateOf(final && football) }
+    var showScoring by remember(game.id) { mutableStateOf(final && (football || kind == SportKind.SOCCER)) }
     LaunchedEffect(showScoring, game.home.score, game.away.score, game.state) {
-        if (showScoring) onLoadScoring()
+        if (showScoring && kind != SportKind.SOCCER && kind != SportKind.BASKETBALL) onLoadScoring()
     }
 
     val homeWon = final && (game.home.score ?: 0) > (game.away.score ?: 0)
@@ -216,18 +216,11 @@ fun GameScreen(
                     }
                 }
             }
-        } else if (live && situation != null && !football) {
-            // Other sports get a plain line for now: the count and the runners in
-            // baseball, nothing where the provider says nothing.
-            situationText(game, kind)?.let {
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    it,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
+        } else if (!football && game.state != GameState.PRE) {
+            // The other sports' strips: the diamond and the count, shots and possession,
+            // leaders and shooting, shots on goal. Each draws only what the feed sent.
+            Spacer(Modifier.height(16.dp))
+            SportStrip(game, kind)
         }
         Spacer(Modifier.height(18.dp))
         Rule()
@@ -244,8 +237,13 @@ fun GameScreen(
 
         // ---- line score / scoring summary
         val hasLine = game.away.lineScore.isNotEmpty() || game.home.lineScore.isNotEmpty()
+        val soccer = kind == SportKind.SOCCER
+        // Soccer's story is on the scoreboard itself (goals and cards under `details`);
+        // basketball's summary has no scoring list worth the half-megabyte. The rest ask
+        // the game summary for their scoring plays.
         val canScore = league?.provider == com.gios.lightsports.model.Provider.ESPN &&
-            kind != SportKind.TENNIS && kind != SportKind.RACING && game.state != GameState.PRE
+            kind != SportKind.TENNIS && kind != SportKind.RACING && kind != SportKind.BASKETBALL &&
+            game.state != GameState.PRE
         if (hasLine || canScore) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
@@ -255,13 +253,15 @@ fun GameScreen(
                     Chip(lineScoreTitle(kind), selected = !showScoring) { showScoring = false }
                 }
                 if (canScore) {
-                    Chip("SCORING", selected = showScoring || !hasLine) { showScoring = true }
+                    Chip(if (soccer) "TIMELINE" else "SCORING", selected = showScoring || !hasLine) {
+                        showScoring = true
+                    }
                 }
             }
-            if (showScoring || !hasLine) {
-                ScoringList(game, scoring)
-            } else {
-                LineScoreTable(game, kind)
+            when {
+                (showScoring || !hasLine) && soccer -> TimelineList(game, game.timeline)
+                showScoring || !hasLine -> ScoringList(game, scoring)
+                else -> LineScoreTable(game, kind)
             }
             Rule()
         }
@@ -314,18 +314,6 @@ private fun statusLabel(game: Game, leagueShort: String?, kind: SportKind, zone:
         GameState.OFF -> listOfNotNull(leagueShort, game.statusDetail.ifEmpty { "Postponed" }.uppercase())
             .joinToString(" · ")
     }
-}
-
-/** The count and the runners, for a live baseball game. Null where there is nothing to say. */
-private fun situationText(game: Game, kind: SportKind): String? {
-    val s = game.situation ?: return null
-    if (kind != SportKind.BASEBALL) return null
-    return listOfNotNull(
-        s.batter?.let { "$it batting" },
-        if (s.balls != null && s.strikes != null) "${s.balls}-${s.strikes}" else null,
-        s.outs?.let { if (it == 1) "1 out" else "$it outs" },
-        runners(s),
-    ).joinToString(" · ").takeIf { it.isNotEmpty() }
 }
 
 /** The blinking square beside a live status. Blinks by the poll, not a timer: it is redrawn as the data lands. */

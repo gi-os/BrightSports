@@ -150,6 +150,45 @@ data class Side(
      * side and spells "unranked" as 99, which is dropped here.
      */
     val rank: Int? = null,
+    /**
+     * Team totals the scoreboard carries for this side, by the provider's key:
+     * `possessionPct`, `shotsOnTarget`, `totalShots` (soccer); `saves`, `savePct`, `goals`
+     * (hockey); `fieldGoalPct`, `threePointPct`, `rebounds` (basketball). Empty for the
+     * sports and providers that send none.
+     */
+    val stats: Map<String, String> = emptyMap(),
+    /** The side's statistical leaders: category to "V. Wembanyama 26". */
+    val leaders: List<Pair<String, String>> = emptyList(),
+) {
+    /** Shots on goal, hockey: the other side's saves plus this side's goals. */
+    fun shotsOnGoal(opponent: Side): Int? {
+        val saves = opponent.stats["saves"]?.toIntOrNull() ?: return null
+        val goals = score ?: stats["goals"]?.toIntOrNull() ?: return null
+        return saves + goals
+    }
+}
+
+/**
+ * One event on a soccer match's timeline: a goal, a card, a penalty. ESPN lists these
+ * under `competitions[].details` on the scoreboard itself, so no second request is
+ * needed for the match's story.
+ */
+data class Moment(
+    /** "74'", "45'+2'". */
+    val clock: String?,
+    /** "Goal", "Yellow Card", "Red Card", "Penalty - Scored", "Own Goal". */
+    val type: String,
+    val teamId: String?,
+    /** The player, short form: "B. Saka". */
+    val player: String?,
+    val scoring: Boolean,
+    val yellowCard: Boolean = false,
+    val redCard: Boolean = false,
+    val penalty: Boolean = false,
+    val ownGoal: Boolean = false,
+    /** Running score after this moment, away–home, filled in by the parser for goals. */
+    val awayScore: Int? = null,
+    val homeScore: Int? = null,
 )
 
 /**
@@ -187,6 +226,10 @@ data class Situation(
     val onThird: Boolean = false,
     val batter: String? = null,
     val pitcher: String? = null,
+    /** "1-2, 2B, RBI" — the batter's day so far. */
+    val batterSummary: String? = null,
+    /** "2.1 IP, 0 ER, H, 2 K, 2 BB" — the pitcher's line so far. */
+    val pitcherSummary: String? = null,
 ) {
     /**
      * How far the offense is from the goal line, 1..99, read off [spot] rather than
@@ -247,6 +290,8 @@ data class Game(
     /** ESPN's one-line recap of a finished game: "Walker's late TD lifts Seahawks". */
     val headline: String? = null,
     val neutralSite: Boolean = false,
+    /** Soccer: goals and cards in match order. Empty elsewhere. */
+    val timeline: List<Moment> = emptyList(),
 ) {
     /** The side in possession, or null when nobody is or the provider doesn't say. */
     val offense: Side? get() = when (situation?.possession) {

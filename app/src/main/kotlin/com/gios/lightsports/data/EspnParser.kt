@@ -4,6 +4,7 @@ import com.gios.lightsports.model.EventClass
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.Moment
 import com.gios.lightsports.model.Play
 import com.gios.lightsports.model.ScoringPlay
 import com.gios.lightsports.model.RaceEvent
@@ -299,6 +300,7 @@ object EspnParser {
                 headline = comp.optJSONArray("headlines")?.optJSONObject(0)
                     ?.optString("shortLinkText")?.takeIf { it.isNotEmpty() },
                 neutralSite = comp.optBoolean("neutralSite", false),
+                timeline = timeline(comp, home.teamId, away.teamId),
             )
         }
         return out
@@ -335,6 +337,8 @@ object EspnParser {
                 ?.optString("shortName")?.takeIf { it.isNotEmpty() },
             pitcher = s.optJSONObject("pitcher")?.optJSONObject("athlete")
                 ?.optString("shortName")?.takeIf { it.isNotEmpty() },
+            batterSummary = s.optJSONObject("batter")?.optString("summary")?.takeIf { it.isNotEmpty() },
+            pitcherSummary = s.optJSONObject("pitcher")?.optString("summary")?.takeIf { it.isNotEmpty() },
         )
     }
 
@@ -392,7 +396,66 @@ object EspnParser {
             // 99 is ESPN for "not in the poll".
             rank = c.optJSONObject("curatedRank")?.optInt("current", 0)
                 ?.takeIf { it in 1..25 },
+            stats = c.optJSONArray("statistics")?.objects()?.mapNotNull { st ->
+                val name = st.optString("name").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val value = st.optString("displayValue").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                name to value
+            }?.toMap().orEmpty(),
+            leaders = c.optJSONArray("leaders")?.objects()?.mapNotNull { cat ->
+                val name = cat.optString("name").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                val top = cat.optJSONArray("leaders")?.optJSONObject(0) ?: return@mapNotNull null
+                val who = top.optJSONObject("athlete")?.optString("shortName")?.takeIf { it.isNotEmpty() }
+                    ?: return@mapNotNull null
+                val value = top.optString("displayValue").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+                name to "$who $value"
+            }.orEmpty(),
         )
+    }
+
+    /**
+     * A soccer match's goals and cards, in order, with the running score written onto
+     * each goal. Own goals count for the other side. Shootout kicks are dropped: the
+     * score line already says how it ended, and a dozen rows of "penalty scored" is not
+     * a story.
+     */
+    internal fun timeline(comp: JSONObject, homeId: String, awayId: String): List<Moment> {
+        val details = comp.optJSONArray("details")?.objects() ?: return emptyList()
+        var home = 0
+        var away = 0
+        val out = mutableListOf<Moment>()
+        for (d in details) {
+            if (d.optBoolean("shootout", false)) continue
+            val type = d.optJSONObject("type")?.optString("text").orEmpty()
+            val teamId = d.optJSONObject("team")?.optString("id")?.takeIf { it.isNotEmpty() }
+            val scoring = d.optBoolean("scoringPlay", false)
+            val ownGoal = d.optBoolean("ownGoal", false)
+            val value = d.optInt("scoreValue", if (scoring) 1 else 0)
+            if (scoring && value > 0) {
+                // An own goal is credited to the team whose player scored it, and counts
+                // against them.
+                val credit = if (ownGoal) (if (teamId == homeId) awayId else homeId) else teamId
+                if (credit == homeId) home += value else if (credit == awayId) away += value
+            }
+            val yellow = d.optBoolean("yellowCard", false)
+            val red = d.optBoolean("redCard", false)
+            // Substitutions and the like carry neither a score nor a card: not a moment.
+            if (!scoring && !yellow && !red && type.isEmpty()) continue
+            out += Moment(
+                clock = d.optJSONObject("clock")?.optString("displayValue")?.takeIf { it.isNotEmpty() },
+                type = type,
+                teamId = teamId,
+                player = d.optJSONArray("athletesInvolved")?.optJSONObject(0)
+                    ?.optString("shortName")?.takeIf { it.isNotEmpty() },
+                scoring = scoring,
+                yellowCard = yellow,
+                redCard = red,
+                penalty = d.optBoolean("penaltyKick", false),
+                ownGoal = ownGoal,
+                awayScore = if (scoring) away else null,
+                homeScore = if (scoring) home else null,
+            )
+        }
+        return out
     }
 
     /**
