@@ -2,6 +2,9 @@ package com.gios.lightsports.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.gios.lightsports.model.League
+import com.gios.lightsports.model.Loudness
+import com.gios.lightsports.model.SportKind
 
 /**
  * Followed teams and settings. SharedPreferences rather than Room: the whole state
@@ -125,6 +128,37 @@ class Prefs(context: Context) {
     val effectiveDelayMillis: Long
         get() = if (delayEnabled) delayMinutes * 60_000L else 0L
 
+    // ------------------------------------------------------------ football
+
+    /**
+     * How loud football is. TOUCHDOWNS by default: a touchdown and its kick as one alert,
+     * field goals left to the quarter mark. Stored by name so a renamed constant reads as
+     * the default rather than crashing the poll.
+     */
+    var footballLoudness: Loudness
+        get() = runCatching { Loudness.valueOf(sp.getString(KEY_FB_LOUDNESS, null) ?: "") }
+            .getOrDefault(Loudness.TOUCHDOWNS)
+        set(v) = sp.edit().putString(KEY_FB_LOUDNESS, v.name).apply()
+
+    /** A buzz when a followed team crosses the opponent's 20. */
+    var alertRedZone: Boolean
+        get() = sp.getBoolean(KEY_RED_ZONE, true)
+        set(v) = sp.edit().putBoolean(KEY_RED_ZONE, v).apply()
+
+    /** Once, when the fourth quarter reaches its last five minutes within one score. */
+    var alertClose: Boolean
+        get() = sp.getBoolean(KEY_CLOSE, true)
+        set(v) = sp.edit().putBoolean(KEY_CLOSE, v).apply()
+
+    /** Halftime, the end of each period, and the final whistle. */
+    var alertBreaks: Boolean
+        get() = sp.getBoolean(KEY_BREAKS, true)
+        set(v) = sp.edit().putBoolean(KEY_BREAKS, v).apply()
+
+    /** The loudness a league actually runs at, once the user's football choice is applied. */
+    fun loudnessFor(league: League): Loudness =
+        if (league.kind == SportKind.FOOTBALL) footballLoudness else league.loudness
+
     // --------------------------------------------------------------- cache
 
     fun getString(key: String): String? = sp.getString(key, null)
@@ -145,5 +179,9 @@ class Prefs(context: Context) {
         private const val KEY_ALERT_BOX = "alert_box"
         private const val KEY_ALERTS_OWNED = "alerts_owned"
         private const val KEY_LIVE_UPDATES = "live_updates"
+        private const val KEY_FB_LOUDNESS = "fb_loudness"
+        private const val KEY_RED_ZONE = "alert_red_zone"
+        private const val KEY_CLOSE = "alert_close"
+        private const val KEY_BREAKS = "alert_breaks"
     }
 }

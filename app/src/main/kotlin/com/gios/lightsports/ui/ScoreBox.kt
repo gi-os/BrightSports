@@ -6,6 +6,11 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Alignment
+import com.gios.lightsports.notify.AlertText
+import com.gios.lightsports.ui.theme.Marks
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -76,15 +81,50 @@ fun ScoreBox(
             )
             .padding(horizontal = 16.dp, vertical = 12.dp),
     ) {
-        // The score is the headline, so it gets the larger of the two styles — the
-        // opposite weighting to a message, where the sender leads.
-        Text(
-            text = title,
-            style = MaterialTheme.typography.titleMedium,
-            color = Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
+        // A football alert leads with what happened -- "TD", "RED ZONE" -- set large in
+        // the scoreboard face, with the team beside it and the score underneath. Anything
+        // without a kind label keeps the score as its headline, as before.
+        val (kind, team, rest) = AlertText.splitKind(title)
+        if (kind != null) {
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    text = kind,
+                    style = Marks.kind,
+                    color = Color.White,
+                    maxLines = 1,
+                )
+                if (team != null) {
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        text = team,
+                        style = Marks.team,
+                        color = Dim,
+                        maxLines = 1,
+                        modifier = Modifier.padding(bottom = 3.dp),
+                    )
+                }
+            }
+            if (rest.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = rest,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        } else {
+            // The score is the headline, so it gets the larger of the two styles — the
+            // opposite weighting to a message, where the sender leads.
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleMedium,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (text.isNotBlank()) {
             Spacer(Modifier.height(2.dp))
             Text(

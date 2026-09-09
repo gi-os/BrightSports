@@ -11,6 +11,7 @@ import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.data.SportsRepository
 import com.gios.lightsports.model.GameState
+import com.gios.lightsports.model.SportKind
 import org.json.JSONObject
 import java.io.File
 import java.time.ZoneId
@@ -57,6 +58,16 @@ object ScoreWatcher {
      * never be the thing announcing a game you are already watching.
      */
     private const val FRESH_WINDOW = 10L * 60 * 1000
+
+    /** How long "they're in the red zone" is worth saying. */
+    private const val REDZONE_WINDOW = 4L * 60 * 1000
+
+    /**
+     * How long a six-point touchdown waits for its kick before posting anyway. The kick is
+     * usually inside a minute; seventy-five seconds covers a review without holding a
+     * blocked kick's touchdown for the rest of the quarter.
+     */
+    const val PAT_HOLD = 75L * 1000
 
     // ------------------------------------------------------------- scheduling
 
@@ -211,6 +222,13 @@ object ScoreWatcher {
                 game,
                 soonSent = was?.soonSent == true,
                 markedPeriod = was?.markedPeriod ?: 0,
+            ).copy(
+                // The football markers too: a touchdown waiting for its kick, and whether
+                // the late-and-close nudge has gone. Time-gated where it matters, so a
+                // stale tdAt from a missed kick is inert rather than wrong.
+                tdAt = was?.tdAt ?: 0L,
+                tdText = was?.tdText,
+                closeSaid = was?.closeSaid == true,
             )
             // **Advanced rather than stored raw.** The delay debounce counts consecutive OFF polls,
             // and the poll that increments that count is by definition one that produces no alert —
@@ -235,26 +253,42 @@ object ScoreWatcher {
                 janitor.drop(context, game.id)
             }
             if (!game.involves(notifyKeys)) continue
+            // The red-zone nudge is for *your* team driving, not the other one's.
+            val offenseKey = game.offense?.let { "${game.leagueId}:${it.teamId}" }
             val alerts = ScoreDiff.alerts(
                 prev = was,
                 now = snapshot,
-                loudness = league.loudness,
+                loudness = prefs.loudnessFor(league),
                 notifyStarts = prefs.notifyStarts,
                 nowMillis = now,
                 leadMillis = LEAD,
-                markPeriods = league.markPeriods,
+                markPeriods = league.markPeriods && prefs.alertBreaks,
+                redZoneWanted = league.kind == SportKind.FOOTBALL && prefs.alertRedZone &&
+                    offenseKey != null && offenseKey in notifyKeys,
+                closeWanted = league.kind == SportKind.FOOTBALL && prefs.alertClose,
+                regulationPeriods = TickerPlan.regulationPeriods(league.kind),
+                closeMargin = TickerPlan.closeMargin(league.kind),
+                notifyFinal = prefs.alertBreaks,
+                sport = league.kind,
             )
             // The alert carries the snapshot to store, which is how the markers advance.
             alerts.firstOrNull()?.let { next[game.id] = it.snapshot }
             for (alert in alerts) {
+                // A touchdown seen at six points is waiting for its kick. Held a little
+                // beyond the spoiler delay so the seven-point version replaces it rather
+                // than following it -- see PendingQueue.Entry.createdAt.
+                val patHold = alert.kind == ScoreDiff.Kind.SCORE &&
+                    alert.snapshot.tdAt > 0L && alert.snapshot.tdAt >= now
                 newEntries += PendingQueue.Entry(
                     // A reminder is useless late, so only score news is delayed.
                     dueAt = now + when (alert.kind) {
                         // A delay clearing isn't a score to protect from spoilers —
                         // it's the answer to "is it back on yet", which is useless late.
                         ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED -> 0L
+                        ScoreDiff.Kind.SCORE -> if (patHold) maxOf(delay, PAT_HOLD) else delay
                         else -> delay
                     },
+                    createdAt = now,
                     // Being due is not the same as being still true, and a phone that was
                     // asleep is the gap between them. See [PendingQueue.Entry.expiresAt].
                     expiresAt = when (alert.kind) {
@@ -265,14 +299,18 @@ object ScoreWatcher {
                         // for an afternoon.
                         ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED ->
                             now + FRESH_WINDOW
+                        // A drive lasts minutes. "They're in the red zone" after the
+                        // touchdown alert has landed is noise about the past.
+                        ScoreDiff.Kind.REDZONE -> now + REDZONE_WINDOW
+                        ScoreDiff.Kind.CLOSE -> now + FRESH_WINDOW
                         // A score is still a score whenever you read it.
                         else -> 0L
                     },
                     gameId = game.id,
                     leagueId = game.leagueId,
                     kind = alert.kind,
-                    title = AlertText.title(game, alert.kind),
-                    body = AlertText.body(game, league, alert.kind, zone),
+                    title = AlertText.title(game, alert.kind, alert.prev, league.kind),
+                    body = AlertText.body(game, league, alert.kind, zone, alert.prev),
                 )
             }
         }
@@ -379,6 +417,13 @@ object ScoreWatcher {
                     // start again from zero at every poll and never confirm anything.
                     offPolls = o.optInt("offPolls"),
                     offAnnounced = o.optBoolean("offSaid"),
+                    clock = o.optString("clock").takeIf { it.isNotEmpty() },
+                    possession = o.optString("poss").takeIf { it.isNotEmpty() },
+                    redZone = o.optBoolean("rz"),
+                    closeSaid = o.optBoolean("closeSaid"),
+                    tdAt = o.optLong("tdAt"),
+                    tdText = o.optString("tdText").takeIf { it.isNotEmpty() },
+                    lastPlay = o.optString("lastPlay").takeIf { it.isNotEmpty() },
                 )
             }
             return out
@@ -396,6 +441,13 @@ object ScoreWatcher {
                     .put("marked", s.markedPeriod)
                     .put("offPolls", s.offPolls)
                     .put("offSaid", s.offAnnounced)
+                    .put("rz", s.redZone)
+                    .put("closeSaid", s.closeSaid)
+                    .put("tdAt", s.tdAt)
+                if (s.clock != null) o.put("clock", s.clock)
+                if (s.possession != null) o.put("poss", s.possession)
+                if (s.tdText != null) o.put("tdText", s.tdText)
+                if (s.lastPlay != null) o.put("lastPlay", s.lastPlay)
                 if (s.home != null) o.put("home", s.home)
                 if (s.away != null) o.put("away", s.away)
                 root.put(key, o)

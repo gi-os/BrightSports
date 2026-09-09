@@ -3,6 +3,7 @@ package com.gios.lightsports.notify
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.Loudness
+import com.gios.lightsports.model.SportKind
 
 /**
  * What changed between two polls of the same game, and whether it is worth a
@@ -11,7 +12,12 @@ import com.gios.lightsports.model.Loudness
  */
 object ScoreDiff {
 
-    enum class Kind { SOON, START, SCORE, PERIOD, FINAL, OFF, RESUMED }
+    /**
+     * SOON..RESUMED are the original set. REDZONE is football only: a followed team has
+     * crossed the opponent's 20. CLOSE is the one-time "this is a one-score game" nudge
+     * when the fourth quarter is inside its last five minutes.
+     */
+    enum class Kind { SOON, START, SCORE, PERIOD, FINAL, OFF, RESUMED, REDZONE, CLOSE }
 
     /** The minimum of a game needed to tell what changed since last time. */
     data class Snapshot(
@@ -56,7 +62,31 @@ object ScoreDiff {
          * cleared before it was ever mentioned must not produce a [Kind.RESUMED] either.
          */
         val offAnnounced: Boolean = false,
+        /** The game clock as the provider prints it, "3:24", for the late-and-close test. */
+        val clock: String? = null,
+        /** Team id with the ball, football only. */
+        val possession: String? = null,
+        /** Whether the offense was inside the 20 on this poll. */
+        val redZone: Boolean = false,
+        /** Whether the one-score-game nudge has gone out for this game. Once per game. */
+        val closeSaid: Boolean = false,
+        /**
+         * When a touchdown was announced and its point-after had not yet landed, else 0.
+         *
+         * ESPN usually posts a touchdown and its kick as one seven-point step, but a poll
+         * that lands between the two sees six, then one. The one is not a new score, it is
+         * the end of the same one, so it is folded into the touchdown alert rather than
+         * announced on its own. Timed, because a missed kick leaves nothing to fold.
+         */
+        val tdAt: Long = 0L,
+        /** The touchdown play's wording, kept so the folded alert can still say what happened. */
+        val tdText: String? = null,
+        /** The provider's last-play text on this poll, for the alert body. */
+        val lastPlay: String? = null,
     )
+
+    /** How long a touchdown waits for its point-after before it is treated as done. */
+    const val PAT_WINDOW = 3L * 60 * 1000
 
     /**
      * How many consecutive polls a delay has to survive before it is worth interrupting for.
@@ -155,9 +185,55 @@ object ScoreDiff {
         statusName = game.statusName,
         statusDetail = game.statusDetail,
         markedPeriod = markedPeriod,
+        clock = game.clock,
+        possession = game.situation?.possession,
+        redZone = game.situation?.isRedZone == true,
+        lastPlay = game.situation?.lastPlay,
     )
 
-    data class Alert(val kind: Kind, val snapshot: Snapshot)
+    /**
+     * Which side scored since the last poll, and by how much. Positive for home, negative
+     * for away, zero when nothing changed or the provider has stopped saying. Both sides
+     * moving in one poll (a safety and a touchdown across a long Doze gap) reports the
+     * larger, since the alert can only be about one thing.
+     */
+    fun scoreDelta(prev: Snapshot, now: Snapshot): Int {
+        if (now.home == null || now.away == null || prev.home == null || prev.away == null) return 0
+        val h = now.home - prev.home
+        val a = now.away - prev.away
+        return if (kotlin.math.abs(h) >= kotlin.math.abs(a)) h else -a
+    }
+
+    /** "3:24" -> 204. Null for anything that is not m:ss or mm:ss. */
+    fun clockSeconds(clock: String?): Int? {
+        val c = clock?.trim() ?: return null
+        val parts = c.split(':')
+        if (parts.size != 2) return null
+        val m = parts[0].toIntOrNull() ?: return null
+        val sec = parts[1].toIntOrNull() ?: return null
+        return m * 60 + sec
+    }
+
+    /**
+     * Late and close: the fourth quarter (or the last regulation period) inside its final
+     * five minutes with the margin within one score. Football's one score is eight; the
+     * caller passes the sport's own margin so the same test serves basketball later.
+     */
+    fun isCloseAndLate(now: Snapshot, regulationPeriods: Int, margin: Int, lastSeconds: Int): Boolean {
+        if (now.state != GameState.LIVE) return false
+        if (now.period != regulationPeriods) return false
+        val secs = clockSeconds(now.clock) ?: return false
+        if (secs > lastSeconds) return false
+        val h = now.home ?: return false
+        val a = now.away ?: return false
+        return kotlin.math.abs(h - a) <= margin
+    }
+
+    /**
+     * @param prev the snapshot this was diffed against, so the wording can say what
+     * changed — which side scored, and by how much — rather than only where things stand.
+     */
+    data class Alert(val kind: Kind, val snapshot: Snapshot, val prev: Snapshot? = null)
 
     /**
      * @param prev the last snapshot stored for this game, or null if never seen.
@@ -175,6 +251,17 @@ object ScoreDiff {
         nowMillis: Long = 0L,
         leadMillis: Long = 0L,
         markPeriods: Boolean = false,
+        /** The offense is a followed team and the user asked to hear about the red zone. */
+        redZoneWanted: Boolean = false,
+        /** Fire the one-time late-and-close nudge for this game. */
+        closeWanted: Boolean = false,
+        /** The last regulation period and the one-score margin, for [closeWanted]. */
+        regulationPeriods: Int = 4,
+        closeMargin: Int = 8,
+        /** Whether to announce the final. Off leaves the card to the score alerts. */
+        notifyFinal: Boolean = true,
+        /** Which sport, for the touchdown arithmetic. Only football has a point-after. */
+        sport: SportKind? = null,
     ): List<Alert> {
         if (prev == null) return emptyList()
 
@@ -203,7 +290,7 @@ object ScoreDiff {
             if (soon) quiet += Kind.SOON
             if (announceOff) quiet += Kind.OFF
             val held = moved.copy(soonSent = soon || moved.soonSent)
-            return quiet.map { Alert(it, held) }
+            return quiet.map { Alert(it, held, prev) }
         }
 
         val out = mutableListOf<Kind>()
@@ -227,8 +314,43 @@ object ScoreDiff {
             out += Kind.RESUMED
         }
         var marked = prev.markedPeriod
+        // Carried forward unless this poll changes them.
+        var tdAt = prev.tdAt
+        var tdText = prev.tdText
+        var closeSaid = prev.closeSaid
         if (prev.state == GameState.LIVE && now.state == GameState.LIVE) {
-            if (loudness == Loudness.EVERY_SCORE && scoreChanged(prev, now)) out += Kind.SCORE
+            val changed = scoreChanged(prev, now)
+            val step = kotlin.math.abs(scoreDelta(prev, now))
+            val patOpen = tdAt > 0L && nowMillis - tdAt < PAT_WINDOW
+            // A touchdown, and whether its kick is still to come. Tracked at every
+            // loudness, because the wording folds the point-after into the touchdown
+            // whether or not field goals are being announced.
+            //
+            // Six alone means the kick is still to come; seven or eight means it landed
+            // inside the same poll and there is nothing left to wait for.
+            val football = sport == SportKind.FOOTBALL
+            val touchdown = football && changed && step >= 6
+            val pointAfter = football && changed && patOpen && step in 1..2
+            if (touchdown) {
+                tdAt = if (step == 6) maxOf(nowMillis, 1L) else 0L
+                tdText = if (step == 6) now.lastPlay else null
+            } else if (pointAfter) {
+                tdAt = 0L
+            }
+            when (loudness) {
+                Loudness.EVERY_SCORE -> if (changed) out += Kind.SCORE
+                // Touchdowns and their kicks. A field goal or a safety is not announced on
+                // its own at this loudness: the quarter mark and the final carry the score.
+                Loudness.TOUCHDOWNS -> if (touchdown || pointAfter) out += Kind.SCORE
+                Loudness.PERIOD_ONLY, Loudness.FINAL_ONLY -> Unit
+            }
+            // A kick that never came — blocked, missed, or a two-point try that failed —
+            // leaves nothing to fold. Close the window rather than folding the next field
+            // goal into a touchdown from ten minutes ago.
+            if (tdAt > 0L && nowMillis - tdAt >= PAT_WINDOW) {
+                tdAt = 0L
+                tdText = null
+            }
 
             // Halftime, the end of a quarter, an intermission. Fires whether or not the
             // score moved — a 0-0 halftime is still halftime, and reporting it only when
@@ -240,15 +362,43 @@ object ScoreDiff {
                     marked = ended
                 }
             }
+
+            // Crossing into the red zone. An edge, not a state: once per trip, and a new
+            // possession that starts inside the 20 (a turnover there) counts as a crossing
+            // too, because the previous poll's flag belonged to the other team.
+            if (redZoneWanted && now.redZone &&
+                (!prev.redZone || prev.possession != now.possession) &&
+                !changed
+            ) {
+                out += Kind.REDZONE
+            }
+
+            // One-score game with the clock inside its last five minutes. Said once; the
+            // scores that follow speak for themselves.
+            if (closeWanted && !closeSaid &&
+                isCloseAndLate(now, regulationPeriods, closeMargin, CLOSE_SECONDS)
+            ) {
+                out += Kind.CLOSE
+                closeSaid = true
+            }
         }
-        if (now.state == GameState.FINAL && prev.state != GameState.FINAL) {
+        if (now.state == GameState.FINAL && prev.state != GameState.FINAL && notifyFinal) {
             out += Kind.FINAL
         }
         // The snapshot the caller stores carries every bit of "already said that" — the pre-game
         // nudge, the last period marked, and how long this delay has been going on.
-        val stored = moved.copy(soonSent = soon || moved.soonSent, markedPeriod = marked)
-        return out.map { Alert(it, stored) }
+        val stored = moved.copy(
+            soonSent = soon || moved.soonSent,
+            markedPeriod = marked,
+            tdAt = tdAt,
+            tdText = tdText,
+            closeSaid = closeSaid,
+        )
+        return out.map { Alert(it, stored, prev) }
     }
+
+    /** The last five minutes of regulation, in seconds. */
+    const val CLOSE_SECONDS = 5 * 60
 
     private fun scoreChanged(prev: Snapshot, now: Snapshot): Boolean {
         // A null score is "not reported yet", not zero — treating it as zero invents

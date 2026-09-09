@@ -94,7 +94,9 @@ class FeedTest {
             ),
             emptyList(), now, newYork,
         )
-        val ids = sections.single().items.map { (it as Feed.Item.GameItem).game.id }
+        // One section per day now, newest day first, newest game first inside a day.
+        assertTrue(sections.all { it.bucket == Feed.Bucket.RECENT })
+        val ids = sections.flatMap { it.items }.map { (it as Feed.Item.GameItem).game.id }
         assertEquals(listOf("newer", "older"), ids)
     }
 
@@ -242,5 +244,38 @@ class FeedTest {
                 emptyList(), now, newYork,
             ).firstOrNull(),
         )
+    }
+}
+
+class FeedDayTitlesTest {
+    private val newYork = java.time.ZoneId.of("America/New_York")
+    // Wednesday 2026-09-09, 3pm New York.
+    private val now = java.time.Instant.parse("2026-09-09T19:00:00Z").toEpochMilli()
+
+    private fun game(id: String, state: com.gios.lightsports.model.GameState, iso: String) = com.gios.lightsports.model.Game(
+        id = id, leagueId = "nfl", state = state,
+        startMillis = com.gios.lightsports.data.Iso.millis(iso), statusDetail = "",
+        home = com.gios.lightsports.model.Side("1", "Home", "Home", "HOM", 0),
+        away = com.gios.lightsports.model.Side("2", "Away", "Away", "AWY", 0),
+    )
+
+    @Test
+    fun `a football week is split into its days`() {
+        val sections = Feed.build(
+            listOf(
+                game("thu", com.gios.lightsports.model.GameState.PRE, "2026-09-11T00:20:00Z"), // Thu 8:20pm ET = tomorrow
+                game("sat", com.gios.lightsports.model.GameState.PRE, "2026-09-12T19:30:00Z"),
+                game("sun1", com.gios.lightsports.model.GameState.PRE, "2026-09-13T17:00:00Z"),
+                game("sun2", com.gios.lightsports.model.GameState.PRE, "2026-09-13T20:25:00Z"),
+                game("last", com.gios.lightsports.model.GameState.FINAL, "2026-09-06T17:00:00Z"),
+                game("yday", com.gios.lightsports.model.GameState.FINAL, "2026-09-08T23:00:00Z"),
+            ),
+            emptyList(), now, newYork,
+        )
+        assertEquals(
+            listOf("TOMORROW", "SATURDAY", "SUNDAY", "YESTERDAY", "LAST SUNDAY"),
+            sections.map { it.title },
+        )
+        assertEquals(2, sections.first { it.title == "SUNDAY" }.items.size)
     }
 }

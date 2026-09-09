@@ -17,15 +17,63 @@ object AlertText {
 
     private val timeFormat = DateTimeFormatter.ofPattern("h:mm a")
 
-    fun title(game: Game, kind: ScoreDiff.Kind): String = when (kind) {
-        ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF ->
-            "${game.away.short} at ${game.home.short}"
-        else ->
-            "${game.away.short} ${game.away.score ?: 0} · ${game.home.short} ${game.home.score ?: 0}"
+    /**
+     * @param prev the snapshot the alert was diffed against. Football uses it to say what
+     * the score *was* — which side scored and by how much — since "NE 7 · SEA 14" alone
+     * does not say whether that was a touchdown or a field goal.
+     */
+    fun title(
+        game: Game,
+        kind: ScoreDiff.Kind,
+        prev: ScoreDiff.Snapshot? = null,
+        sport: SportKind? = null,
+    ): String {
+        val score = "${game.away.short} ${game.away.score ?: 0} · ${game.home.short} ${game.home.score ?: 0}"
+        return when (kind) {
+            ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF ->
+                "${game.away.short} at ${game.home.short}"
+            ScoreDiff.Kind.REDZONE -> "RED ZONE · ${game.offense?.abbrev ?: game.home.abbrev}"
+            ScoreDiff.Kind.CLOSE -> "ONE-SCORE GAME · $score"
+            ScoreDiff.Kind.SCORE -> if (sport == SportKind.FOOTBALL && prev != null) {
+                val now = ScoreDiff.snapshot(game)
+                val delta = ScoreDiff.scoreDelta(prev, now)
+                val scorer = if (delta > 0) game.home else game.away
+                val label = footballScoreLabel(kotlin.math.abs(delta), prev.tdAt > 0L)
+                "$label ${scorer.abbrev} · $score"
+            } else score
+            else -> score
+        }
     }
 
-    fun body(game: Game, league: League, kind: ScoreDiff.Kind, zone: ZoneId): String {
+    /**
+     * What a step in the score is called. Six or seven is a touchdown (the kick usually
+     * lands in the same step); eight is a touchdown and a two-point try; three a field
+     * goal; two a safety — unless a touchdown is waiting for its point-after, in which
+     * case one or two is that kick or that try, and the alert is still about the touchdown.
+     */
+    fun footballScoreLabel(step: Int, patOpen: Boolean): String = when {
+        step >= 8 -> "TD +2"
+        step >= 6 -> "TD"
+        step == 3 -> "FG"
+        patOpen && step in 1..2 -> "TD"
+        step == 2 -> "SAFETY"
+        step == 1 -> "PAT"
+        else -> "SCORE"
+    }
+
+    fun body(
+        game: Game,
+        league: League,
+        kind: ScoreDiff.Kind,
+        zone: ZoneId,
+        prev: ScoreDiff.Snapshot? = null,
+    ): String {
         val prefix = game.competition ?: league.short
+        val football = league.kind == SportKind.FOOTBALL
+        val where = listOfNotNull(
+            periodLabel(league.kind, game.period).takeIf { it.isNotEmpty() },
+            game.clock,
+        ).joinToString(" ")
         val detail = when (kind) {
             // "in 15 min" rather than a clock time: the alert is the answer to "should I
             // put the TV on", and a time would need doing arithmetic on.
@@ -51,17 +99,102 @@ object AlertText {
                 listOf(setLine(game), game.statusDetail.ifEmpty { "Final" })
                     .filter { it.isNotEmpty() }.joinToString(" · ")
             } else {
-                game.statusDetail.ifEmpty { "Final" }
+                listOfNotNull(game.headline, game.statusDetail.ifEmpty { "Final" })
+                    .joinToString(" · ")
             }
             ScoreDiff.Kind.PERIOD -> boundaryLabel(league.kind, game)
-            ScoreDiff.Kind.SCORE -> if (league.kind == SportKind.TENNIS) {
-                listOf(setLine(game), game.statusDetail).filter { it.isNotEmpty() }
-                    .joinToString(" · ")
-            } else {
-                game.statusDetail.ifEmpty { periodLabel(league.kind, game.period) }
+            ScoreDiff.Kind.SCORE -> when {
+                league.kind == SportKind.TENNIS ->
+                    listOf(setLine(game), game.statusDetail).filter { it.isNotEmpty() }
+                        .joinToString(" · ")
+                // The play, then the clock: "K.Walker III run for 12 yds for a TD · Q2 3:24".
+                football -> return listOfNotNull(footballPlay(game, prev), where.ifEmpty { null })
+                    .joinToString(" · ").ifEmpty { prefix }
+                else -> game.statusDetail.ifEmpty { periodLabel(league.kind, game.period) }
             }
+            // "1st & 10 at NE 16 · SEA up 14–7 · Q2 3:24"
+            ScoreDiff.Kind.REDZONE -> return listOfNotNull(
+                game.situation?.downDistance,
+                standing(game),
+                where.ifEmpty { null },
+            ).joinToString(" · ").ifEmpty { prefix }
+            // "SEA leads by 4 · 4:58 left · SEA ball 3rd & 4"
+            ScoreDiff.Kind.CLOSE -> return listOfNotNull(
+                standing(game),
+                game.clock?.let { "$it left" },
+                game.offense?.let { off ->
+                    listOfNotNull("${off.abbrev} ball", game.situation?.shortDownDistance)
+                        .joinToString(" ")
+                },
+            ).joinToString(" · ").ifEmpty { prefix }
         }
         return if (detail.isEmpty()) prefix else "$prefix · $detail"
+    }
+
+    private val kindPrefix = Regex("^(TD \\+2|TD|FG|SAFETY|PAT|SCORE) ([A-Z0-9&]{2,5}) · (.*)$")
+
+    /**
+     * Pull the kind label off the front of a title, for the box that draws it large:
+     * "TD SEA · NE 7 · SEA 14" -> ("TD", "SEA", "NE 7 · SEA 14"); "RED ZONE · SEA" ->
+     * ("RED ZONE", "SEA", ""). A title with no label comes back as (null, null, title).
+     */
+    fun splitKind(title: String): Triple<String?, String?, String> {
+        kindPrefix.matchEntire(title)?.let { m ->
+            return Triple(m.groupValues[1], m.groupValues[2], m.groupValues[3])
+        }
+        if (title.startsWith("RED ZONE · ")) {
+            return Triple("RED ZONE", title.removePrefix("RED ZONE · "), "")
+        }
+        if (title.startsWith("ONE-SCORE GAME · ")) {
+            return Triple("ONE-SCORE GAME", null, title.removePrefix("ONE-SCORE GAME · "))
+        }
+        return Triple(null, null, title)
+    }
+
+    /** "SEA up 14–7", "tied 7–7". */
+    fun standing(game: Game): String? {
+        val h = game.home.score ?: return null
+        val a = game.away.score ?: return null
+        return when {
+            h > a -> "${game.home.abbrev} up $h–$a"
+            a > h -> "${game.away.abbrev} up $a–$h"
+            else -> "tied $h–$a"
+        }
+    }
+
+    /**
+     * The scoring play in the provider's words, cleaned for a shade line. A point-after
+     * that arrived on its own poll is written as the end of the touchdown it belongs to.
+     */
+    fun footballPlay(game: Game, prev: ScoreDiff.Snapshot?): String? {
+        val now = ScoreDiff.snapshot(game)
+        val step = if (prev == null) 0 else kotlin.math.abs(ScoreDiff.scoreDelta(prev, now))
+        if (prev != null && prev.tdAt > 0L && step in 1..2) {
+            val td = cleanPlay(prev.tdText) ?: "Touchdown"
+            return "$td · " + if (step == 1) "PAT good" else "2-pt good"
+        }
+        return cleanPlay(game.situation?.lastPlay)
+    }
+
+    /**
+     * ESPN's play text is written for a box score: "(Shotgun) G.Smith pass short left to
+     * J.Woods for 13 yards, TOUCHDOWN. J.Sanders extra point is GOOD, Center-T.Hennessy,
+     * Holder-A.McNamara." The formation prefix and the snap crew go; the rest stays.
+     */
+    fun cleanPlay(text: String?): String? {
+        var t = text?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        // Leading parentheticals: "(Shotgun) ", "(No Huddle, Shotgun) ".
+        while (t.startsWith("(")) {
+            val close = t.indexOf(')')
+            if (close < 0) break
+            t = t.substring(close + 1).trim()
+        }
+        // The snap crew, and anything after it.
+        val crew = t.indexOf(", Center-")
+        if (crew > 0) t = t.substring(0, crew)
+        // Tackler credits at the end of a run or catch: "for 2 yards (J.Sherwood)".
+        t = t.replace(Regex("""\s*\([A-Z][^()]*\)\.?$"""), "")
+        return t.trimEnd('.', ' ').takeIf { it.isNotEmpty() }
     }
 
     /** Games per set, away first to match the title: "6-3 1-6 1-0". */

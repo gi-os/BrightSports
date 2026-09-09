@@ -29,9 +29,18 @@ import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.notify.AlertOwner
 import com.gios.lightsports.notify.Health
+import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.ui.theme.Dim
+import com.gios.lightsports.ui.theme.Faint
 
 private val DELAY_CHOICES = listOf(0, 2, 5, 10, 15, 30)
+
+private val FOOTBALL_LOUDNESS = listOf(
+    Loudness.EVERY_SCORE to "EVERY SCORE",
+    Loudness.TOUCHDOWNS to "TOUCHDOWNS",
+    Loudness.PERIOD_ONLY to "QUARTERS",
+    Loudness.FINAL_ONLY to "FINAL",
+)
 
 @Composable
 fun SettingsScreen(
@@ -49,6 +58,10 @@ fun SettingsScreen(
     var live by remember { mutableStateOf(prefs.liveUpdatesEnabled) }
     var delayOn by remember { mutableStateOf(prefs.delayEnabled) }
     var delay by remember { mutableIntStateOf(prefs.delayMinutes) }
+    var fbLoudness by remember { mutableStateOf(prefs.footballLoudness) }
+    var redZone by remember { mutableStateOf(prefs.alertRedZone) }
+    var close by remember { mutableStateOf(prefs.alertClose) }
+    var breaks by remember { mutableStateOf(prefs.alertBreaks) }
     val context = LocalContext.current
     // Re-read on every visit rather than remembered for the life of the screen: the
     // battery-optimisation row sends the user out to a system dialog and back, and a
@@ -130,6 +143,71 @@ fun SettingsScreen(
             onClick = {
                 live = !live
                 vm.setLiveUpdatesEnabled(live)
+            },
+        )
+        Rule()
+
+        SectionHeader("FOOTBALL ALERTS")
+        Text(
+            "LOUDNESS",
+            style = MaterialTheme.typography.labelSmall,
+            color = Faint,
+            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp),
+        )
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for ((choice, label) in FOOTBALL_LOUDNESS) {
+                Chip(label = label, selected = choice == fbLoudness) {
+                    fbLoudness = choice
+                    vm.setFootballLoudness(choice)
+                }
+            }
+        }
+        Text(
+            when (fbLoudness) {
+                Loudness.EVERY_SCORE -> "Every touchdown, field goal and safety, as it lands."
+                Loudness.TOUCHDOWNS -> "Touchdowns only. A TD and its PAT arrive as one buzz; " +
+                    "field goals and safeties are folded into the quarter mark."
+                Loudness.PERIOD_ONLY -> "The score at the end of each quarter, and the final."
+                Loudness.FINAL_ONLY -> "The final score only."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = Dim,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        Text(
+            "MOMENTS",
+            style = MaterialTheme.typography.labelSmall,
+            color = Faint,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+        )
+        MenuRow(
+            label = "Red zone",
+            detail = if (redZone) "[ ON ]" else "OFF",
+            sub = "When a team you follow crosses the 20",
+            onClick = {
+                redZone = !redZone
+                vm.setAlertRedZone(redZone)
+            },
+        )
+        MenuRow(
+            label = "One-score game",
+            detail = if (close) "[ ON ]" else "OFF",
+            sub = "Once, when Q4 hits 5:00 and it's within 8",
+            onClick = {
+                close = !close
+                vm.setAlertClose(close)
+            },
+        )
+        MenuRow(
+            label = "Halftime and final",
+            detail = if (breaks) "[ ON ]" else "OFF",
+            sub = "Score at the break and at the whistle. Applies to every sport",
+            onClick = {
+                breaks = !breaks
+                vm.setAlertBreaks(breaks)
             },
         )
         Rule()

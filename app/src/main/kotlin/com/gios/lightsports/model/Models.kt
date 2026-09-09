@@ -30,7 +30,16 @@ enum class Provider { ESPN, STATSAPI, HOCKEYTECH, WPBL }
  * [League.markPeriods], and the two are independent: baseball wants every run and no
  * inning marks at all.
  */
-enum class Loudness { EVERY_SCORE, PERIOD_ONLY, FINAL_ONLY }
+enum class Loudness {
+    EVERY_SCORE,
+    /**
+     * Football only. A touchdown and its point-after arrive as one alert; a field goal
+     * or a safety is not announced on its own but rides along in the next quarter mark.
+     */
+    TOUCHDOWNS,
+    PERIOD_ONLY,
+    FINAL_ONLY,
+}
 
 /**
  * A knockout competition a league's clubs also play in — the Leagues Cup, the U.S. Open
@@ -136,7 +145,64 @@ data class Side(
      * either player matches the pair, so following Gauff gets her doubles too.
      */
     val memberIds: List<String> = emptyList(),
+    /**
+     * Poll rank, college football only. ESPN sends `curatedRank.current` for every FBS
+     * side and spells "unranked" as 99, which is dropped here.
+     */
+    val rank: Int? = null,
 )
+
+/**
+ * Where a live game stands right now, beyond the score. ESPN attaches this to the
+ * scoreboard entry while a game is in progress and drops it at the final, so every field
+ * is optional and the whole thing is null for a game that hasn't started.
+ *
+ * Football fills the top half; baseball the bottom. Other sports get the shared fields
+ * ([lastPlay] mostly) and nothing else.
+ */
+data class Situation(
+    /** Team id of the side with the ball. */
+    val possession: String? = null,
+    /** "2nd & 7 at NE 16" — ESPN's own wording. */
+    val downDistance: String? = null,
+    /** "2nd & 7", the same without the spot. */
+    val shortDownDistance: String? = null,
+    /** "NE 16": which team's yard line the ball sits on, and which one. */
+    val spot: String? = null,
+    val down: Int? = null,
+    val distance: Int? = null,
+    val isRedZone: Boolean = false,
+    val homeTimeouts: Int? = null,
+    val awayTimeouts: Int? = null,
+    /** The last play as a sentence: "K.Walker III run for 12 yds for a TD". */
+    val lastPlay: String? = null,
+    /** "7 plays, 58 yards, 3:41" — the drive the last play belongs to. */
+    val drive: String? = null,
+    // ---- baseball
+    val balls: Int? = null,
+    val strikes: Int? = null,
+    val outs: Int? = null,
+    val onFirst: Boolean = false,
+    val onSecond: Boolean = false,
+    val onThird: Boolean = false,
+    val batter: String? = null,
+    val pitcher: String? = null,
+) {
+    /**
+     * How far the offense is from the goal line, 1..99, read off [spot] rather than
+     * ESPN's absolute `yardLine`, whose direction is undocumented. "NE 16" with SEA in
+     * possession is 16 yards out; "SEA 40" with SEA in possession is 60.
+     */
+    fun yardsToGoal(offenseAbbrev: String?): Int? {
+        val s = spot?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        val parts = s.split(' ')
+        if (parts.size < 2) return null
+        val yards = parts.last().toIntOrNull() ?: return null
+        val side = parts.dropLast(1).joinToString(" ")
+        if (offenseAbbrev == null) return null
+        return if (side.equals(offenseAbbrev, ignoreCase = true)) 100 - yards else yards
+    }
+}
 
 data class Game(
     val id: String,
@@ -168,7 +234,35 @@ data class Game(
      * filed under the parent league so they land in the same feed as the league fixtures.
      */
     val competition: String? = null,
+    /** Live only: possession, down and distance, the count, the last play. */
+    val situation: Situation? = null,
+    /** The pre-game line as the book writes it: "SEA -3". */
+    val odds: String? = null,
+    /** The total, "44.5". */
+    val overUnder: String? = null,
+    /** "75° Mostly sunny" — ESPN sends a forecast for outdoor games. */
+    val weather: String? = null,
+    /** Football's week number; the season is scheduled in weeks, not dates. */
+    val week: Int? = null,
+    /** ESPN's one-line recap of a finished game: "Walker's late TD lifts Seahawks". */
+    val headline: String? = null,
+    val neutralSite: Boolean = false,
 ) {
+    /** The side in possession, or null when nobody is or the provider doesn't say. */
+    val offense: Side? get() = when (situation?.possession) {
+        null -> null
+        home.teamId -> home
+        away.teamId -> away
+        else -> null
+    }
+
+    /** The other one. */
+    val defense: Side? get() = when (offense) {
+        null -> null
+        home -> away
+        else -> home
+    }
+
     /**
      * True when the user follows either side, or follows the category this game belongs
      * to. Everything downstream — the feed filter, the notification poll, the standings

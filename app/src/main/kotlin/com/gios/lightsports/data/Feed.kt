@@ -6,6 +6,8 @@ import com.gios.lightsports.model.RaceEvent
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 /**
  * Turning a pile of games from nine leagues into the one scrollable column the app
@@ -28,7 +30,17 @@ object Feed {
         }
     }
 
-    data class Section(val bucket: Bucket, val title: String, val items: List<Item>)
+    /**
+     * @param dayEpoch the calendar day this section covers (epoch day in the user's zone),
+     * or 0 for LIVE. One section per day rather than one per bucket: a football week is
+     * Thursday, Saturday, Sunday and Monday, and "UPCOMING" over all four says nothing.
+     */
+    data class Section(
+        val bucket: Bucket,
+        val title: String,
+        val items: List<Item>,
+        val dayEpoch: Long = 0L,
+    )
 
     /**
      * How far back a finished game stays in the feed. Must not be shorter than the
@@ -47,39 +59,66 @@ object Feed {
         zone: ZoneId,
     ): List<Section> {
         val today = localDate(nowMillis, zone)
-        val buckets = linkedMapOf<Bucket, MutableList<Item>>()
+        // Keyed by bucket then day, so LIVE is one section and every other bucket is one
+        // per calendar day.
+        val groups = linkedMapOf<Pair<Bucket, Long>, MutableList<Item>>()
 
-        fun add(bucket: Bucket, item: Item) {
-            buckets.getOrPut(bucket) { mutableListOf() } += item
+        fun add(bucket: Bucket, atMillis: Long, item: Item) {
+            val day = if (bucket == Bucket.LIVE) 0L else localDate(atMillis, zone).toEpochDay()
+            groups.getOrPut(bucket to day) { mutableListOf() } += item
         }
 
         for (game in games) {
             val bucket = bucketFor(game.state, game.startMillis, today, zone) ?: continue
-            add(bucket, Item.GameItem(game))
+            add(bucket, game.startMillis, Item.GameItem(game))
         }
         for (race in races) {
             val at = race.sessionMillis ?: race.startMillis
             val bucket = bucketFor(race.state, at, today, zone) ?: continue
-            add(bucket, Item.RaceItem(race))
+            add(bucket, at, Item.RaceItem(race))
         }
 
-        return Bucket.entries.mapNotNull { bucket ->
-            val items = buckets[bucket]?.takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-            val sorted = if (bucket == Bucket.RECENT) {
-                items.sortedByDescending { it.sortMillis }
-            } else {
-                items.sortedBy { it.sortMillis }
+        val out = mutableListOf<Section>()
+        for (bucket in Bucket.entries) {
+            val days = groups.keys.filter { it.first == bucket }.map { it.second }
+            // Upcoming days run forward; results run backward, newest day first.
+            val ordered = if (bucket == Bucket.RECENT) days.sortedDescending() else days.sorted()
+            for (day in ordered) {
+                val items = groups[bucket to day] ?: continue
+                val sorted = if (bucket == Bucket.RECENT) {
+                    items.sortedByDescending { it.sortMillis }
+                } else {
+                    items.sortedBy { it.sortMillis }
+                }
+                out += Section(bucket, title(bucket, day, today), sorted, day)
             }
-            Section(bucket, title(bucket), sorted)
         }
+        return out
     }
 
-    private fun title(bucket: Bucket) = when (bucket) {
-        Bucket.LIVE -> "LIVE"
-        Bucket.TODAY -> "TODAY"
-        Bucket.TOMORROW -> "TOMORROW"
-        Bucket.UPCOMING -> "UPCOMING"
-        Bucket.RECENT -> "RECENT"
+    private val weekday = DateTimeFormatter.ofPattern("EEEE", Locale.US)
+    private val dayDate = DateTimeFormatter.ofPattern("EEE MMM d", Locale.US)
+
+    /**
+     * "LIVE", "TODAY", "TOMORROW", then the weekday for the rest of the week and a date
+     * past that. Results say "YESTERDAY" and "LAST SUNDAY" so a Saturday four days back
+     * and a Saturday three days ahead never share a header.
+     */
+    private fun title(bucket: Bucket, dayEpoch: Long, today: LocalDate): String {
+        val day = LocalDate.ofEpochDay(dayEpoch)
+        val diff = dayEpoch - today.toEpochDay()
+        return when (bucket) {
+            Bucket.LIVE -> "LIVE"
+            Bucket.TODAY -> "TODAY"
+            Bucket.TOMORROW -> "TOMORROW"
+            Bucket.UPCOMING -> if (diff <= 6) day.format(weekday).uppercase()
+            else day.format(dayDate).uppercase()
+            Bucket.RECENT -> when {
+                diff == -1L -> "YESTERDAY"
+                diff >= -6 -> "LAST " + day.format(weekday).uppercase()
+                else -> day.format(dayDate).uppercase()
+            }
+        }
     }
 
     /**

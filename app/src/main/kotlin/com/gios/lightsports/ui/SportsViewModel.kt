@@ -10,6 +10,7 @@ import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.data.SportsRepository
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.notify.LiveTicker
@@ -233,5 +234,21 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAlertBoxEnabled(enabled: Boolean) {
         prefs.alertBoxEnabled = enabled
+    }
+
+    fun setFootballLoudness(loudness: Loudness) {
+        prefs.footballLoudness = loudness
+    }
+
+    fun setAlertRedZone(enabled: Boolean) {
+        prefs.alertRedZone = enabled
+    }
+
+    fun setAlertClose(enabled: Boolean) {
+        prefs.alertClose = enabled
+    }
+
+    fun setAlertBreaks(enabled: Boolean) {
+        prefs.alertBreaks = enabled
     }
 }

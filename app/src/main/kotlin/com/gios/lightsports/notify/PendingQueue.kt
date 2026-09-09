@@ -32,6 +32,12 @@ class PendingQueue(private val file: File) {
          * it was in the second inning, next to the card carrying its score.
          */
         val expiresAt: Long = 0L,
+        /**
+         * When the alert was detected. A later alert for the same game supersedes every
+         * earlier one still waiting — a touchdown held back for its kick is replaced by the
+         * touchdown-plus-kick that arrives a minute later, not posted twice.
+         */
+        val createdAt: Long = 0L,
     )
 
     fun load(): List<Entry> {
@@ -49,6 +55,7 @@ class PendingQueue(private val file: File) {
                 title = o.optString("title"),
                 body = o.optString("body"),
                 expiresAt = o.optLong("expiresAt"),
+                createdAt = o.optLong("createdAt"),
             )
         }
     }
@@ -64,7 +71,8 @@ class PendingQueue(private val file: File) {
                     .put("kind", e.kind.name)
                     .put("title", e.title)
                     .put("body", e.body)
-                    .put("expiresAt", e.expiresAt),
+                    .put("expiresAt", e.expiresAt)
+                    .put("createdAt", e.createdAt),
             )
         }
         runCatching { file.writeText(array.toString()) }
@@ -97,8 +105,16 @@ class PendingQueue(private val file: File) {
                 forGame.firstOrNull { it.kind == ScoreDiff.Kind.FINAL } ?: forGame.last()
             }
             .sortedBy { it.dueAt }
-        save(waiting)
-        return collapsed to waiting
+        // A posted alert makes every older one for the same game stale, including those
+        // whose hold has not run out yet. Without this a touchdown waiting out its kick
+        // would post again after the folded version already had.
+        val posted = collapsed.associate { it.gameId to it.createdAt }
+        val kept = waiting.filter { w ->
+            val at = posted[w.gameId] ?: return@filter true
+            w.createdAt > at || (w.kind == ScoreDiff.Kind.FINAL)
+        }
+        save(kept)
+        return collapsed to kept
     }
 
     /** Anything older than an hour past due is no longer news. */

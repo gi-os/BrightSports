@@ -89,10 +89,23 @@ fun GameScreen(game: Game, tracking: Boolean = false) {
         game.note?.let {
             MenuRow(if (kind == SportKind.TENNIS) "Round" else "Series", detail = null, sub = it)
         }
-        MenuRow("First pitch".takeIf { kind == SportKind.BASEBALL } ?: "Start",
-            detail = Fmt.time(game.startMillis, zone))
+        MenuRow(
+            when (kind) {
+                SportKind.BASEBALL -> "First pitch"
+                SportKind.FOOTBALL -> "Kickoff"
+                SportKind.BASKETBALL -> "Tip-off"
+                else -> "Start"
+            },
+            detail = Fmt.time(game.startMillis, zone),
+            sub = if (game.state == GameState.PRE) Fmt.until(game.startMillis, System.currentTimeMillis()) else null,
+        )
         game.venue?.let { MenuRow(if (kind == SportKind.TENNIS) "Court" else "Venue", sub = it) }
         game.broadcast?.let { MenuRow("TV", detail = it) }
+        if (game.state == GameState.PRE) {
+            game.odds?.let { MenuRow("Line", detail = it) }
+            game.overUnder?.let { MenuRow("Over / under", detail = it) }
+        }
+        game.weather?.let { MenuRow("Weather", detail = it) }
         game.away.record?.let { MenuRow(game.away.short, detail = it) }
         game.home.record?.let { MenuRow(game.home.short, detail = it) }
         Spacer(Modifier.height(32.dp))

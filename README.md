@@ -167,9 +167,13 @@ four-icon action bar along the bottom. `ui/LightBars.kt` rebuilds `LightTopBar` 
 heights, same LightOS icon drawables — reimplemented rather than imported, because the
 SDK artifacts sit on GitHub Packages behind a token and this ships as a plain APK.
 
-- **Scores** — one feed, followed teams only, grouped Live / Today / Tomorrow / Upcoming
-  / Recent, each club's crest on its line, finished games dim the loser (colour isn't
-  available). Followed teams with nothing in the window show "no game scheduled" rather
+- **Scores** — one feed, followed teams only, grouped Live / Today / Tomorrow and then
+  one section per day (SATURDAY, SUNDAY, YESTERDAY, LAST SUNDAY), each club's crest and
+  three-letter mark on its line, finished games dim the loser (colour isn't available).
+  A live football row carries possession, down and distance, timeouts and a RED ZONE tag;
+  a pre-game row carries the line, the total and the forecast; a final carries ESPN's
+  headline. All of it comes from the scoreboard payload the app already polls
+  (`competitions[].situation`, `odds`, `event.weather`, `headlines`). Followed teams with nothing in the window show "no game scheduled" rather
   than being dropped, so "between fixtures" isn't confused with "failed to load."
 - **My teams** — league then club, searchable. F1 is followed as a series. Each league
   also has two category stars: **Championship games** and **Special games** — star one
@@ -226,8 +230,16 @@ Without that, the buzz still fires and the notification still posts — only the
 missing. Vibration is disabled on both channels so the box owns the buzz, rate-limited to
 one per 1.5s.
 
-Per-sport loudness: `EVERY_SCORE` for baseball/hockey/soccer/football, **`PERIOD_ONLY` for
+Per-sport loudness: `EVERY_SCORE` for baseball/hockey/soccer, **`PERIOD_ONLY` for
 basketball** (forty buckets a night is a pager, not a notification), `FINAL_ONLY` for F1.
+Football is the user's choice (Settings → Football alerts): every score, **touchdowns**
+(default), quarters, or final. At touchdowns a field goal is not announced on its own; the
+quarter mark and the final carry the score. A touchdown seen at six points is held 75
+seconds for its kick (`ScoreWatcher.PAT_HOLD`) and a later alert for the same game retires
+the held one (`PendingQueue.Entry.createdAt`), so a TD and its PAT are one buzz. Football
+alerts are titled by what happened — `TD SEA · NE 7 · SEA 14` — with the play text in the
+body; two extra kinds, `REDZONE` (a followed team crosses the 20, once per possession) and
+`CLOSE` (Q4 under 5:00, margin within 8, once per game), are switches in the same section.
 A game seen for the first time never alerts, so installing mid-Sunday doesn't replay the
 day. Score alerts are held 5 minutes by default against stream spoilers; several scores in
 one window collapse into a single notification.
@@ -374,6 +386,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.27 | Football: feed rows with possession, down and distance, timeouts and the line; alerts titled TD/FG/SAFETY with the play text; touchdown-only loudness; red zone and one-score alerts; day headers |
 | v1.26 | The screen stays awake while a live game is open and updating itself, so it doesn't sleep between the 15-second refreshes |
 | v1.25 | FCS college football, Grand Slam tennis, and a game screen that refreshes itself every 15 seconds |
 | v1.20 | New signing key, no longer committed to the repo — **uninstall and reinstall once** |

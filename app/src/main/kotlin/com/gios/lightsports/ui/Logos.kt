@@ -98,7 +98,7 @@ object Logos {
  * a row never reflows when the image arrives.
  */
 @Composable
-fun TeamLogo(url: String?, size: Dp = 22.dp, modifier: Modifier = Modifier) {
+fun TeamLogo(url: String?, size: Dp = 22.dp, modifier: Modifier = Modifier, alpha: Float = 1f) {
     val context = LocalContext.current
     val bitmap by produceState<ImageBitmap?>(initialValue = null, url) {
         value = url?.let { Logos.load(File(context.filesDir, "logos"), it) }
@@ -111,6 +111,7 @@ fun TeamLogo(url: String?, size: Dp = 22.dp, modifier: Modifier = Modifier) {
             bitmap = image,
             contentDescription = null,
             contentScale = ContentScale.Fit,
+            alpha = alpha,
             modifier = modifier.size(size),
         )
     }

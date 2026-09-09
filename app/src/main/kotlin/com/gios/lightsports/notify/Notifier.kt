@@ -124,6 +124,11 @@ object Notifier {
             .setSmallIcon(R.drawable.ic_stat_score)
             .setContentTitle(entry.title)
             .setContentText(entry.body)
+            // The same words again, expanded, so a play description is not cut at one
+            // line in the shade. Title and text stay as plain extras on purpose:
+            // BrightControl's banner and lock face read EXTRA_TITLE / EXTRA_TEXT, and a
+            // style that carries the words elsewhere would draw a blank box there.
+            .setStyle(Notification.BigTextStyle().bigText(entry.body))
             .setContentIntent(tap)
             .setAutoCancel(true)
             .setShowWhen(true)

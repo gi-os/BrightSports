@@ -1,6 +1,11 @@
 package com.gios.lightsports.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -18,7 +23,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.gios.lightsports.data.Feed
@@ -28,6 +33,11 @@ import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.RaceEvent
 import com.gios.lightsports.model.Side
+import com.gios.lightsports.model.SportKind
+import com.gios.lightsports.notify.AlertText
+import com.gios.lightsports.notify.ScoreDiff
+import com.gios.lightsports.ui.theme.Marks
+import com.gios.lightsports.ui.theme.Soft
 import com.gios.lightsports.ui.theme.Dim
 import com.gios.lightsports.ui.theme.Faint
 import com.gios.lightsports.util.Fmt
@@ -134,6 +144,7 @@ fun GameRow(
     onClick: () -> Unit,
 ) {
     val league = Leagues.byId(game.leagueId)
+    val kind = league?.kind
     val live = game.state == GameState.LIVE
     val final = game.state == GameState.FINAL
 
@@ -141,6 +152,9 @@ fun GameRow(
     // the only way to show a result at a glance without colour.
     val homeWon = final && (game.home.score ?: 0) > (game.away.score ?: 0)
     val awayWon = final && (game.away.score ?: 0) > (game.home.score ?: 0)
+    val situation = game.situation
+    val football = kind == SportKind.FOOTBALL
+    val showTimeouts = live && football && situation?.homeTimeouts != null
 
     Column(
         Modifier.fillMaxWidth().clickable(onClick = onClick)
@@ -156,10 +170,10 @@ fun GameRow(
                     game.eventTitle?.uppercase() ?: game.competition?.uppercase()
                         ?: league?.short,
                     when (game.state) {
-                        GameState.PRE -> Fmt.time(game.startMillis, zone)
-                        GameState.LIVE -> game.statusDetail.ifEmpty { "Live" }
-                        GameState.FINAL -> game.statusDetail.ifEmpty { "Final" }
-                        GameState.OFF -> game.statusDetail.ifEmpty { "Postponed" }
+                        GameState.PRE -> Fmt.dayTime(game.startMillis, zone).uppercase()
+                        GameState.LIVE -> liveLabel(game, kind)
+                        GameState.FINAL -> game.statusDetail.ifEmpty { "Final" }.uppercase()
+                        GameState.OFF -> game.statusDetail.ifEmpty { "Postponed" }.uppercase()
                     },
                 ).joinToString(" · "),
                 style = MaterialTheme.typography.labelSmall,
@@ -168,7 +182,7 @@ fun GameRow(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
-            if (game.state == GameState.PRE && game.broadcast != null) {
+            if (game.state != GameState.FINAL && game.broadcast != null) {
                 Text(
                     game.broadcast,
                     style = MaterialTheme.typography.labelSmall,
@@ -180,48 +194,201 @@ fun GameRow(
         Spacer(Modifier.height(8.dp))
         TeamLine(
             side = game.away,
+            kind = kind,
             logoUrl = logos["${game.leagueId}:${game.away.teamId}"],
             dimmed = final && !awayWon,
             showScore = game.state != GameState.PRE,
+            hasBall = live && situation?.possession == game.away.teamId,
+            timeouts = if (showTimeouts) situation?.awayTimeouts else null,
         )
         Spacer(Modifier.height(4.dp))
         TeamLine(
             side = game.home,
+            kind = kind,
             logoUrl = logos["${game.leagueId}:${game.home.teamId}"],
             dimmed = final && !homeWon,
             showScore = game.state != GameState.PRE,
+            hasBall = live && situation?.possession == game.home.teamId,
+            timeouts = if (showTimeouts) situation?.homeTimeouts else null,
+        )
+        // The third line: what is happening (live), what to expect (pre-game), or what
+        // happened (final). One line each, none of them when there is nothing to say.
+        val third = when (game.state) {
+            GameState.LIVE -> situationLine(game, kind)
+            GameState.PRE -> listOfNotNull(game.odds, game.overUnder?.let { "O/U $it" }, game.weather)
+                .joinToString(" · ").takeIf { it.isNotEmpty() }
+            GameState.FINAL -> game.headline
+            GameState.OFF -> null
+        }
+        if (third != null || (live && situation?.isRedZone == true)) {
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (third != null) {
+                    Text(
+                        third,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (live) Soft else Dim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                }
+                if (live && situation?.isRedZone == true) {
+                    Spacer(Modifier.width(10.dp))
+                    Tag("RED ZONE")
+                }
+            }
+        }
+    }
+}
+
+/** "Q2 3:24" for the sports with a clock; the provider's words for the rest. */
+private fun liveLabel(game: Game, kind: SportKind?): String {
+    if (kind == SportKind.FOOTBALL || kind == SportKind.BASKETBALL || kind == SportKind.HOCKEY) {
+        val period = AlertText.periodLabel(kind, game.period)
+        if (period.isNotEmpty() && game.clock != null &&
+            !ScoreDiff.explicitBoundary(game.statusName, game.statusDetail)
+        ) return "$period ${game.clock}"
+    }
+    return game.statusDetail.ifEmpty { "Live" }.uppercase()
+}
+
+/**
+ * The live line under the two teams. Football: down and distance. Baseball: the count
+ * and the outs. Everything else: nothing, the status line already said what matters.
+ */
+private fun situationLine(game: Game, kind: SportKind?): String? {
+    val s = game.situation ?: return null
+    return when (kind) {
+        SportKind.FOOTBALL -> s.downDistance
+        SportKind.BASEBALL -> listOfNotNull(
+            if (s.balls != null && s.strikes != null) "${s.balls}-${s.strikes}" else null,
+            s.outs?.let { if (it == 1) "1 out" else "$it outs" },
+            runners(s),
+        ).joinToString(" · ").takeIf { it.isNotEmpty() }
+        else -> null
+    }
+}
+
+/** "Runners on 1st and 2nd", "Bases loaded", null for nobody on. */
+fun runners(s: com.gios.lightsports.model.Situation): String? {
+    val on = listOfNotNull(
+        "1st".takeIf { s.onFirst }, "2nd".takeIf { s.onSecond }, "3rd".takeIf { s.onThird },
+    )
+    return when (on.size) {
+        0 -> null
+        3 -> "Bases loaded"
+        1 -> "Runner on ${on[0]}"
+        else -> "Runners on ${on[0]} and ${on[1]}"
+    }
+}
+
+/** Inverted label: white block, black caps. The one emphasis a greyscale panel has. */
+@Composable
+fun Tag(text: String) {
+    Box(Modifier.background(Color.White).padding(horizontal = 6.dp, vertical = 2.dp)) {
+        Text(
+            text,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.Black,
+            maxLines = 1,
         )
     }
 }
 
+/**
+ * The team mark: a crest and the abbreviation in the condensed face. Tennis has no
+ * three-letter code worth reading, so a player keeps their short name in the text face.
+ */
 @Composable
-private fun TeamLine(side: Side, logoUrl: String?, dimmed: Boolean, showScore: Boolean) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TeamLogo(logoUrl, size = 24.dp)
+fun TeamMark(
+    side: Side,
+    kind: SportKind?,
+    logoUrl: String?,
+    dimmed: Boolean,
+    style: androidx.compose.ui.text.TextStyle = Marks.team,
+    logoSize: androidx.compose.ui.unit.Dp = 24.dp,
+    modifier: Modifier = Modifier,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        TeamLogo(logoUrl, size = logoSize, alpha = if (dimmed) 0.45f else 1f)
         Spacer(Modifier.width(10.dp))
-        Text(
-            side.short,
-            style = MaterialTheme.typography.titleMedium,
-            color = if (dimmed) Dim else Color.White,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
-        if (side.record != null) {
+        if (kind == SportKind.TENNIS) {
             Text(
-                side.record,
-                style = MaterialTheme.typography.labelSmall,
-                color = Faint,
+                side.short,
+                style = MaterialTheme.typography.titleMedium,
+                color = if (dimmed) Dim else Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        } else {
+            Text(
+                side.abbrev.uppercase(),
+                style = style,
+                color = if (dimmed) Dim else Color.White,
                 maxLines = 1,
             )
-            Spacer(Modifier.width(12.dp))
+        }
+    }
+}
+
+/** Three squares, filled for the timeouts a side still has. */
+@Composable
+fun Timeouts(left: Int, dimmed: Boolean = false) {
+    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        for (i in 0 until 3) {
+            val filled = i < left
+            Box(
+                Modifier.size(6.dp).let {
+                    if (filled) it.background(if (dimmed) Dim else Color.White)
+                    else it.border(1.dp, Faint)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun TeamLine(
+    side: Side,
+    kind: SportKind?,
+    logoUrl: String?,
+    dimmed: Boolean,
+    showScore: Boolean,
+    hasBall: Boolean = false,
+    timeouts: Int? = null,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        TeamMark(side, kind, logoUrl, dimmed, modifier = Modifier.weight(1f, fill = false))
+        Spacer(Modifier.width(12.dp))
+        // "#7 · 2-0 · BALL": the poll rank, the record, and who has it.
+        val facts = listOfNotNull(
+            side.rank?.let { "#$it" },
+            side.record,
+            "BALL".takeIf { hasBall },
+        ).joinToString(" · ")
+        if (facts.isNotEmpty()) {
+            Text(
+                facts,
+                style = MaterialTheme.typography.labelSmall,
+                color = if (hasBall) Dim else Faint,
+                maxLines = 1,
+                modifier = Modifier.weight(1f),
+            )
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        if (timeouts != null) {
+            Timeouts(timeouts, dimmed)
+            Spacer(Modifier.width(14.dp))
         }
         if (showScore) {
             Text(
                 side.score?.toString() ?: "-",
-                style = MaterialTheme.typography.titleLarge,
+                style = Marks.score,
                 color = if (dimmed) Dim else Color.White,
-                fontWeight = if (dimmed) FontWeight.Light else FontWeight.Normal,
+                textAlign = TextAlign.End,
+                modifier = Modifier.widthIn(min = 36.dp),
             )
         }
     }

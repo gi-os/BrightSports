@@ -1,3 +1,19 @@
+## BrightSports v1.27 — football alerts that say what happened
+
+The first of four football releases for the 2026 season. This one changes the feed rows and the alerts. The game screen, the team page and the week view come next.
+
+**The feed row reads the game.** Each team is a crest and a three-letter mark in a condensed face. A live football row shows who has the ball, the down and distance, and the timeouts left. Inside the 20 it shows a RED ZONE tag. A pre-game row shows the line, the total and the forecast. A finished row shows the ESPN headline. College teams show their poll rank.
+
+**Days, not buckets.** Upcoming games sit under their own day: THURSDAY, SATURDAY, SUNDAY. Results sit under YESTERDAY and LAST SUNDAY. A football week is four days of games. One header for all four said nothing.
+
+**Alerts name the play.** The title of a football score alert is TD, FG, SAFETY or TD +2, then the team that scored and the score. The body is the play in the provider's words and the game clock. Example: "S.Darnold pass deep right to J.Smith-Njigba for 31 yards, TOUCHDOWN · Q2 3:24". A touchdown seen at six points waits 75 seconds for its kick. It posts once, as seven. The on-screen box draws the label large.
+
+**Football has its own loudness.** Settings gains a FOOTBALL ALERTS section with four levels: every score, touchdowns, quarters, final. The default is touchdowns. At that level the app does not announce a field goal on its own. The quarter mark and the final carry the score.
+
+**Two new moments.** Red zone: one alert when a team you follow crosses the 20, once per trip. One-score game: one alert when the fourth quarter reaches 5:00 with the margin inside eight. Both are on by default. Both wait out the spoiler setting. A third switch, "Halftime and final", turns the period marks and the final off for every sport.
+
+**BrightControl reads the same words.** The title and text stay as plain notification extras. The banner and the lock face in BrightControl show the new alerts with no change on their side.
+
 ## BrightSports v1.26 — the score screen stays awake while it's updating
 
 **A live game no longer lets the panel sleep out from under itself.**

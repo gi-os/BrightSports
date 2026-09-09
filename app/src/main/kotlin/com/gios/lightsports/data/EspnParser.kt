@@ -6,6 +6,7 @@ import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.RaceEvent
 import com.gios.lightsports.model.Side
+import com.gios.lightsports.model.Situation
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.model.TeamRef
@@ -200,9 +201,63 @@ object EspnParser {
                 },
                 eventClass = eventClass,
                 competition = competition,
+                situation = comp.optJSONObject("situation")?.let { situation(it) },
+                odds = comp.optJSONArray("odds")?.optJSONObject(0)?.optString("details")
+                    ?.takeIf { it.isNotEmpty() },
+                overUnder = comp.optJSONArray("odds")?.optJSONObject(0)?.let {
+                    val ou = it.optDouble("overUnder", Double.NaN)
+                    if (ou.isNaN()) null else fmtNum(ou)
+                },
+                weather = weather(e.optJSONObject("weather")),
+                week = e.optJSONObject("week")?.optInt("number", 0)?.takeIf { it > 0 },
+                headline = comp.optJSONArray("headlines")?.optJSONObject(0)
+                    ?.optString("shortLinkText")?.takeIf { it.isNotEmpty() },
+                neutralSite = comp.optBoolean("neutralSite", false),
             )
         }
         return out
+    }
+
+    /**
+     * ESPN's live-game block. Every key is optional in practice — football fills the
+     * down-and-distance half, baseball the count — so nothing here is required, and a
+     * block with none of the fields still comes back as an (empty) situation rather
+     * than a null one, because its presence is itself the signal that play is under way.
+     */
+    internal fun situation(s: JSONObject): Situation {
+        val last = s.optJSONObject("lastPlay")
+        return Situation(
+            possession = s.optString("possession").takeIf { it.isNotEmpty() },
+            downDistance = s.optString("downDistanceText").takeIf { it.isNotEmpty() },
+            shortDownDistance = s.optString("shortDownDistanceText").takeIf { it.isNotEmpty() },
+            spot = s.optString("possessionText").takeIf { it.isNotEmpty() },
+            down = s.optInt("down", -1).takeIf { it > 0 },
+            distance = s.optInt("distance", -1).takeIf { it >= 0 },
+            isRedZone = s.optBoolean("isRedZone", false),
+            homeTimeouts = s.optInt("homeTimeouts", -1).takeIf { it >= 0 },
+            awayTimeouts = s.optInt("awayTimeouts", -1).takeIf { it >= 0 },
+            lastPlay = last?.optString("text")?.takeIf { it.isNotEmpty() },
+            drive = last?.optJSONObject("drive")?.optString("description")
+                ?.takeIf { it.isNotEmpty() },
+            balls = s.optInt("balls", -1).takeIf { it >= 0 },
+            strikes = s.optInt("strikes", -1).takeIf { it >= 0 },
+            outs = s.optInt("outs", -1).takeIf { it >= 0 },
+            onFirst = s.optBoolean("onFirst", false),
+            onSecond = s.optBoolean("onSecond", false),
+            onThird = s.optBoolean("onThird", false),
+            batter = s.optJSONObject("batter")?.optJSONObject("athlete")
+                ?.optString("shortName")?.takeIf { it.isNotEmpty() },
+            pitcher = s.optJSONObject("pitcher")?.optJSONObject("athlete")
+                ?.optString("shortName")?.takeIf { it.isNotEmpty() },
+        )
+    }
+
+    /** "75° Mostly sunny". Indoor games carry no block and get null. */
+    private fun weather(w: JSONObject?): String? {
+        if (w == null) return null
+        val temp = w.optInt("temperature", Int.MIN_VALUE).takeIf { it != Int.MIN_VALUE }
+        val text = w.optString("displayValue").takeIf { it.isNotEmpty() }
+        return listOfNotNull(temp?.let { "$it°" }, text).joinToString(" ").takeIf { it.isNotEmpty() }
     }
 
     /**
@@ -242,6 +297,9 @@ object EspnParser {
             },
             hits = c.optInt("hits", -1).takeIf { it >= 0 },
             errors = c.optInt("errors", -1).takeIf { it >= 0 },
+            // 99 is ESPN for "not in the poll".
+            rank = c.optJSONObject("curatedRank")?.optInt("current", 0)
+                ?.takeIf { it in 1..25 },
         )
     }
 

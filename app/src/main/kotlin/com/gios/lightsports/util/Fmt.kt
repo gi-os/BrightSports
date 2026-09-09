@@ -25,6 +25,17 @@ object Fmt {
     fun clock(millis: Long, zone: ZoneId): String =
         Instant.ofEpochMilli(millis).atZone(zone).format(clockOnly)
 
+    /** "in 3 days", "in 2 hr", "in 40 min" — how long until kickoff. */
+    fun until(millis: Long, nowMillis: Long): String {
+        val minutes = (millis - nowMillis) / 60_000
+        return when {
+            minutes < 1 -> "now"
+            minutes < 60 -> "in $minutes min"
+            minutes < 60 * 36 -> "in ${(minutes + 30) / 60} hr"
+            else -> "in ${(minutes + 12 * 60) / (24 * 60)} days"
+        }
+    }
+
     /** "updated 2 min ago", for the one line that says whether to trust the screen. */
     fun ago(millis: Long, nowMillis: Long): String {
         if (millis <= 0) return ""
