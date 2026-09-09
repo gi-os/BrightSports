@@ -4,6 +4,8 @@ import com.gios.lightsports.model.EventClass
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.Play
+import com.gios.lightsports.model.ScoringPlay
 import com.gios.lightsports.model.RaceEvent
 import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.Situation
@@ -67,6 +69,77 @@ object EspnParser {
 
     /** Top 150 of a tour. `tennis/atp` gives the men, `tennis/wta` the women. */
     fun rankingsUrl(path: String): String = "$SITE/$path/rankings"
+
+    private const val CORE_API = "https://sports.core.api.espn.com/v2/sports"
+
+    /**
+     * The last few plays, newest first. `sort=desc` is what makes this one request: the
+     * default order is oldest first across twenty-odd pages, and the last page is the
+     * only one worth having. Confirmed live: `sort=desc` answers with the final plays of
+     * a finished game on page 1. About 4.5 KB a play, so eight is ~36 KB — fine every
+     * fifteen seconds while the screen is open, and never fetched otherwise.
+     */
+    fun playsUrl(league: League, eventId: String, limit: Int = 8): String {
+        val path = league.espnPath.orEmpty()
+        val sport = path.substringBefore('/')
+        val slug = path.substringAfter('/')
+        return "$CORE_API/$sport/leagues/$slug/events/$eventId/competitions/$eventId/plays?limit=$limit&sort=desc"
+    }
+
+    /**
+     * The game summary: box score, drives, scoring plays, win probability, news. Around
+     * 580 KB for a finished game, which is why it is fetched once per game on request
+     * rather than polled.
+     */
+    fun summaryUrl(league: League, eventId: String): String =
+        "$SITE/${league.espnPath}/summary?event=$eventId"
+
+    fun parsePlays(body: String): List<Play> {
+        val items = JSONObject(body).optJSONArray("items") ?: return emptyList()
+        return items.objects().mapNotNull { p ->
+            val text = p.optString("text").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            // The team is a reference, not an object: ".../teams/23?lang=en".
+            val teamRef = p.optJSONObject("team")?.optString("\$ref").orEmpty()
+            Play(
+                id = p.optString("id"),
+                text = text,
+                shortText = p.optString("shortText").takeIf { it.isNotEmpty() },
+                type = p.optJSONObject("type")?.optString("text")?.takeIf { it.isNotEmpty() },
+                period = p.optJSONObject("period")?.optInt("number") ?: 0,
+                clock = p.optJSONObject("clock")?.optString("displayValue")?.takeIf { it.isNotEmpty() },
+                teamId = teamRef.substringAfterLast("/teams/", "").substringBefore('?')
+                    .takeIf { it.isNotEmpty() },
+                scoring = p.optBoolean("scoringPlay", false),
+                scoreValue = p.optInt("scoreValue", 0),
+                awayScore = if (p.has("awayScore")) p.optInt("awayScore") else null,
+                homeScore = if (p.has("homeScore")) p.optInt("homeScore") else null,
+                downDistance = p.optJSONObject("start")?.optString("downDistanceText")
+                    ?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+
+    /** The summary's `scoringPlays`, in game order. */
+    fun parseScoringPlays(body: String): List<ScoringPlay> {
+        val plays = JSONObject(body).optJSONArray("scoringPlays") ?: return emptyList()
+        return plays.objects().mapNotNull { p ->
+            val text = p.optString("text").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
+            val team = p.optJSONObject("team")
+            ScoringPlay(
+                id = p.optString("id"),
+                text = text,
+                kind = p.optJSONObject("scoringType")?.optString("abbreviation")
+                    ?.takeIf { it.isNotEmpty() } ?: p.optJSONObject("type")
+                    ?.optString("abbreviation").orEmpty(),
+                period = p.optJSONObject("period")?.optInt("number") ?: 0,
+                clock = p.optJSONObject("clock")?.optString("displayValue")?.takeIf { it.isNotEmpty() },
+                teamId = team?.optString("id")?.takeIf { it.isNotEmpty() },
+                teamAbbrev = team?.optString("abbreviation")?.takeIf { it.isNotEmpty() },
+                awayScore = p.optInt("awayScore", 0),
+                homeScore = p.optInt("homeScore", 0),
+            )
+        }
+    }
 
     // ---------------------------------------------------------------- teams
 

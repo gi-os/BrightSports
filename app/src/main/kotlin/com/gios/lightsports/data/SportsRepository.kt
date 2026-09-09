@@ -3,6 +3,8 @@ package com.gios.lightsports.data
 import android.content.Context
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.Play
+import com.gios.lightsports.model.ScoringPlay
 import com.gios.lightsports.model.Provider
 import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.model.RaceEvent
@@ -196,6 +198,35 @@ class SportsRepository(context: Context) {
             }.getOrDefault(emptyList())
         }
         return out
+    }
+
+    /**
+     * The last few plays of one game, newest first. ESPN only, and only for the sports
+     * that have a play-by-play; everything else gets an empty list and the screen shows
+     * nothing under the score.
+     */
+    fun plays(league: League, gameId: String): List<Play> {
+        if (league.provider != Provider.ESPN || league.isRacing) return emptyList()
+        if (league.kind == SportKind.TENNIS) return emptyList()
+        val body = Http.get(EspnParser.playsUrl(league, gameId)) ?: return emptyList()
+        return runCatching { EspnParser.parsePlays(body) }.getOrDefault(emptyList())
+    }
+
+    /**
+     * The scoring plays of one game. Half a megabyte a fetch, so a finished game's list
+     * is written to disk and never fetched again; a live game's is re-fetched only when
+     * the caller says the score has moved.
+     */
+    fun scoring(league: League, gameId: String, final: Boolean): List<ScoringPlay> {
+        if (league.provider != Provider.ESPN || league.isRacing) return emptyList()
+        if (league.kind == SportKind.TENNIS) return emptyList()
+        val url = EspnParser.summaryUrl(league, gameId)
+        val body = if (final) {
+            Http.cached(cacheDir, "scoring-$gameId.json", url, Long.MAX_VALUE)
+        } else {
+            Http.get(url)
+        } ?: return emptyList()
+        return runCatching { EspnParser.parseScoringPlays(body) }.getOrDefault(emptyList())
     }
 
     fun races(league: League, nowMillis: Long, zone: ZoneId): List<RaceEvent> {

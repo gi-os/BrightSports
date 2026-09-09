@@ -317,3 +317,43 @@ data class StandingsGroup(
     val headers: List<String>,
     val rows: List<StandingsRow>,
 )
+
+/**
+ * One play from ESPN's play-by-play. Newest first as fetched; the game screen shows the
+ * last handful under the field.
+ */
+data class Play(
+    val id: String,
+    /** The provider's sentence: "J.Warren right end to PIT 21 for 2 yards (J.Sherwood)." */
+    val text: String,
+    /** "Jaylen Warren 2 Yd Rush" — the box-score wording, shorter. */
+    val shortText: String? = null,
+    /** "Rush", "Pass Incompletion", "Passing Touchdown", "Punt". */
+    val type: String? = null,
+    val period: Int = 0,
+    /** Game clock when the play started, "7:49". */
+    val clock: String? = null,
+    /** Team id credited with the play. */
+    val teamId: String? = null,
+    val scoring: Boolean = false,
+    val scoreValue: Int = 0,
+    val awayScore: Int? = null,
+    val homeScore: Int? = null,
+    /** "3rd & 9 at PIT 20" before the snap. */
+    val downDistance: String? = null,
+)
+
+/** A scoring play from the game summary: what, when, and the score after it. */
+data class ScoringPlay(
+    val id: String,
+    /** "Jelani Woods 13 Yd pass from Geno Smith (Jason Sanders Kick)". */
+    val text: String,
+    /** "TD", "FG", "SF", "2PT" — the provider's abbreviation. */
+    val kind: String,
+    val period: Int,
+    val clock: String?,
+    val teamId: String?,
+    val teamAbbrev: String?,
+    val awayScore: Int,
+    val homeScore: Int,
+)

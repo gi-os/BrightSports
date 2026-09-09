@@ -1,3 +1,17 @@
+## BrightSports v1.28 — the game screen shows the field
+
+Part two of the football work. The game screen is new from the top down. The feed and the alerts stay as they were in v1.27.
+
+**The header.** The away mark on the left, the home mark on the right, the score between them in the scoreboard face. Under each mark: the nickname, the poll rank, the record, and the timeouts left as three squares. A pre-game shows AT between the marks, or VS on a neutral field. The line above gives the quarter and the clock. The line to the right says how fresh the screen is.
+
+**The field.** A live football game draws the field under the score. The offense's end zone is on the left and carries its mark. The app fills the ground gained so far. A white line and a marker show the ball. A dashed line shows the first-down spot. The fifty is the brighter line in the middle. Above the field: who has the ball and the down and distance, with a RED ZONE tag inside the 20. Below it: the drive so far (7 plays, 58 yards, 3:41) and the type of the last play.
+
+**Last plays.** The six most recent plays, newest first, with the clock and the down each one started on. The app fetches these with each 15-second refresh while a live game is open. It never fetches them in the background. The request is ~36 KB. The source is ESPN's play-by-play with `sort=desc`, which puts the newest plays on the first page.
+
+**Scoring summary.** A switch under the field toggles between the line score (BY QUARTER) and SCORING. The scoring view lists each score, newest first. Each row has the kind (TD or FG), the play as the box score writes it, the quarter and clock, the team, and the running score. A finished football game opens on SCORING. The app fetches the summary once per score. It stores a finished game's summary on the phone and never fetches it twice.
+
+**Other sports.** The header and the line score apply to every sport. A live baseball game shows the batter, the count, the outs and the runners under the score. The strips for baseball, soccer, basketball and hockey come in v2.0.
+
 ## BrightSports v1.27 — football alerts that say what happened
 
 The first of four football releases for the 2026 season. This one changes the feed rows and the alerts. The game screen, the team page and the week view come next.

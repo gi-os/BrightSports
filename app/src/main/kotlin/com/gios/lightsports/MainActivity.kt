@@ -156,6 +156,8 @@ private fun App(openGameId: String?) {
     val teams by vm.teams.collectAsState()
     val standings by vm.standings.collectAsState()
     val logos by vm.logos.collectAsState()
+    val plays by vm.plays.collectAsState()
+    val scoring by vm.scoring.collectAsState()
 
     var tab by remember { mutableIntStateOf(TAB_SCORES) }
     var openGame by remember { mutableStateOf<Game?>(null) }
@@ -250,6 +252,11 @@ private fun App(openGameId: String?) {
                     tracking = TickerPlan.screenShouldPoll(
                         game, System.currentTimeMillis(), ScoreWatcher.LEAD,
                     ),
+                    logos = logos,
+                    plays = plays[game.id].orEmpty(),
+                    scoring = scoring[game.id]?.second,
+                    onLoadScoring = { vm.loadScoring(game) },
+                    onLoadPlays = { Leagues.byId(game.leagueId)?.let { vm.loadPlays(it, game.id) } },
                 )
                 standing != null -> TeamStatsScreen(standing.first, standing.second)
                 teamsOpen -> FollowScreen(

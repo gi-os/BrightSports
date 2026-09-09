@@ -9,6 +9,9 @@ import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.data.SportsRepository
 import com.gios.lightsports.model.Game
+import com.gios.lightsports.model.GameState
+import com.gios.lightsports.model.Play
+import com.gios.lightsports.model.ScoringPlay
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.model.StandingsGroup
@@ -58,6 +61,14 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _standings = MutableStateFlow<Map<String, List<StandingsGroup>>>(emptyMap())
     val standings: StateFlow<Map<String, List<StandingsGroup>>> = _standings.asStateFlow()
+
+    /** The last few plays of the open game, newest first, keyed by game id. */
+    private val _plays = MutableStateFlow<Map<String, List<Play>>>(emptyMap())
+    val plays: StateFlow<Map<String, List<Play>>> = _plays.asStateFlow()
+
+    /** Scoring plays by game id, plus the score they were fetched at (to know when to refetch). */
+    private val _scoring = MutableStateFlow<Map<String, Pair<String, List<ScoringPlay>>>>(emptyMap())
+    val scoring: StateFlow<Map<String, Pair<String, List<ScoringPlay>>>> = _scoring.asStateFlow()
 
     fun refresh() {
         if (_feed.value.loading) return
@@ -163,6 +174,9 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val zone = ZoneId.systemDefault()
         val fresh = withContext(Dispatchers.IO) { repo.games(league, now, zone) }
         val updated = fresh.firstOrNull { it.id == game.id } ?: return null
+        // The play-by-play rides along with every live refresh; it is what the field and
+        // the LAST PLAYS list are drawn from.
+        if (updated.state == GameState.LIVE) loadPlays(league, updated.id)
         if (updated == game) return updated
         val state = _feed.value
         _feed.value = state.copy(
@@ -178,6 +192,30 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         )
         if (updated.state != game.state) refresh()
         return updated
+    }
+
+    /** Fetch the last plays of one game and publish them. Cheap enough to call every poll. */
+    fun loadPlays(league: League, gameId: String) {
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) { repo.plays(league, gameId) }
+            if (list.isNotEmpty()) _plays.value = _plays.value + (gameId to list)
+        }
+    }
+
+    /**
+     * Fetch the scoring summary for a game, once per score. The key is the score line, so a
+     * finished game is fetched once and a live one only after somebody scores.
+     */
+    fun loadScoring(game: Game) {
+        val league = Leagues.byId(game.leagueId) ?: return
+        val key = "${game.away.score}-${game.home.score}-${game.state}"
+        if (_scoring.value[game.id]?.first == key) return
+        viewModelScope.launch {
+            val list = withContext(Dispatchers.IO) {
+                repo.scoring(league, game.id, final = game.state == GameState.FINAL)
+            }
+            _scoring.value = _scoring.value + (game.id to (key to list))
+        }
     }
 
     /**

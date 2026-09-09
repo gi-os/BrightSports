@@ -386,6 +386,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v1.28 | Game screen: marks and score header, the football field with ball and first-down marker, last plays from ESPN's play-by-play, a scoring summary from the game summary |
 | v1.27 | Football: feed rows with possession, down and distance, timeouts and the line; alerts titled TD/FG/SAFETY with the play text; touchdown-only loudness; red zone and one-score alerts; day headers |
 | v1.26 | The screen stays awake while a live game is open and updating itself, so it doesn't sleep between the 15-second refreshes |
 | v1.25 | FCS college football, Grand Slam tennis, and a game screen that refreshes itself every 15 seconds |
