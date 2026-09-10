@@ -1,3 +1,17 @@
+## BrightSports v2.4 — one card per game, and it is the alert
+
+**A game is one notification now, start to finish.** The fifteen-minute warning, the live score, every touchdown, and the final all land on the same card. Until now a live game could hold two: the ticker's ongoing card, and whatever the last alert posted. On a Sunday afternoon that was two rows a game.
+
+**The card carries the alert design.** It reads the way the on-screen box does: `TD SEA · Patriots 7 · Seahawks 21` on the first line, the play and the clock under it. BrightControl v4.30 draws that on the lock face, with the kind large. It already drew it that way on a banner. Between events the card shows the score and the situation.
+
+**An alert owns the card for ninety seconds.** The relay reports the kickoff a second after the touchdown. Without the hold, "TD SEA" would be gone before the phone was out of a pocket.
+
+**One channel.** A game used to move between three, from a reminder to a live card to a final. A card cannot change channel without being thrown away and re-posted. The new one is silent by construction: no sound, no vibration. The buzz and the box own the interruption, as they always did.
+
+**Every card clears.** A finished game's card is swipeable, and the ticker takes the ongoing flag off anything it leaves behind. A game that ended while the phone was asleep used to leave a row nothing could clear.
+
+**Only the first live game asks for the lock face.** Four ongoing rows on a Sunday would be the whole screen. The rest are in the shade.
+
 ## BrightSports v2.3 — the live card reaches the lock screen
 
 **The score card now asks to stay.** While a followed game is on, BrightSports keeps an ongoing card in the shade. BrightControl's lock face dropped it, and it was right to. A foreground service's notification carries the same two flags whether it is a download, a VPN, or a score. A lock screen full of receipts is what that filter is for. The card now sets one extra, `com.gios.lightcontrol.extra.LOCK_KEEP`, to say it is content rather than a receipt. BrightControl v4.29 keeps a card that sets it. A phone without BrightControl ignores the extra.

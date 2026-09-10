@@ -154,26 +154,32 @@ object TickerPlan {
      * Built in one place because the card is drawn from two — the poll and the relay
      * listener — and a second copy of these rules would drift from the first.
      */
+    /**
+     * One game's card: what it says, and which game a tap opens.
+     *
+     * Built here because two callers draw it — the poll and the relay listener — and a
+     * second copy of these rules would drift from the first.
+     */
     data class Card(
-        val lines: List<String>,
+        val gameId: String,
+        val leagueId: String,
+        val title: String,
         val detail: String? = null,
-        val gameId: String? = null,
-        val leagueId: String? = null,
     )
 
-    fun card(live: List<Game>, showScores: Boolean, kindOf: (Game) -> SportKind?): Card {
-        val lines = live.map { line(it, kindOf(it), showScores) }
-        val only = live.singleOrNull()
-        return Card(
-            lines = lines,
-            // Held back with the score. The spoiler delay exists to keep the phone behind
-            // the broadcast, and a drive that has reached the ten is the kind of thing that
-            // gets there first.
-            detail = only?.takeIf { showScores }?.let { detail(it, kindOf(it)) },
-            gameId = only?.id,
-            leagueId = only?.leagueId,
-        )
-    }
+    fun cards(live: List<Game>, showScores: Boolean, kindOf: (Game) -> SportKind?): List<Card> =
+        live.map { game ->
+            val kind = kindOf(game)
+            Card(
+                gameId = game.id,
+                leagueId = game.leagueId,
+                title = line(game, kind, showScores),
+                // Held back with the score. The spoiler hold exists to keep the phone behind
+                // the broadcast, and a drive that has reached the ten is the kind of thing
+                // that gets there first.
+                detail = if (showScores) detail(game, kind) else null,
+            )
+        }
 
     /**
      * The second line of the live card: what is happening right now, in the provider's own

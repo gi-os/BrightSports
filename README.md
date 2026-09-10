@@ -426,6 +426,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.4 | One card per game from the kickoff reminder to the final, carrying the alert wording; one silent channel; the lock face draws the kind label |
 | v2.3 | The live score card reaches BrightControl's lock face (one opt-in extra), carries the situation on a second line, and opens the game it names |
 | v2.2 | Live scores over the BasilNet relay (ESPN FastCast → ntfy at sports.gzl.dev): one websocket, updates in 1–2 s, poll kept as a safety net; see `relay/README.md` |
 | v2.1 | Find a game (search any team or league), a refresh button in the action bar, tapping a team opens its live game |

@@ -39,6 +39,12 @@ class LiveTicker : Service() {
     private val gate = java.lang.Object()
 
     @Volatile private var stopping = false
+
+    /** The game whose card the service is standing on, once it has one. */
+    @Volatile private var foregroundKey: String? = null
+
+    /** Every game this run has drawn a card for, so they can be settled when it stops. */
+    private val drawn = java.util.Collections.synchronizedSet(mutableSetOf<String>())
     private var worker: Thread? = null
     private var startedAt = 0L
 
@@ -55,8 +61,20 @@ class LiveTicker : Service() {
         val promoted = runCatching {
             ServiceCompat.startForeground(
                 this,
-                NOTIFICATION_ID,
-                Notifier.tickerNotification(this, "Checking scores", emptyList()),
+                PLACEHOLDER_ID,
+                // Five seconds is all a foreground service gets before the platform kills it,
+                // which is less than a poll takes, so it starts on a card that says only that
+                // it is looking. The first tick moves it onto the game's own card and takes
+                // this one down -- see [promoteTo].
+                Notifier.gameCard(
+                    this,
+                    gameId = PLACEHOLDER_KEY,
+                    leagueId = null,
+                    title = "Checking scores",
+                    text = null,
+                    ongoing = true,
+                    lockKeep = false,
+                ),
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
                 } else {
@@ -134,12 +152,7 @@ class LiveTicker : Service() {
             // Nothing left in progress, or this has been up long enough to be suspicious.
             if (!outcome.active || TickerPlan.expired(startedAt, System.currentTimeMillis())) break
 
-            runCatching {
-                val card = outcome.card
-                Notifier.updateTicker(
-                    context, NOTIFICATION_ID, card.lines, card.detail, card.gameId, card.leagueId,
-                )
-            }
+            runCatching { draw(context, outcome.cards) }
             // With the relay socket up the scores arrive as they happen and the poll is a
             // safety net every few minutes; without it the poll is the source and keeps
             // its 30-60 s pace. Decided per tick, so a socket that drops mid-game speeds
@@ -157,20 +170,81 @@ class LiveTicker : Service() {
     private val onRelayGame: (com.gios.lightsports.model.Game) -> Unit = { _ ->
         val app = applicationContext
         val showScores = !com.gios.lightsports.data.Prefs(app).delayEnabled
-        val card = TickerPlan.card(
+        val cards = TickerPlan.cards(
             LiveRelay.current().filter { it.state == com.gios.lightsports.model.GameState.LIVE },
             showScores,
         ) { com.gios.lightsports.data.Leagues.byId(it.leagueId)?.kind }
-        if (card.lines.isNotEmpty()) {
-            runCatching {
-                Notifier.updateTicker(
-                    app, NOTIFICATION_ID, card.lines, card.detail, card.gameId, card.leagueId,
-                )
-            }
+        runCatching { draw(app, cards) }
+    }
+
+    /**
+     * Redraw every live game's card, and keep the service standing on one of them.
+     *
+     * One card per game, from the fifteen-minute warning to the whistle: the card the ticker
+     * runs in front of is the same card an alert lands on, so a game is never two rows in the
+     * shade. Only the first asks BrightControl's lock face to keep it — four ongoing rows on
+     * a Sunday afternoon would be the whole face.
+     */
+    private fun draw(context: Context, cards: List<TickerPlan.Card>) {
+        if (cards.isEmpty()) return
+        promoteTo(context, cards.first())
+        for ((i, card) in cards.withIndex()) {
+            Notifier.updateGameCard(
+                context,
+                gameId = card.gameId,
+                leagueId = card.leagueId,
+                title = card.title,
+                detail = card.detail,
+                ongoing = true,
+                lockKeep = i == 0,
+            )
+        }
+        drawn.addAll(cards.map { it.gameId })
+    }
+
+    /**
+     * Move the foreground notification onto a game's own card.
+     *
+     * Done once, on the first tick that finds a game, and never again: `startForeground` with
+     * a new id leaves the old notification posted rather than replacing it, so every move
+     * costs a card to cancel, and a service that changed cards as games came and went would
+     * spend the afternoon doing it. The placeholder is cancelled behind us. If the platform
+     * refuses the move, the placeholder stays and the game still gets its own card — two rows
+     * for one game, which is the old behaviour and not worth a crash.
+     */
+    private fun promoteTo(context: Context, card: TickerPlan.Card) {
+        if (foregroundKey != null) return
+        val moved = runCatching {
+            ServiceCompat.startForeground(
+                this,
+                Notifier.cardId(card.gameId),
+                Notifier.gameCard(
+                    context,
+                    gameId = card.gameId,
+                    leagueId = card.leagueId,
+                    title = card.title,
+                    text = card.detail,
+                    ongoing = true,
+                    lockKeep = true,
+                ),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+                } else {
+                    0
+                },
+            )
+        }.isSuccess
+        if (!moved) {
+            Log.w(TAG, "could not move the service onto a game card")
+            return
+        }
+        foregroundKey = card.gameId
+        runCatching {
+            context.getSystemService(android.app.NotificationManager::class.java)
+                ?.cancel(PLACEHOLDER_ID)
         }
     }
 
-    /** Interruptible: stopping the service should not wait out a sleep. */
     private fun sleep(millis: Long) {
         synchronized(gate) {
             if (stopping) return
@@ -180,6 +254,16 @@ class LiveTicker : Service() {
 
     override fun onDestroy() {
         stopping = true
+        // Leave the cards up. STOP_FOREGROUND_DETACH is what makes the last score of a game
+        // survive the service that was drawing it; the default takes the notification down
+        // with the service, which is how a final used to vanish the moment the ticker gave up.
+        runCatching { ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH) }
+        // An ongoing card can be neither swiped nor cancelled, so every card this run left
+        // behind is re-posted without the flag. Otherwise a game that ended while the phone
+        // was asleep leaves a row nothing can clear.
+        runCatching { Notifier.settleGameCards(applicationContext, drawn.toList()) }
+        drawn.clear()
+        foregroundKey = null
         LiveRelay.removeListener(onRelayGame)
         // The socket belongs to a live game, not to this service, but with the service
         // gone nothing will be polling to keep it honest -- and the process may not
@@ -198,7 +282,12 @@ class LiveTicker : Service() {
 
     companion object {
         private const val TAG = "LiveTicker"
-        private const val NOTIFICATION_ID = 0x5D07
+        /**
+         * The card the service starts on, before it knows which game it is watching. Its own
+         * id, so cancelling it cannot take a game's card down with it.
+         */
+        private const val PLACEHOLDER_ID = 0x5D07
+        private const val PLACEHOLDER_KEY = "ticker"
         private const val WAKELOCK_TIMEOUT = 45_000L
         private const val MAX_FAILURES = 5
 

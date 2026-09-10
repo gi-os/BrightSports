@@ -92,9 +92,12 @@ class Janitor(private val file: File) {
      * clock is being kept topped up on purpose: a game still in progress an hour after its
      * last goal should keep the score on screen.
      *
-     * The live ticker's own card is excluded by channel. It is the receipt for a foreground
-     * service and is allowed to outlive anything; cancelling it would leave a service
-     * running with nothing to show for it.
+     * An **ongoing** card is skipped whatever its age. Since one card serves a game from the
+     * kickoff reminder to the whistle, that flag is now the honest test of "the app is still
+     * driving this": a nil-nil match in its ninetieth minute has a two-hour-old card that is
+     * perfectly current, and the channel it arrived on says nothing about that any more.
+     * When the game ends the card is re-posted without the flag ([Notifier.settleGameCards]),
+     * and from that moment it ages like any other.
      */
     private fun sweepOrphans(manager: NotificationManager, tracked: Set<String>, nowMillis: Long) {
         val active = runCatching { manager.activeNotifications }.getOrNull() ?: return
@@ -102,7 +105,8 @@ class Janitor(private val file: File) {
         for (sbn in active) {
             if (sbn == null) continue
             if (sbn.id in trackedIds) continue
-            if (sbn.notification?.channelId == Notifier.CHANNEL_LIVE) continue
+            val flags = sbn.notification?.flags ?: 0
+            if (flags and android.app.Notification.FLAG_ONGOING_EVENT != 0) continue
             if (nowMillis - sbn.postTime < STALE_MILLIS) continue
             runCatching { manager.cancel(sbn.id) }
         }

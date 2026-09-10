@@ -150,8 +150,8 @@ object ScoreWatcher {
         val active: Boolean,
         val nextWakeMillis: Long,
         val tickerIntervalMillis: Long,
-        /** What the ongoing card should say right now. */
-        val card: TickerPlan.Card,
+        /** One card per live game — what each says, and which game each opens. */
+        val cards: List<TickerPlan.Card>,
     )
 
     // ------------------------------------------------------------------ poll
@@ -195,7 +195,7 @@ object ScoreWatcher {
                 active = false,
                 nextWakeMillis = 0L,
                 tickerIntervalMillis = 0L,
-                card = TickerPlan.Card(emptyList()),
+                cards = emptyList(),
             )
         }
 
@@ -297,7 +297,7 @@ object ScoreWatcher {
             tickerIntervalMillis = TickerPlan.intervalMillis(watched, now) {
                 Leagues.byId(it.leagueId)?.kind
             },
-            card = TickerPlan.card(
+            cards = TickerPlan.cards(
                 watched.filter { it.state == GameState.LIVE },
                 showScores,
             ) { Leagues.byId(it.leagueId)?.kind },
@@ -416,6 +416,9 @@ object ScoreWatcher {
                 gameId = game.id,
                 leagueId = game.leagueId,
                 kind = alert.kind,
+                // A card for a game in progress is ongoing; the whistle, a postponement and
+                // the fifteen-minute warning all leave one that can be swiped away.
+                live = game.state == GameState.LIVE && alert.kind != ScoreDiff.Kind.FINAL,
                 title = AlertText.title(game, alert.kind, alert.prev, league.kind),
                 body = AlertText.body(game, league, alert.kind, zone, alert.prev),
             )

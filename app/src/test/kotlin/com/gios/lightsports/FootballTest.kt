@@ -307,8 +307,8 @@ class TickerCardTest {
     @Test
     fun `one live game gives a score line, a situation line and the game to open`() {
         val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16", isRedZone = true))
-        val card = TickerPlan.card(listOf(g), showScores = true) { SportKind.FOOTBALL }
-        assertEquals(listOf("Patriots 7 · Seahawks 14 · Q2"), card.lines)
+        val card = TickerPlan.cards(listOf(g), showScores = true) { SportKind.FOOTBALL }.single()
+        assertEquals("Patriots 7 · Seahawks 14 · Q2", card.title)
         assertEquals("SEA ball · 2nd & 7 at NE 16 · RED ZONE", card.detail)
         assertEquals("g1", card.gameId)
         assertEquals("nfl", card.leagueId)
@@ -317,25 +317,25 @@ class TickerCardTest {
     @Test
     fun `the spoiler delay holds back the score and the situation both`() {
         val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16"))
-        val card = TickerPlan.card(listOf(g), showScores = false) { SportKind.FOOTBALL }
-        assertEquals(listOf("Patriots at Seahawks · Q2"), card.lines)
+        val card = TickerPlan.cards(listOf(g), showScores = false) { SportKind.FOOTBALL }.single()
+        assertEquals("Patriots at Seahawks · Q2", card.title)
         assertNull(card.detail)
     }
 
     @Test
-    fun `two live games list both and open neither`() {
+    fun `two live games get a card each`() {
+        // One card per game, so a Sunday afternoon is one row per game rather than one row
+        // listing them and a second one for whichever scored.
         val g = football(null)
-        val card = TickerPlan.card(listOf(g, g.copy(id = "g2")), showScores = true) { SportKind.FOOTBALL }
-        assertEquals(2, card.lines.size)
-        assertNull(card.gameId)
-        assertNull(card.detail)
+        val cards = TickerPlan.cards(listOf(g, g.copy(id = "g2")), showScores = true) { SportKind.FOOTBALL }
+        assertEquals(listOf("g1", "g2"), cards.map { it.gameId })
     }
 
     @Test
     fun `baseball counts the count, the outs and the runners`() {
         val g = football(Situation(balls = 2, strikes = 1, outs = 1, onFirst = true, onSecond = true))
             .copy(leagueId = "mlb", period = 7, clock = null, statusDetail = "Top 7th")
-        val card = TickerPlan.card(listOf(g), showScores = true) { SportKind.BASEBALL }
+        val card = TickerPlan.cards(listOf(g), showScores = true) { SportKind.BASEBALL }.single()
         assertEquals("2-1 · 1 out · Runners on 1st and 2nd", card.detail)
     }
 

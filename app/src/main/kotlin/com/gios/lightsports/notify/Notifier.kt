@@ -19,9 +19,25 @@ import com.gios.lightsports.R
  */
 object Notifier {
 
-    const val CHANNEL_SCORES = "scores"
-    const val CHANNEL_SCHEDULE = "schedule"
-    const val CHANNEL_LIVE = "live"
+    /**
+     * The one channel every game card is posted on.
+     *
+     * There used to be three — scores, schedule, live — and a game moved between them as it
+     * went from "starts in 15 minutes" to a live card to a final. That was fine while each of
+     * those was a different notification. It is not fine now that a game has exactly one card
+     * from the reminder to the whistle: re-posting an id on a different channel is a cancel
+     * and a fresh post, which throws away the card's place in the shade and its "already
+     * alerted" state. One card, one channel, for the life of the game.
+     *
+     * IMPORTANCE_DEFAULT so the platform shows it on the lock screen and BrightControl's face
+     * lets it past the importance gate, and silent by construction — no sound, no vibration —
+     * because the buzz and the box in [ScoreAlert] own the interruption and can rate-limit it
+     * across a burst. The platform heads-up is not wanted either; the app draws its own.
+     */
+    const val CHANNEL_GAME = "game"
+
+    /** Retired. Deleted on upgrade so the shade's channel list matches what the app posts. */
+    private val RETIRED_CHANNELS = listOf("scores", "schedule", "live")
 
     /**
      * The one-boolean contract with BrightControl's lock face.
@@ -37,82 +53,78 @@ object Notifier {
      */
     const val EXTRA_LOCK_KEEP = "com.gios.lightcontrol.extra.LOCK_KEEP"
 
+    /**
+     * How long an alert owns the card before the live updates take it back.
+     *
+     * The card is one thing saying two: what just happened, and where the game is. A
+     * touchdown lands, and a second later the relay reports the kickoff that followed it —
+     * without this the "TD SEA" line would be replaced by "Patriots 7 · Seahawks 21 · Q2"
+     * before the phone was out of a pocket. Ninety seconds is long enough to read and short
+     * enough that the card is never stale about a game in progress.
+     */
+    private const val ALERT_STICKY = 90_000L
+
+    /** When each game's card last carried an alert, so a live update does not step on it. */
+    private val alertAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        // Vibration off on both channels: the box in ScoreAlert owns the buzz, so it can
-        // be rate-limited across a burst and still fire when the box can't be shown.
-        // Importance DEFAULT, not HIGH — the platform heads-up is not wanted here, the
-        // app draws its own.
         manager.createNotificationChannel(
             NotificationChannel(
-                CHANNEL_SCORES, "Scores", NotificationManager.IMPORTANCE_DEFAULT,
+                CHANNEL_GAME, "Games", NotificationManager.IMPORTANCE_DEFAULT,
             ).apply {
-                description = "Score changes and final results"
+                description = "One card per game: the score while it is on, and what just happened"
                 enableVibration(false)
-            },
-        )
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_SCHEDULE, "Game starts", NotificationManager.IMPORTANCE_DEFAULT,
-            ).apply {
-                description = "Reminders when a followed team is about to play"
-                enableVibration(false)
-            },
-        )
-        // IMPORTANCE_LOW: this card is the receipt for a foreground service, not news.
-        // It must be visible — that is the deal a foreground service makes — but it
-        // should never be the reason the phone lights up. The alerts do that.
-        manager.createNotificationChannel(
-            NotificationChannel(
-                CHANNEL_LIVE, "Live updates", NotificationManager.IMPORTANCE_LOW,
-            ).apply {
-                description = "Shown while a followed game is in progress"
-                enableVibration(false)
+                setSound(null, null)
                 setShowBadge(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
             },
         )
+        // Deleting a channel cancels whatever it still holds, which on an upgrade is the old
+        // ticker card -- and the next poll posts the new one a moment later.
+        for (old in RETIRED_CHANNELS) runCatching { manager.deleteNotificationChannel(old) }
     }
 
     /**
-     * The ongoing card the live ticker runs under.
+     * One game's card: the same notification whether it is drawing the live score or the
+     * touchdown that just landed.
      *
-     * @param lines one per live game, already written by [TickerPlan.line] — which is
-     * where the decision about whether they carry a score lives.
+     * @param ongoing true while the game is on. An ongoing card cannot be swiped away, which
+     *   is right for a game in progress and wrong the moment it ends — see [settle].
+     * @param lockKeep whether to ask BrightControl's lock face to keep it. Only the game the
+     *   ticker is running in front of asks: four ongoing rows would be the whole face.
      */
-    fun tickerNotification(
+    fun gameCard(
         context: Context,
+        gameId: String,
+        leagueId: String?,
         title: String,
-        lines: List<String>,
-        detail: String? = null,
-        gameId: String? = null,
-        leagueId: String? = null,
+        text: String?,
+        ongoing: Boolean,
+        lockKeep: Boolean = ongoing,
     ): Notification {
         ensureChannels(context)
         val open = Intent(context, MainActivity::class.java)
+            .putExtra(MainActivity.EXTRA_GAME_ID, gameId)
             .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        // One game live: the card opens that game. Several: the feed, which is where you
-        // would have to choose anyway.
-        if (gameId != null) {
-            open.putExtra(MainActivity.EXTRA_GAME_ID, gameId)
-            if (leagueId != null) open.putExtra(MainActivity.EXTRA_LEAGUE_ID, leagueId)
-        }
+        if (leagueId != null) open.putExtra(MainActivity.EXTRA_LEAGUE_ID, leagueId)
         val tap = PendingIntent.getActivity(
             context,
-            TICKER_REQUEST,
+            cardId(gameId),
             open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-        // The rest of the games on a doubleheader evening; otherwise the situation line.
-        val second = if (lines.size > 1) lines.drop(1).joinToString(" · ") else detail.orEmpty()
-        val expanded = (lines + listOfNotNull(detail.takeIf { lines.size <= 1 })).joinToString("\n")
-        val builder = Notification.Builder(context, CHANNEL_LIVE)
+        val builder = Notification.Builder(context, CHANNEL_GAME)
             .setSmallIcon(R.drawable.ic_stat_score)
-            .setContentTitle(lines.firstOrNull() ?: title)
+            .setContentTitle(title)
             .setContentIntent(tap)
-            .setOngoing(true)
-            // No timestamp: a card that has been up for two hours saying "2:04 PM" reads
-            // as a stale notification rather than a running one.
-            .setShowWhen(false)
+            .setOngoing(ongoing)
+            // A finished game is worth a timestamp; a card that has been up for two hours
+            // saying "2:04 PM" over a live score reads as a stale notification.
+            .setShowWhen(!ongoing)
+            .setAutoCancel(!ongoing)
+            // The card is redrawn every time the ball moves. The alert is the app's own
+            // buzz and box, so the platform must never treat a redraw as news.
             .setOnlyAlertOnce(true)
             // A score is not private. Without this the platform may redact the card on a
             // secured lock screen, which is the one place it is most worth reading.
@@ -121,72 +133,99 @@ object Notifier {
             // Deliberately not CATEGORY_SERVICE: BrightControl's lock face reads that as a
             // permanent notice and drops it.
             .setCategory(Notification.CATEGORY_STATUS)
-        if (second.isNotEmpty()) {
-            builder.setContentText(second)
-            builder.setStyle(Notification.BigTextStyle().bigText(expanded))
+        if (!text.isNullOrBlank()) {
+            builder.setContentText(text)
+            // The same words again, expanded, so a play description is not cut at one line
+            // in the shade. Title and text stay as plain extras on purpose: BrightControl's
+            // banner and lock face read EXTRA_TITLE / EXTRA_TEXT, and a style that carries
+            // the words elsewhere would draw a blank box there.
+            builder.setStyle(Notification.BigTextStyle().bigText(title + "\n" + text))
         }
-        // The lock-face contract. Set last, because Builder.build() copies the extras it
-        // owns over this bundle and a value written after the build is never seen.
-        builder.extras.putBoolean(EXTRA_LOCK_KEEP, true)
+        // Set last: Builder.build() copies the extras it owns over this bundle, so a value
+        // written afterwards is never seen.
+        if (lockKeep) builder.extras.putBoolean(EXTRA_LOCK_KEEP, true)
         return builder.build()
     }
 
     /**
-     * Redraw the ticker card in place. Silent by channel, so it never re-alerts.
+     * Draw a game's live state, unless an alert is still on the card.
      *
-     * @param detail the situation line, drawn under the score when one game is live.
-     * @param gameId the game the card opens, when exactly one game is live.
+     * Called on every poll and on every relay message, which is several times a minute — so
+     * it is silent, it never re-alerts, and it stands aside for [ALERT_STICKY] after
+     * something worth a buzz happened.
      */
-    fun updateTicker(
+    fun updateGameCard(
         context: Context,
-        id: Int,
-        lines: List<String>,
-        detail: String? = null,
-        gameId: String? = null,
-        leagueId: String? = null,
+        gameId: String,
+        leagueId: String?,
+        title: String,
+        detail: String?,
+        ongoing: Boolean,
+        lockKeep: Boolean = ongoing,
     ) {
+        val recent = alertAt[gameId] ?: 0L
+        if (System.currentTimeMillis() - recent < ALERT_STICKY) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        manager.notify(id, tickerNotification(context, "Live", lines, detail, gameId, leagueId))
+        runCatching {
+            manager.notify(
+                cardId(gameId),
+                gameCard(context, gameId, leagueId, title, detail, ongoing, lockKeep),
+            )
+        }
+    }
+
+    /**
+     * Take the ongoing flag off the cards a stopped ticker leaves behind.
+     *
+     * An ongoing card cannot be swiped away and the platform refuses to cancel it, so a game
+     * that ends while the phone is asleep would otherwise leave a card nothing could clear —
+     * not the user, not [Janitor]. Re-posted with the same words and no flag.
+     */
+    fun settleGameCards(context: Context, gameIds: Collection<String>) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val live = runCatching { manager.activeNotifications }.getOrNull() ?: return
+        for (id in gameIds) {
+            val card = live.firstOrNull { it.id == cardId(id) } ?: continue
+            if (card.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) continue
+            val extras = card.notification.extras
+            runCatching {
+                manager.notify(
+                    cardId(id),
+                    gameCard(
+                        context,
+                        gameId = id,
+                        leagueId = null,
+                        title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+                        text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+                        ongoing = false,
+                    ),
+                )
+            }
+        }
     }
 
     fun post(context: Context, entry: PendingQueue.Entry) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         ensureChannels(context)
-
-        val channel = when (entry.kind) {
-            ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.OFF,
-            ScoreDiff.Kind.RESUMED,
-            -> CHANNEL_SCHEDULE
-            else -> CHANNEL_SCORES
+        // One card per game, from the fifteen-minute warning to the final whistle. An alert
+        // is not a second notification about a game already in the shade; it is that card,
+        // saying what just happened.
+        alertAt[entry.gameId] = System.currentTimeMillis()
+        runCatching {
+            manager.notify(
+                cardId(entry.gameId),
+                gameCard(
+                    context,
+                    gameId = entry.gameId,
+                    leagueId = entry.leagueId,
+                    title = entry.title,
+                    text = entry.body,
+                    // A final, a postponement and a kickoff reminder are all news about a game
+                    // that is not running: those cards must be clearable.
+                    ongoing = entry.live,
+                ),
+            )
         }
-        val tap = PendingIntent.getActivity(
-            context,
-            entry.gameId.hashCode(),
-            Intent(context, MainActivity::class.java)
-                .putExtra(MainActivity.EXTRA_GAME_ID, entry.gameId)
-                .putExtra(MainActivity.EXTRA_LEAGUE_ID, entry.leagueId)
-                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
-
-        val notification = Notification.Builder(context, channel)
-            .setSmallIcon(R.drawable.ic_stat_score)
-            .setContentTitle(entry.title)
-            .setContentText(entry.body)
-            // The same words again, expanded, so a play description is not cut at one
-            // line in the shade. Title and text stay as plain extras on purpose:
-            // BrightControl's banner and lock face read EXTRA_TITLE / EXTRA_TEXT, and a
-            // style that carries the words elsewhere would draw a blank box there.
-            .setStyle(Notification.BigTextStyle().bigText(entry.body))
-            .setContentIntent(tap)
-            .setAutoCancel(true)
-            .setShowWhen(true)
-            .setOnlyAlertOnce(false)
-            .build()
-
-        // One notification id per game, so a second score replaces the first rather
-        // than stacking six cards for one baseball game.
-        manager.notify(cardId(entry.gameId), notification)
 
         // The notification is the record; the box is the alert. Raised after, so a
         // failure to draw it still leaves the score in the shade.

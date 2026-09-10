@@ -38,6 +38,14 @@ class PendingQueue(private val file: File) {
          * touchdown-plus-kick that arrives a minute later, not posted twice.
          */
         val createdAt: Long = 0L,
+        /**
+         * Whether the game was still running when this was detected.
+         *
+         * Decides whether the card it lands on is ongoing. A final, a postponement and a
+         * kickoff reminder are all news about a game that is not being played, and their
+         * cards have to be clearable; a score is a card the app is still driving.
+         */
+        val live: Boolean = false,
     )
 
     fun load(): List<Entry> {
@@ -56,6 +64,7 @@ class PendingQueue(private val file: File) {
                 body = o.optString("body"),
                 expiresAt = o.optLong("expiresAt"),
                 createdAt = o.optLong("createdAt"),
+                live = o.optBoolean("live"),
             )
         }
     }
@@ -72,7 +81,8 @@ class PendingQueue(private val file: File) {
                     .put("title", e.title)
                     .put("body", e.body)
                     .put("expiresAt", e.expiresAt)
-                    .put("createdAt", e.createdAt),
+                    .put("createdAt", e.createdAt)
+                    .put("live", e.live),
             )
         }
         runCatching { file.writeText(array.toString()) }
