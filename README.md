@@ -201,6 +201,9 @@ SDK artifacts sit on GitHub Packages behind a token and this ships as a plain AP
 - **Standings** — followed leagues only, your team's row inverts. **Hold a row** for
   every stat the provider sent — three or four times what fits the table: run
   differential, streaks, home/away splits, a driver's points at every round.
+- **Find** — type a team, player or league; every league the app knows, not only followed
+  ones. League-name matches fetch the whole slate; club matches fetch only that club's
+  league and filter. Team lists come from the week-long picker cache.
 - **Settings** — my teams, notifications, football alerts (loudness and moments), delivery, spoiler delay.
 
 Crest loading (`ui/Logos.kt`, ~70 lines, no image library) downsamples on decode — ESPN
@@ -401,6 +404,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.1 | Find a game (search any team or league), a refresh button in the action bar, tapping a team opens its live game |
 | v2.0.45 | Fix: the feed's score column is pinned to the right edge; tennis rows carry the set line and VS |
 | v2.0 | Per-sport strips on the game screen: the baseball diamond and count, soccer shots/possession and a timeline of goals and cards, basketball leaders and shooting, hockey shots on goal |
 | v1.29 | Week paging in the feed with a WEEK N title, a team season page with W/L rows and the bye, and a BYE · NEXT row for idle football teams |

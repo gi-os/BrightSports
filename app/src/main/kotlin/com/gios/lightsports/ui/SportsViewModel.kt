@@ -32,6 +32,10 @@ import java.time.ZoneId
 
 class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
+    private companion object {
+        const val SEARCH_DEBOUNCE_MS = 450L
+    }
+
     private val repo = SportsRepository(app)
     val prefs = Prefs(app)
 
@@ -53,6 +57,58 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         /** "SEP 10 – 15", plus "ALL FINAL" and "3–1 FOR YOUR TEAMS" on a week gone by. */
         val subtitle: String? = null,
     )
+
+    /** The lookup screen: what was typed, and what it found. */
+    data class SearchState(
+        val query: String = "",
+        val loading: Boolean = false,
+        val sections: List<Feed.Section> = emptyList(),
+        val games: List<Game> = emptyList(),
+        /** The query the sections belong to, so stale results are not shown under new text. */
+        val resultsFor: String = "",
+    )
+
+    private val _search = MutableStateFlow(SearchState())
+    val search: StateFlow<SearchState> = _search.asStateFlow()
+    private var searchJob: kotlinx.coroutines.Job? = null
+
+    /**
+     * Type-ahead lookup of any team or league. Debounced: the team lists are cached but
+     * a scoreboard is a real fetch, so nothing goes out until the typing pauses.
+     */
+    fun search(query: String, immediate: Boolean = false) {
+        _search.value = _search.value.copy(query = query)
+        searchJob?.cancel()
+        if (query.trim().length < 2) {
+            _search.value = _search.value.copy(loading = false, sections = emptyList(), games = emptyList(), resultsFor = "")
+            return
+        }
+        searchJob = viewModelScope.launch {
+            if (!immediate) kotlinx.coroutines.delay(SEARCH_DEBOUNCE_MS)
+            _search.value = _search.value.copy(loading = true)
+            val now = System.currentTimeMillis()
+            val zone = ZoneId.systemDefault()
+            val games = withContext(Dispatchers.IO) { repo.search(query, now, zone) }
+            // Crests for whatever came back: the team lists are already on disk from the
+            // lookup itself, so this is a file read per league.
+            games.map { it.leagueId }.distinct().forEach { id -> Leagues.byId(id)?.let { loadTeams(it) } }
+            if (_search.value.query == query) {
+                _search.value = _search.value.copy(
+                    loading = false,
+                    sections = Feed.build(games, emptyList(), now, zone),
+                    games = games,
+                    resultsFor = query,
+                )
+            }
+        }
+    }
+
+    /** The live game a team is in right now, if the feed or the last search has one. */
+    fun liveGameFor(leagueId: String, teamId: String): Game? =
+        (_feed.value.games + _search.value.games).firstOrNull {
+            it.leagueId == leagueId && it.state == GameState.LIVE &&
+                (it.home.teamId == teamId || it.away.teamId == teamId)
+        }
 
     /** One team's season, keyed `leagueId:teamId`. */
     private val _seasons = MutableStateFlow<Map<String, TeamSeason>>(emptyMap())

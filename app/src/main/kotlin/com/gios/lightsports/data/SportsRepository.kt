@@ -260,6 +260,39 @@ class SportsRepository(context: Context) {
     }
 
     /**
+     * Games matching a typed query, across every league the app knows, not only the
+     * followed ones. A league whose name matches ("nfl", "premier") gives its whole slate;
+     * otherwise the team lists (cached a week each) are searched and only the leagues
+     * with a matching club are fetched. Racing and tennis are left out: a race has no
+     * opponent to look up and a tennis draw is already one screen.
+     */
+    fun search(query: String, nowMillis: Long, zone: ZoneId): List<Game> {
+        val q = query.trim().lowercase()
+        if (q.length < 2) return emptyList()
+        val leagueHits = Leagues.all.filter { l ->
+            !l.isRacing && l.kind != SportKind.TENNIS &&
+                (l.short.lowercase().contains(q) || l.name.lowercase().contains(q) || l.id == q)
+        }
+        val teamHits = mutableMapOf<League, Set<String>>()
+        for (league in Leagues.all) {
+            if (league.isRacing || league.kind == SportKind.TENNIS || league in leagueHits) continue
+            val ids = teams(league).filter { t ->
+                t.displayName.lowercase().contains(q) || t.short.lowercase().contains(q) ||
+                    t.abbrev.lowercase() == q
+            }.map { it.teamId }.toSet()
+            if (ids.isNotEmpty()) teamHits[league] = ids
+        }
+        val out = mutableListOf<Game>()
+        for (league in leagueHits) out += games(league, nowMillis, zone)
+        for ((league, ids) in teamHits) {
+            out += games(league, nowMillis, zone).filter { g ->
+                g.home.teamId in ids || g.away.teamId in ids
+            }
+        }
+        return out.distinctBy { "${it.leagueId}:${it.id}" }
+    }
+
+    /**
      * One team's season. Cached six hours: the list changes when a game finishes, and a
      * finished game is already in the feed, so the schedule can lag.
      */

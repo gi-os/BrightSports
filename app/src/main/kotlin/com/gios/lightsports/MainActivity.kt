@@ -49,6 +49,7 @@ import kotlinx.coroutines.delay
 import com.gios.lightsports.ui.LightBottomBar
 import com.gios.lightsports.ui.LightTopBar
 import com.gios.lightsports.ui.Rule
+import com.gios.lightsports.ui.SearchScreen
 import com.gios.lightsports.ui.SettingsScreen
 import com.gios.lightsports.ui.SportsViewModel
 import com.gios.lightsports.ui.StandingsScreen
@@ -150,6 +151,7 @@ private data class TeamPage(val league: League, val teamId: String, val name: St
 private const val TAB_SCORES = 0
 private const val TAB_TABLE = 1
 private const val TAB_MORE = 2
+private const val TAB_SEARCH = 3
 
 @Composable
 private fun App(openGameId: String?) {
@@ -171,8 +173,15 @@ private fun App(openGameId: String?) {
     /** A team's season page: league, team id, display name, abbreviation. */
     var openTeam by remember { mutableStateOf<TeamPage?>(null) }
     val seasons by vm.seasons.collectAsState()
+    val search by vm.search.collectAsState()
 
     fun showTeam(league: League, teamId: String, name: String, abbrev: String) {
+        // A team that is playing right now opens on its game; the season page is one
+        // back-press away from there.
+        vm.liveGameFor(league.id, teamId)?.let { live ->
+            openGame = live
+            return
+        }
         openTeam = TeamPage(league, teamId, name, abbrev)
         vm.loadSeason(league, teamId)
         vm.loadTeams(league)
@@ -264,6 +273,7 @@ private fun App(openGameId: String?) {
                 title = when (tab) {
                     TAB_SCORES -> "SPORTS"
                     TAB_TABLE -> "STANDINGS"
+                    TAB_SEARCH -> "FIND A GAME"
                     else -> "SETTINGS"
                 },
                 right = if (tab == TAB_SCORES) {
@@ -333,6 +343,13 @@ private fun App(openGameId: String?) {
                         if (l != null) showTeam(l, id, ref?.displayName ?: id, ref?.abbrev ?: "")
                     },
                 )
+                tab == TAB_SEARCH -> SearchScreen(
+                    state = search,
+                    logos = logos,
+                    onQuery = { vm.search(it) },
+                    onSubmit = { vm.search(search.query, immediate = true) },
+                    onGame = { openGame = it },
+                )
                 tab == TAB_TABLE -> StandingsScreen(
                     leagues = vm.followedLeagues(),
                     groups = standings,
@@ -370,6 +387,27 @@ private fun App(openGameId: String?) {
                         { go(TAB_SCORES) },
                         "Scores",
                         selected = tab == TAB_SCORES && !teamsOpen,
+                    ),
+                    BarItem.Icon(
+                        R.drawable.ic_search_white,
+                        { go(TAB_SEARCH) },
+                        "Find a game",
+                        selected = tab == TAB_SEARCH && !teamsOpen,
+                    ),
+                    // Refresh is an action, not a place: it re-fetches whatever tab is
+                    // up. Dimmed so it never reads as the current tab.
+                    BarItem.Icon(
+                        R.drawable.ic_refresh_white,
+                        {
+                            when {
+                                teamsOpen -> openLeague?.let { vm.loadTeams(it) }
+                                tab == TAB_TABLE -> vm.followedLeagues().forEach { vm.loadStandings(it) }
+                                tab == TAB_SEARCH -> vm.search(search.query, immediate = true)
+                                else -> vm.refresh()
+                            }
+                        },
+                        "Refresh",
+                        selected = false,
                     ),
                     BarItem.Icon(
                         R.drawable.ic_large_list_white,

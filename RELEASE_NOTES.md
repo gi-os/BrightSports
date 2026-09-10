@@ -1,3 +1,11 @@
+## BrightSports v2.1 — find any game, and a refresh button
+
+**Find a game.** A search tab in the action bar. Type a team, a player or a league. The app lists its games in the feed's window: live first, then by day. Followed or not. Type "NFL" for the whole slate, "Chiefs" for one club. The team lists are on disk from the picker, so the app fetches only the leagues with a match.
+
+**Refresh.** The circular arrow is back in the action bar, between Find and Standings. It re-fetches whatever tab is up: the feed, the standings, or the last search. The week chevrons in the top bar stay.
+
+**Tap a team, get the game.** Tap a team's mark on a game screen while that team is playing. Or tap the team in NO GAME THIS WEEK. The app opens the live game instead of the season page. The season page is one back-press away. It shows a NOW row above the season while a game is on.
+
 ## BrightSports v2.0 patch — the score column, and tennis
 
 **Scores line up again.** On the feed, each row's score sat a different distance from the right edge. The distance depended on the team name. The mark and the record now share one slot. The score sits at the edge, as in the mock.

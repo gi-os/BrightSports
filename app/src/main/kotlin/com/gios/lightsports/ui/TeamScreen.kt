@@ -99,9 +99,22 @@ fun TeamScreen(
                 Spacer(Modifier.height(16.dp))
             }
             Rule()
-            SectionHeader("SEASON")
         }
         val games = season?.games.orEmpty().sortedBy { it.startMillis }
+        // Playing right now: one row above the season, so the game is one tap away.
+        val live = games.firstOrNull { it.state == GameState.LIVE }
+        if (live != null) {
+            item(key = "now") {
+                SectionHeader("NOW")
+                SeasonRow(
+                    label = live.week?.let { "W$it" } ?: "",
+                    game = live, teamId = teamId, kind = league.kind, zone = zone, now = now,
+                    onClick = { onGame(live) },
+                )
+                Rule()
+            }
+        }
+        item(key = "season-h") { SectionHeader("SEASON") }
         if (season == null) {
             item(key = "loading") {
                 Text(
