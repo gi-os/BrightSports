@@ -1,3 +1,17 @@
+## BrightSports v2.2 — live scores over a relay, not a poll
+
+**One socket instead of a poll.** A relay on BasilNet (`relay/` in this repo) sits on ESPN's own live feed, the FastCast websocket behind espn.com's scoreboard. It pushes each change to `sports.gzl.dev` the moment it lands. The phone opens one websocket to that host and subscribes to the games in its own feed. A score arrives in one to two seconds. The poll took fifteen seconds with the screen on and thirty to sixty in a pocket.
+
+**Nothing changes in what you hear.** A relay message lands on the game the phone already has. It goes through the same diff as a polled one. Same loudness, same red zone and one-score rules, same spoiler hold. The relay never decides what is worth a buzz.
+
+**The poll stays underneath.** While the socket is up, the live ticker polls every five minutes as a check. The open game screen fetches once a minute. If the socket drops, the next tick goes back to the old pace. If BasilNet is down, the app is the v2.1 app.
+
+**Privacy.** The relay does not know who follows what. It publishes every live game to its own topic and each phone subscribes to its own. Phones read only. The relay alone can publish.
+
+**Settings → Delivery → Live relay** shows whether the socket is up and when the relay last sent a heartbeat. Off returns to polling.
+
+**Coverage.** NFL, college football, MLB, NBA, WNBA, NHL and every soccer league the app carries. Racing, tennis, the minor leagues and the PWHL stay on the poll. ESPN's live feed has no channel for them.
+
 ## BrightSports v2.1 — find any game, and a refresh button
 
 **Find a game.** A search tab in the action bar. Type a team, a player or a league. The app lists its games in the feed's window: live first, then by day. Followed or not. Type "NFL" for the whole slate, "Chiefs" for one club. The team lists are on disk from the picker, so the app fetches only the leagues with a match.

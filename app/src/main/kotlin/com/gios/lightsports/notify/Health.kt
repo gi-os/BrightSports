@@ -25,6 +25,7 @@ object Health {
 
     const val SOURCE_ALARM = "alarm"
     const val SOURCE_TICKER = "ticker"
+    const val SOURCE_RELAY = "relay"
 
     private const val KEY_POLL_AT = "health_poll_at"
     private const val KEY_POLL_SOURCE = "health_poll_source"
@@ -47,6 +48,32 @@ object Health {
      * @param allowed whether the system let the foreground service up. False is the
      * interesting case and the reason this is written down at all.
      */
+    private const val KEY_RELAY_STATE = "health_relay_state"
+    private const val KEY_RELAY_AT = "health_relay_at"
+
+    /** The relay socket opening or dropping. A null context is a socket outliving its owner. */
+    fun recordRelay(context: Context?, connected: Boolean) {
+        val prefs = Prefs(context ?: return)
+        prefs.putString(KEY_RELAY_STATE, if (connected) "up" else "down")
+        prefs.putLong(KEY_RELAY_AT, System.currentTimeMillis())
+    }
+
+    /** One line for the settings screen: whether scores arrive over the relay right now. */
+    fun relayLine(context: Context): String {
+        val prefs = Prefs(context)
+        if (!prefs.relayEnabled) return "Off. Scores arrive by polling, every 30–60 s in a game."
+        val heartbeat = LiveRelay.lastHeartbeatAt
+        return when {
+            LiveRelay.connected && heartbeat > 0L ->
+                "Connected. Relay heartbeat ${ago(heartbeat)}."
+            LiveRelay.connected -> "Connected, waiting for the relay's first heartbeat."
+            prefs.getLong(KEY_RELAY_AT) > 0L ->
+                "Not connected (last ${prefs.getString(KEY_RELAY_STATE)} ${ago(prefs.getLong(KEY_RELAY_AT))}). " +
+                    "The socket opens when a followed game is on or about to start."
+            else -> "Not connected yet. The socket opens when a followed game is on or about to start."
+        }
+    }
+
     fun recordTicker(context: Context, allowed: Boolean) {
         val prefs = Prefs(context)
         prefs.putString(KEY_TICKER_STATE, if (allowed) STATE_RUNNING else STATE_REFUSED)

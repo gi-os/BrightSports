@@ -1,0 +1,40 @@
+# BrightSports live relay: ESPN FastCast -> ntfy topics, published at sports.gzl.dev.
+# Nothing here knows who follows what; phones subscribe to bs-<eventId> topics themselves.
+services:
+  ntfy:
+    image: binwiederhier/ntfy:v2.11.0
+    container_name: bs-ntfy
+    command: serve
+    restart: unless-stopped
+    volumes:
+      - ./ntfy:/etc/ntfy
+      - ./ntfy-data:/var/lib/ntfy
+      - ./ntfy-cache:/var/cache/ntfy
+    ports:
+      - "127.0.0.1:8093:80"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--tries=1", "-O", "/dev/null", "http://localhost:80/v1/health"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+
+  relay:
+    build: ./relay
+    container_name: bs-relay
+    restart: unless-stopped
+    depends_on:
+      - ntfy
+    environment:
+      NTFY_URL: http://ntfy:80
+      NTFY_TOKEN: ${NTFY_TOKEN}
+      CORRECTION_SECONDS: "300"
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: bs-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - ntfy

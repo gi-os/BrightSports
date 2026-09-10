@@ -155,6 +155,21 @@ class Prefs(context: Context) {
         get() = sp.getBoolean(KEY_BREAKS, true)
         set(v) = sp.edit().putBoolean(KEY_BREAKS, v).apply()
 
+    // --------------------------------------------------------------- relay
+
+    /**
+     * Whether to take live scores over the push relay (one websocket to BasilNet's ntfy)
+     * instead of polling every 30-60 s. Off is the polling app exactly as before.
+     */
+    var relayEnabled: Boolean
+        get() = sp.getBoolean(KEY_RELAY, true)
+        set(v) = sp.edit().putBoolean(KEY_RELAY, v).apply()
+
+    /** The ntfy base URL the relay publishes to. */
+    var relayUrl: String
+        get() = sp.getString(KEY_RELAY_URL, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_RELAY_URL
+        set(v) = sp.edit().putString(KEY_RELAY_URL, v.trim()).apply()
+
     /** The loudness a league actually runs at, once the user's football choice is applied. */
     fun loudnessFor(league: League): Loudness =
         if (league.kind == SportKind.FOOTBALL) footballLoudness else league.loudness
@@ -183,5 +198,8 @@ class Prefs(context: Context) {
         private const val KEY_RED_ZONE = "alert_red_zone"
         private const val KEY_CLOSE = "alert_close"
         private const val KEY_BREAKS = "alert_breaks"
+        private const val KEY_RELAY = "relay_enabled"
+        private const val KEY_RELAY_URL = "relay_url"
+        const val DEFAULT_RELAY_URL = "https://sports.gzl.dev"
     }
 }

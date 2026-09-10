@@ -62,6 +62,7 @@ fun SettingsScreen(
     var redZone by remember { mutableStateOf(prefs.alertRedZone) }
     var close by remember { mutableStateOf(prefs.alertClose) }
     var breaks by remember { mutableStateOf(prefs.alertBreaks) }
+    var relay by remember { mutableStateOf(prefs.relayEnabled) }
     val context = LocalContext.current
     // Re-read on every visit rather than remembered for the life of the screen: the
     // battery-optimisation row sends the user out to a system dialog and back, and a
@@ -69,10 +70,12 @@ fun SettingsScreen(
     var health by remember { mutableStateOf(Health.summary(context)) }
     var holdback by remember { mutableStateOf(Health.advice(context)) }
     var dozeExempt by remember { mutableStateOf(Health.dozeExempt(context)) }
+    var relayLine by remember { mutableStateOf(Health.relayLine(context)) }
     LaunchedEffect(Unit) {
         health = Health.summary(context)
         holdback = Health.advice(context)
         dozeExempt = Health.dozeExempt(context)
+        relayLine = Health.relayLine(context)
     }
     val scroll = rememberScrollState()
     WheelScroll(scroll)
@@ -214,12 +217,33 @@ fun SettingsScreen(
 
         SectionHeader("DELIVERY")
         MenuRow(
+            label = "Live relay",
+            detail = if (relay) "[ ON ]" else "OFF",
+            sub = relayLine,
+            onClick = {
+                relay = !relay
+                vm.setRelayEnabled(relay)
+                relayLine = Health.relayLine(context)
+            },
+        )
+        Text(
+            "One connection to sports.gzl.dev, a relay on BasilNet that watches ESPN's own " +
+                "live feed and pushes each change the moment it happens. No polling while it is " +
+                "up; the poll stays underneath as a safety net every five minutes. The relay " +
+                "never learns which teams you follow: the phone subscribes to its own games.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Dim,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        Rule()
+        MenuRow(
             label = "How scores arrive",
             sub = "$health\n$holdback",
             onClick = {
                 health = Health.summary(context)
                 holdback = Health.advice(context)
                 dozeExempt = Health.dozeExempt(context)
+                relayLine = Health.relayLine(context)
             },
         )
         Rule()

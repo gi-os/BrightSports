@@ -36,6 +36,7 @@ import com.gios.lightsports.hw.WheelBus
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.StandingsRow
+import com.gios.lightsports.notify.LiveRelay
 import com.gios.lightsports.notify.Notifier
 import com.gios.lightsports.notify.ScoreWatcher
 import com.gios.lightsports.report.CrashLog
@@ -204,6 +205,14 @@ private fun App(openGameId: String?) {
         }
     }
 
+    // A relay update rewrites the game inside the feed; the open screen shows that copy
+    // rather than the one it was handed, so a score lands on it the instant it arrives.
+    LaunchedEffect(feed.games, feed.updatedAt) {
+        val open = openGame ?: return@LaunchedEffect
+        val fresh = feed.games.firstOrNull { it.id == open.id } ?: return@LaunchedEffect
+        if (fresh != open) openGame = fresh
+    }
+
     // Live track: while a game is open, re-fetch it every fifteen seconds for as long
     // as it is in progress (or about to be), and once a minute otherwise to notice it
     // starting. Keyed on the id so opening another game restarts the loop, and the
@@ -215,7 +224,15 @@ private fun App(openGameId: String?) {
             val polling = TickerPlan.screenShouldPoll(
                 current, System.currentTimeMillis(), ScoreWatcher.LEAD,
             )
-            delay(if (polling) TickerPlan.SCREEN_INTERVAL else TickerPlan.SCREEN_IDLE_INTERVAL)
+            // With the relay socket up the screen already moves as the game does; the
+            // fetch becomes a once-a-minute check rather than the source.
+            delay(
+                when {
+                    !polling -> TickerPlan.SCREEN_IDLE_INTERVAL
+                    LiveRelay.connected -> LiveRelay.SCREEN_INTERVAL
+                    else -> TickerPlan.SCREEN_INTERVAL
+                },
+            )
             if (openGame?.id != id) break
             if (polling) vm.track(current)?.let { openGame = it }
         }

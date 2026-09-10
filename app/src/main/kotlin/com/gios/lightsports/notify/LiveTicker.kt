@@ -86,6 +86,7 @@ class LiveTicker : Service() {
         Health.recordTicker(this, allowed = true)
         running = true
         startedAt = System.currentTimeMillis()
+        LiveRelay.addListener(onRelayGame)
         val app = applicationContext
         worker = Thread { loop(app) }.apply { isDaemon = true; start() }
         return START_STICKY
@@ -136,9 +137,26 @@ class LiveTicker : Service() {
             runCatching {
                 Notifier.updateTicker(context, NOTIFICATION_ID, outcome.lines)
             }
-            sleep(outcome.tickerIntervalMillis)
+            // With the relay socket up the scores arrive as they happen and the poll is a
+            // safety net every few minutes; without it the poll is the source and keeps
+            // its 30-60 s pace. Decided per tick, so a socket that drops mid-game speeds
+            // the poll back up on the next round.
+            sleep(if (LiveRelay.connected) LiveRelay.SAFETY_INTERVAL else outcome.tickerIntervalMillis)
         }
         stopSelf()
+    }
+
+    /**
+     * A relay update redraws the ongoing card, so the line in the shade moves with the
+     * game rather than with the safety poll. Alerts were already raised by the relay
+     * itself; this is only the receipt.
+     */
+    private val onRelayGame: (com.gios.lightsports.model.Game) -> Unit = { _ ->
+        val app = applicationContext
+        val showScores = !com.gios.lightsports.data.Prefs(app).delayEnabled
+        val lines = LiveRelay.current().filter { it.state == com.gios.lightsports.model.GameState.LIVE }
+            .map { TickerPlan.line(it, com.gios.lightsports.data.Leagues.byId(it.leagueId)?.kind, showScores) }
+        if (lines.isNotEmpty()) runCatching { Notifier.updateTicker(app, NOTIFICATION_ID, lines) }
     }
 
     /** Interruptible: stopping the service should not wait out a sleep. */
@@ -151,6 +169,11 @@ class LiveTicker : Service() {
 
     override fun onDestroy() {
         stopping = true
+        LiveRelay.removeListener(onRelayGame)
+        // The socket belongs to a live game, not to this service, but with the service
+        // gone nothing will be polling to keep it honest -- and the process may not
+        // survive it anyway. Down it goes; the next poll that finds a game reopens it.
+        LiveRelay.stop()
         synchronized(gate) { gate.notifyAll() }
         running = false
         worker = null

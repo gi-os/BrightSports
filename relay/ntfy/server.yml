@@ -1,0 +1,18 @@
+base-url: "https://sports.gzl.dev"
+listen-http: ":80"
+behind-proxy: true
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "read-only"
+attachment-cache-dir: ""
+# The relay publishes a burst on every scoreboard checkpoint and several messages a second
+# on a Sunday. The defaults (60 burst, one every five seconds) would throttle it inside a
+# minute, so the docker network is exempt and the ceilings are lifted.
+visitor-request-limit-burst: 600
+visitor-request-limit-replenish: "200ms"
+visitor-message-daily-limit: 200000
+visitor-subscription-limit: 60
+visitor-request-limit-exempt-hosts: "172.16.0.0/12,10.0.0.0/8,192.168.0.0/16"
+enable-metrics: false
+log-level: "info"

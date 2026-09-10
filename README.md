@@ -277,6 +277,19 @@ A pre-game nudge fires 15 minutes before a followed team's kickoff — the only 
 fires with nothing changed, so it's guarded by a flag persisted on the snapshot rather
 than a state transition (the lead window spans 7-8 polls).
 
+### The relay: a third clock that is not a clock
+
+Since v2.2 a live followed game also opens **one websocket** to `sports.gzl.dev` — ntfy on
+BasilNet, fed by a relay (`relay/`) that subscribes to ESPN's FastCast, the pub/sub feed
+behind espn.com's scoreboard. Each change to a live game is published to `bs-<eventId>`;
+the phone (`notify/LiveRelay.kt`) subscribes to the topics for its own live and about-to-start
+games plus `bs-relay` for the heartbeat, overlays each message onto the game it already holds
+(`data/RelaySnapshot.kt`), and runs it through `ScoreWatcher.pushUpdate` — the same
+`evaluateGame` the poll uses, so no alert rule lives in two places. While the socket is up the
+ticker's poll stretches to five minutes (`LiveRelay.SAFETY_INTERVAL`) and the open game screen
+fetches once a minute; a dropped socket reconnects with backoff and the next tick polls at the
+old pace. The relay knows no users: it publishes every live game, phones pick their topics.
+
 ### Two clocks: the alarm chain, and the ticker
 
 Between games the app runs on `AlarmManager.setAndAllowWhileIdle` — the only alarm that
@@ -404,6 +417,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.2 | Live scores over the BasilNet relay (ESPN FastCast → ntfy at sports.gzl.dev): one websocket, updates in 1–2 s, poll kept as a safety net; see `relay/README.md` |
 | v2.1 | Find a game (search any team or league), a refresh button in the action bar, tapping a team opens its live game |
 | v2.0.45 | Fix: the feed's score column is pinned to the right edge; tennis rows carry the set line and VS |
 | v2.0 | Per-sport strips on the game screen: the baseball diamond and count, soccer shots/possession and a timeline of goals and cards, basketball leaders and shooting, hockey shots on goal |

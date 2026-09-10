@@ -19,6 +19,7 @@ import com.gios.lightsports.util.Fmt
 import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
+import com.gios.lightsports.notify.LiveRelay
 import com.gios.lightsports.notify.LiveTicker
 import com.gios.lightsports.notify.ScoreWatcher
 import com.gios.lightsports.notify.TickerPlan
@@ -117,6 +118,41 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val _feed = MutableStateFlow(FeedState())
     val feed: StateFlow<FeedState> = _feed.asStateFlow()
 
+    /**
+     * A game as the relay just reported it. Folded into the feed in place so the row and
+     * the open game screen move the moment the socket says so, without a fetch. Arrives
+     * on the socket's thread; the flows are thread-safe and Compose reads them on main.
+     */
+    private val onRelayGame: (Game) -> Unit = { updated ->
+        val state = _feed.value
+        if (state.games.any { it.id == updated.id }) {
+            _feed.value = state.copy(
+                games = state.games.map { if (it.id == updated.id) updated else it },
+                sections = state.sections.map { section ->
+                    section.copy(items = section.items.map { item ->
+                        if (item is Feed.Item.GameItem && item.game.id == updated.id) {
+                            Feed.Item.GameItem(updated)
+                        } else item
+                    })
+                },
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        // A game whose plays are on screen gets its play-by-play refreshed with the score.
+        if (updated.state == GameState.LIVE && _plays.value.containsKey(updated.id)) {
+            Leagues.byId(updated.leagueId)?.let { loadPlays(it, updated.id) }
+        }
+    }
+
+    init {
+        LiveRelay.addListener(onRelayGame)
+    }
+
+    override fun onCleared() {
+        LiveRelay.removeListener(onRelayGame)
+        super.onCleared()
+    }
+
     private val _follows = MutableStateFlow(prefs.follows)
     val follows: StateFlow<Set<String>> = _follows.asStateFlow()
 
@@ -189,7 +225,12 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 title = title,
                 subtitle = subtitle,
             )
-            if (weekOffset == 0) syncTicker(games)
+            if (weekOffset == 0) {
+                syncTicker(games)
+                // The relay socket follows the feed too, so opening the app during a game
+                // connects it even before the ticker's next poll does.
+                runCatching { LiveRelay.sync(getApplication(), games.filter { it.involves(prefs.notifyKeys) }, now) }
+            }
             // A followed football team with no game this week is on its bye, or between
             // a Monday night and the next Sunday. Its schedule says which, and what's next.
             noteIdle(idle, now, zone)
@@ -392,7 +433,19 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     fun setLiveUpdatesEnabled(enabled: Boolean) {
         prefs.liveUpdatesEnabled = enabled
         // Turning it off should clear the card now, not at the end of the game.
-        if (enabled) syncTicker() else LiveTicker.stop(getApplication())
+        if (enabled) syncTicker() else {
+            LiveTicker.stop(getApplication())
+            LiveRelay.stop()
+        }
+    }
+
+    fun setRelayEnabled(enabled: Boolean) {
+        prefs.relayEnabled = enabled
+        if (enabled) {
+            runCatching { LiveRelay.sync(getApplication(), _feed.value.games.filter { it.involves(prefs.notifyKeys) }) }
+        } else {
+            LiveRelay.stop()
+        }
     }
 
     fun setDelayEnabled(enabled: Boolean) {

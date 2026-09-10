@@ -10,6 +10,7 @@ import com.gios.lightsports.data.Feed
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.data.SportsRepository
+import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.SportKind
 import org.json.JSONObject
@@ -203,116 +204,22 @@ object ScoreWatcher {
         val (games, races) = repo.followedGames(now, zone)
 
         val store = SnapshotStore(File(context.filesDir, "snapshots.json"))
-        val previous = store.load()
         val next = mutableMapOf<String, ScoreDiff.Snapshot>()
         val newEntries = mutableListOf<PendingQueue.Entry>()
         val delay = prefs.effectiveDelayMillis
-
         // Silenced teams stay in the feed and still get their snapshot kept up to date —
         // they simply produce no alerts. Keeping the snapshot fresh is what stops
         // un-silencing a team mid-game from firing a burst for everything it missed.
         val notifyKeys = prefs.notifyKeys
+        synchronized(storeLock) {
+        val previous = store.load()
 
         for (game in games) {
-            val league = Leagues.byId(game.leagueId) ?: continue
             val was = previous[game.id]
-            // Both "already said that" markers are carried in rather than reset, so they
-            // survive a poll that produces no alert at all.
-            val snapshot = ScoreDiff.snapshot(
-                game,
-                soonSent = was?.soonSent == true,
-                markedPeriod = was?.markedPeriod ?: 0,
-            ).copy(
-                // The football markers too: a touchdown waiting for its kick, and whether
-                // the late-and-close nudge has gone. Time-gated where it matters, so a
-                // stale tdAt from a missed kick is inert rather than wrong.
-                tdAt = was?.tdAt ?: 0L,
-                tdText = was?.tdText,
-                closeSaid = was?.closeSaid == true,
-            )
-            // **Advanced rather than stored raw.** The delay debounce counts consecutive OFF polls,
-            // and the poll that increments that count is by definition one that produces no alert —
-            // so storing the raw snapshot here would reset the count on every quiet poll and it
-            // would never reach the threshold.
-            next[game.id] = ScoreDiff.advanced(was, snapshot)
-            // A card for a game that is still going keeps its hour topped up, so a quiet
-            // second half never loses the score. Everything else -- a game that has
-            // finished, or one that has dropped out of the feed entirely -- lets the clock
-            // run down and goes an hour after the last thing worth saying. Before the
-            // silence filter, because a lingering card might be from before the team was
-            // silenced and should still leave the shade.
-            if (snapshot.state != GameState.FINAL && janitor.has(game.id)) {
-                janitor.schedule(game.id, now + CLEANUP_DELAY)
-            }
-            // Kickoff. "Starting soon" has stopped being true, and with a league set to
-            // final-only there is no later alert to replace the card -- so it sat in the
-            // shade for the whole game, next to the score, reading as two notifications
-            // about one match. Dropped here rather than left to expire, because it is not
-            // stale, it is wrong.
-            if (was?.state == GameState.PRE && snapshot.state == GameState.LIVE) {
-                janitor.drop(context, game.id)
-            }
-            if (!game.involves(notifyKeys)) continue
-            // The red-zone nudge is for *your* team driving, not the other one's.
-            val offenseKey = game.offense?.let { "${game.leagueId}:${it.teamId}" }
-            val alerts = ScoreDiff.alerts(
-                prev = was,
-                now = snapshot,
-                loudness = prefs.loudnessFor(league),
-                notifyStarts = prefs.notifyStarts,
-                nowMillis = now,
-                leadMillis = LEAD,
-                markPeriods = league.markPeriods && prefs.alertBreaks,
-                redZoneWanted = league.kind == SportKind.FOOTBALL && prefs.alertRedZone &&
-                    offenseKey != null && offenseKey in notifyKeys,
-                closeWanted = league.kind == SportKind.FOOTBALL && prefs.alertClose,
-                regulationPeriods = TickerPlan.regulationPeriods(league.kind),
-                closeMargin = TickerPlan.closeMargin(league.kind),
-                notifyFinal = prefs.alertBreaks,
-                sport = league.kind,
-            )
-            // The alert carries the snapshot to store, which is how the markers advance.
-            alerts.firstOrNull()?.let { next[game.id] = it.snapshot }
-            for (alert in alerts) {
-                // A touchdown seen at six points is waiting for its kick. Held a little
-                // beyond the spoiler delay so the seven-point version replaces it rather
-                // than following it -- see PendingQueue.Entry.createdAt.
-                val patHold = alert.kind == ScoreDiff.Kind.SCORE &&
-                    alert.snapshot.tdAt > 0L && alert.snapshot.tdAt >= now
-                newEntries += PendingQueue.Entry(
-                    // A reminder is useless late, so only score news is delayed.
-                    dueAt = now + when (alert.kind) {
-                        // A delay clearing isn't a score to protect from spoilers —
-                        // it's the answer to "is it back on yet", which is useless late.
-                        ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED -> 0L
-                        ScoreDiff.Kind.SCORE -> if (patHold) maxOf(delay, PAT_HOLD) else delay
-                        else -> delay
-                    },
-                    createdAt = now,
-                    // Being due is not the same as being still true, and a phone that was
-                    // asleep is the gap between them. See [PendingQueue.Entry.expiresAt].
-                    expiresAt = when (alert.kind) {
-                        // At kickoff, exactly. After that it is not a reminder, it is a
-                        // wrong statement about a game already under way.
-                        ScoreDiff.Kind.SOON -> game.startMillis
-                        // "They're under way" is worth knowing for a few minutes and not
-                        // for an afternoon.
-                        ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED ->
-                            now + FRESH_WINDOW
-                        // A drive lasts minutes. "They're in the red zone" after the
-                        // touchdown alert has landed is noise about the past.
-                        ScoreDiff.Kind.REDZONE -> now + REDZONE_WINDOW
-                        ScoreDiff.Kind.CLOSE -> now + FRESH_WINDOW
-                        // A score is still a score whenever you read it.
-                        else -> 0L
-                    },
-                    gameId = game.id,
-                    leagueId = game.leagueId,
-                    kind = alert.kind,
-                    title = AlertText.title(game, alert.kind, alert.prev, league.kind),
-                    body = AlertText.body(game, league, alert.kind, zone, alert.prev),
-                )
-            }
+            val (stored, entries) = evaluateGame(context, game, was, prefs, now, zone, janitor, notifyKeys)
+                ?: continue
+            next[game.id] = stored
+            newEntries += entries
         }
 
         // A race weekend is only ever worth one notification: the result.
@@ -342,6 +249,7 @@ object ScoreWatcher {
         // rolled past a game shouldn't leave a snapshot behind to alert on next year.
         store.save(next)
         queue.add(newEntries)
+        }
 
         val (due, waiting) = queue.takeDue(now)
         for (entry in due) {
@@ -376,6 +284,11 @@ object ScoreWatcher {
         // say anything about.
         val watched = games.filter { it.involves(notifyKeys) }
         val showScores = !prefs.delayEnabled
+        // The relay socket follows the poll's view of what is on: it opens for the games
+        // worth hearing about and closes when none is left. Silenced teams stay out, as
+        // they do for the ticker.
+        runCatching { LiveRelay.sync(context, watched, now) }
+            .onFailure { Log.w(TAG, "relay sync failed", it) }
         return Outcome(
             active = prefs.liveUpdatesEnabled &&
                 TickerPlan.shouldRun(watched, now, LEAD),
@@ -388,6 +301,160 @@ object ScoreWatcher {
             },
         )
     }
+
+    /**
+     * One game through the diff: the snapshot to store and the alerts it produced.
+     *
+     * Shared by the poll (every game in the feed) and the relay (one game, the moment it
+     * changes), so a score arriving over the socket is judged by exactly the rules a
+     * polled one is — same loudness, same red-zone gate, same spoiler hold. Null when
+     * the league is unknown.
+     */
+    private fun evaluateGame(
+        context: Context,
+        game: Game,
+        was: ScoreDiff.Snapshot?,
+        prefs: Prefs,
+        now: Long,
+        zone: ZoneId,
+        janitor: Janitor,
+        notifyKeys: Set<String>,
+    ): Pair<ScoreDiff.Snapshot, List<PendingQueue.Entry>>? {
+        val league = Leagues.byId(game.leagueId) ?: return null
+        val delay = prefs.effectiveDelayMillis
+        // Both "already said that" markers are carried in rather than reset, so they
+        // survive a poll that produces no alert at all.
+        val snapshot = ScoreDiff.snapshot(
+            game,
+            soonSent = was?.soonSent == true,
+            markedPeriod = was?.markedPeriod ?: 0,
+        ).copy(
+            // The football markers too: a touchdown waiting for its kick, and whether
+            // the late-and-close nudge has gone. Time-gated where it matters, so a
+            // stale tdAt from a missed kick is inert rather than wrong.
+            tdAt = was?.tdAt ?: 0L,
+            tdText = was?.tdText,
+            closeSaid = was?.closeSaid == true,
+        )
+        // **Advanced rather than stored raw.** The delay debounce counts consecutive OFF polls,
+        // and the poll that increments that count is by definition one that produces no alert —
+        // so storing the raw snapshot here would reset the count on every quiet poll and it
+        // would never reach the threshold.
+        var stored = ScoreDiff.advanced(was, snapshot)
+        // A card for a game that is still going keeps its hour topped up, so a quiet
+        // second half never loses the score. Everything else -- a game that has
+        // finished, or one that has dropped out of the feed entirely -- lets the clock
+        // run down and goes an hour after the last thing worth saying. Before the
+        // silence filter, because a lingering card might be from before the team was
+        // silenced and should still leave the shade.
+        if (snapshot.state != GameState.FINAL && janitor.has(game.id)) {
+            janitor.schedule(game.id, now + CLEANUP_DELAY)
+        }
+        // Kickoff. "Starting soon" has stopped being true, and with a league set to
+        // final-only there is no later alert to replace the card -- so it sat in the
+        // shade for the whole game, next to the score, reading as two notifications
+        // about one match. Dropped here rather than left to expire, because it is not
+        // stale, it is wrong.
+        if (was?.state == GameState.PRE && snapshot.state == GameState.LIVE) {
+            janitor.drop(context, game.id)
+        }
+        if (!game.involves(notifyKeys)) return stored to emptyList()
+        // The red-zone nudge is for *your* team driving, not the other one's.
+        val offenseKey = game.offense?.let { "${game.leagueId}:${it.teamId}" }
+        val alerts = ScoreDiff.alerts(
+            prev = was,
+            now = snapshot,
+            loudness = prefs.loudnessFor(league),
+            notifyStarts = prefs.notifyStarts,
+            nowMillis = now,
+            leadMillis = LEAD,
+            markPeriods = league.markPeriods && prefs.alertBreaks,
+            redZoneWanted = league.kind == SportKind.FOOTBALL && prefs.alertRedZone &&
+                offenseKey != null && offenseKey in notifyKeys,
+            closeWanted = league.kind == SportKind.FOOTBALL && prefs.alertClose,
+            regulationPeriods = TickerPlan.regulationPeriods(league.kind),
+            closeMargin = TickerPlan.closeMargin(league.kind),
+            notifyFinal = prefs.alertBreaks,
+            sport = league.kind,
+        )
+        // The alert carries the snapshot to store, which is how the markers advance.
+        alerts.firstOrNull()?.let { stored = it.snapshot }
+        val entries = alerts.map { alert ->
+            // A touchdown seen at six points is waiting for its kick. Held a little
+            // beyond the spoiler delay so the seven-point version replaces it rather
+            // than following it -- see PendingQueue.Entry.createdAt.
+            val patHold = alert.kind == ScoreDiff.Kind.SCORE &&
+                alert.snapshot.tdAt > 0L && alert.snapshot.tdAt >= now
+            PendingQueue.Entry(
+                // A reminder is useless late, so only score news is delayed.
+                dueAt = now + when (alert.kind) {
+                    // A delay clearing isn't a score to protect from spoilers —
+                    // it's the answer to "is it back on yet", which is useless late.
+                    ScoreDiff.Kind.SOON, ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED -> 0L
+                    ScoreDiff.Kind.SCORE -> if (patHold) maxOf(delay, PAT_HOLD) else delay
+                    else -> delay
+                },
+                createdAt = now,
+                // Being due is not the same as being still true, and a phone that was
+                // asleep is the gap between them. See [PendingQueue.Entry.expiresAt].
+                expiresAt = when (alert.kind) {
+                    // At kickoff, exactly. After that it is not a reminder, it is a
+                    // wrong statement about a game already under way.
+                    ScoreDiff.Kind.SOON -> game.startMillis
+                    // "They're under way" is worth knowing for a few minutes and not
+                    // for an afternoon.
+                    ScoreDiff.Kind.START, ScoreDiff.Kind.RESUMED -> now + FRESH_WINDOW
+                    // A drive lasts minutes. "They're in the red zone" after the
+                    // touchdown alert has landed is noise about the past.
+                    ScoreDiff.Kind.REDZONE -> now + REDZONE_WINDOW
+                    ScoreDiff.Kind.CLOSE -> now + FRESH_WINDOW
+                    // A score is still a score whenever you read it.
+                    else -> 0L
+                },
+                gameId = game.id,
+                leagueId = game.leagueId,
+                kind = alert.kind,
+                title = AlertText.title(game, alert.kind, alert.prev, league.kind),
+                body = AlertText.body(game, league, alert.kind, zone, alert.prev),
+            )
+        }
+        return stored to entries
+    }
+
+    /**
+     * One game, fresh off the relay socket. Runs the same diff as a poll and posts what is
+     * due, without fetching anything: the socket already delivered the state. The snapshot
+     * file is read and written under the same lock the poll uses, so a poll and a push
+     * landing together cannot lose each other's markers.
+     */
+    fun pushUpdate(context: Context, game: Game) {
+        val prefs = Prefs(context)
+        if (!prefs.notificationsEnabled || prefs.follows.isEmpty()) return
+        val now = System.currentTimeMillis()
+        val zone = ZoneId.systemDefault()
+        val queue = PendingQueue(File(context.filesDir, "pending.json"))
+        val janitor = Janitor(File(context.filesDir, "cleanup.json"))
+        val store = SnapshotStore(File(context.filesDir, "snapshots.json"))
+        synchronized(storeLock) {
+            val all = store.load().toMutableMap()
+            val (stored, entries) = evaluateGame(
+                context, game, all[game.id], prefs, now, zone, janitor, prefs.notifyKeys,
+            ) ?: return
+            all[game.id] = stored
+            store.save(all)
+            queue.add(entries)
+        }
+        Health.recordPoll(context, Health.SOURCE_RELAY)
+        val (due, _) = queue.takeDue(now)
+        for (entry in due) {
+            Notifier.post(context, entry)
+            janitor.schedule(entry.gameId, now + CLEANUP_DELAY)
+        }
+        janitor.sweep(context, now)
+    }
+
+    /** Guards the snapshot file between the poll and a relay push. */
+    private val storeLock = Any()
 
     // ----------------------------------------------------------------- store
 
