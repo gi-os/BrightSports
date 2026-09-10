@@ -36,7 +36,7 @@ CORRECTION_PATHS = [
     "soccer/uefa.champions", "soccer/uefa.europa", "soccer/usa.nwsl",
     "soccer/concacaf.leagues.cup", "soccer/usa.open",
 ]
-CORRECTION_EVERY = int(os.environ.get("CORRECTION_SECONDS", "300"))
+CORRECTION_EVERY = int(os.environ.get("CORRECTION_SECONDS", "120"))
 HEARTBEAT_EVERY = 60
 
 
@@ -164,23 +164,35 @@ class Relay:
 
     async def corrections(self):
         # The safety net under the patch stream: a plain scoreboard fetch per league every
-        # few minutes. Cheap for a server, and it catches a patch we mis-applied.
-        await asyncio.sleep(90)
+        # couple of minutes. Cheap for a server, and it covers two real gaps: a patch we
+        # mis-applied, and a checkpoint older than the game (FastCast's checkpoint can
+        # predate the kickoff, and the one patch that flipped the state is not replayed).
+        #
+        # The User-Agent is deliberate. From BasilNet's address the site API answers 403 to
+        # anything that calls itself Mozilla, and 200 to a bare tool string. Measured, not
+        # guessed.
+        headers = {"User-Agent": "curl/8.5", "Accept": "application/json"}
+        failures = {}
+        await asyncio.sleep(5)
         while True:
             for path in CORRECTION_PATHS:
                 sep = "&" if "?" in path else "?"
                 url = f"{SITE}/{path}{sep}limit=300"
                 try:
-                    async with self.http.get(url, headers={"User-Agent": "Mozilla/5.0 (BrightSports relay)"},
+                    async with self.http.get(url, headers=headers,
                                              timeout=aiohttp.ClientTimeout(total=20)) as r:
                         if r.status != 200:
-                            continue
+                            raise RuntimeError(f"HTTP {r.status}")
                         doc = await r.json(content_type=None)
+                    failures.pop(path, None)
                     for ev in doc.get("events", []):
                         await self.consider(ev, source="correction")
                 except Exception as e:
-                    log.debug("correction %s failed: %s", path, e)
-                await asyncio.sleep(2)
+                    # Said once per path while it keeps failing, not every two minutes.
+                    if path not in failures:
+                        log.warning("correction %s failed: %s", path, e)
+                    failures[path] = time.time()
+                await asyncio.sleep(1)
             await asyncio.sleep(CORRECTION_EVERY)
 
     async def run(self):

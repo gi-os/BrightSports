@@ -3,6 +3,7 @@ package com.gios.lightsports.notify
 import com.gios.lightsports.data.Feed
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
+import com.gios.lightsports.model.Situation
 import com.gios.lightsports.model.SportKind
 import kotlin.math.abs
 
@@ -146,6 +147,82 @@ object TickerPlan {
      * the shade with the current score would walk straight through it. The matchup and
      * the period are not a result, so they stay either way.
      */
+    /**
+     * Everything the ongoing card needs: a line per live game, the situation under it when
+     * exactly one is on, and which game it opens.
+     *
+     * Built in one place because the card is drawn from two — the poll and the relay
+     * listener — and a second copy of these rules would drift from the first.
+     */
+    data class Card(
+        val lines: List<String>,
+        val detail: String? = null,
+        val gameId: String? = null,
+        val leagueId: String? = null,
+    )
+
+    fun card(live: List<Game>, showScores: Boolean, kindOf: (Game) -> SportKind?): Card {
+        val lines = live.map { line(it, kindOf(it), showScores) }
+        val only = live.singleOrNull()
+        return Card(
+            lines = lines,
+            // Held back with the score. The spoiler delay exists to keep the phone behind
+            // the broadcast, and a drive that has reached the ten is the kind of thing that
+            // gets there first.
+            detail = only?.takeIf { showScores }?.let { detail(it, kindOf(it)) },
+            gameId = only?.id,
+            leagueId = only?.leagueId,
+        )
+    }
+
+    /**
+     * The second line of the live card: what is happening right now, in the provider's own
+     * terms. Football gives the ball and the down, baseball the count and the outs,
+     * everything else the period and the clock.
+     *
+     * Null when there is nothing to add — the first line already carries the score and the
+     * period, and a card whose second line repeats the first reads as a rendering fault.
+     */
+    fun detail(game: Game, kind: SportKind?): String? {
+        if (game.state != GameState.LIVE) return null
+        val s = game.situation
+        val clock = listOfNotNull(
+            kind?.let { periodLabel(it, game.period) }?.takeIf { it.isNotEmpty() },
+            game.clock,
+        ).joinToString(" ").takeIf { it.isNotEmpty() }
+        val situation = when (kind) {
+            SportKind.FOOTBALL -> listOfNotNull(
+                game.offense?.let { "${it.abbrev} ball" },
+                s?.downDistance ?: s?.shortDownDistance,
+                "RED ZONE".takeIf { s?.isRedZone == true },
+            ).joinToString(" · ").takeIf { it.isNotEmpty() }
+            SportKind.BASEBALL -> listOfNotNull(
+                if (s?.balls != null && s.strikes != null) "${s.balls}-${s.strikes}" else null,
+                s?.outs?.let { if (it == 1) "1 out" else "$it out" },
+                s?.let { runners(it) },
+            ).joinToString(" · ").takeIf { it.isNotEmpty() }
+            else -> null
+        }
+        // The clock is already on the first line for the sports that have one, so it is only
+        // repeated here when nothing better exists to say.
+        return situation ?: clock?.takeIf { it != periodLabel(kind ?: return null, game.period) }
+    }
+
+    /** "Runners on 1st and 2nd", "Bases loaded", null for nobody on. */
+    fun runners(s: Situation): String? {
+        val on = listOfNotNull(
+            "1st".takeIf { s.onFirst }, "2nd".takeIf { s.onSecond }, "3rd".takeIf { s.onThird },
+        )
+        return when (on.size) {
+            0 -> null
+            3 -> "Bases loaded"
+            1 -> "Runner on ${on[0]}"
+            else -> "Runners on ${on[0]} and ${on[1]}"
+        }
+    }
+
+    private fun periodLabel(kind: SportKind, period: Int) = AlertText.periodLabel(kind, period)
+
     fun line(game: Game, kind: SportKind?, showScores: Boolean): String {
         val where = kind?.let { AlertText.periodLabel(it, game.period) }.orEmpty()
             .ifEmpty { game.statusDetail }

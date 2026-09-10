@@ -36,6 +36,7 @@ import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.notify.AlertText
 import com.gios.lightsports.notify.ScoreDiff
+import com.gios.lightsports.notify.TickerPlan
 import com.gios.lightsports.ui.theme.Marks
 import com.gios.lightsports.ui.theme.Soft
 import com.gios.lightsports.ui.theme.Dim
@@ -312,18 +313,11 @@ private fun situationLine(game: Game, kind: SportKind?): String? {
     }
 }
 
-/** "Runners on 1st and 2nd", "Bases loaded", null for nobody on. */
-fun runners(s: com.gios.lightsports.model.Situation): String? {
-    val on = listOfNotNull(
-        "1st".takeIf { s.onFirst }, "2nd".takeIf { s.onSecond }, "3rd".takeIf { s.onThird },
-    )
-    return when (on.size) {
-        0 -> null
-        3 -> "Bases loaded"
-        1 -> "Runner on ${on[0]}"
-        else -> "Runners on ${on[0]} and ${on[1]}"
-    }
-}
+/**
+ * "Runners on 1st and 2nd". One implementation, in [TickerPlan], because the same sentence
+ * goes on the shade card and a second copy here would drift from it.
+ */
+fun runners(s: com.gios.lightsports.model.Situation): String? = TickerPlan.runners(s)
 
 /** Inverted label: white block, black caps. The one emphasis a greyscale panel has. */
 @Composable

@@ -124,13 +124,43 @@ class FastCast:
             inner = json.loads(inner)
         return inner if isinstance(inner, list) else []
 
+    def _resolve(self, tc, path):
+        """The value at a patch path, for copy/move. None when anything along it is missing."""
+        uid, _, rest = path.partition("/")
+        node = self.index[tc].get(uid)
+        if node is None or rest == "":
+            return node
+        for p in rest.split("/"):
+            if isinstance(node, list):
+                try:
+                    node = node[int(p)]
+                except (ValueError, IndexError):
+                    return None
+            elif isinstance(node, dict):
+                node = node.get(p)
+            else:
+                return None
+            if node is None:
+                return None
+        return node
+
     def _apply(self, tc, o):
         path = o.get("path", "")
         if "/" not in path and not path.startswith("s:"):
             return None
+        op = o.get("op")
+        # copy and move are add/replace with a value read from elsewhere in the document.
+        if op in ("copy", "move"):
+            src = o.get("from", "")
+            value = self._resolve(tc, src)
+            if value is None:
+                return None
+            o = {"op": "add", "path": path, "value": json.loads(json.dumps(value))}
+            if op == "move":
+                self._apply(tc, {"op": "remove", "path": src})
+            op = "add"
         uid, _, rest = path.partition("/")
         ev = self.index[tc].get(uid)
-        op = o.get("op")
         if ev is None:
             # A new event appearing mid-day: "add" at the root with the whole object.
             if op == "add" and rest == "" and isinstance(o.get("value"), dict):

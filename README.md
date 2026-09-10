@@ -248,6 +248,15 @@ Without that, the buzz still fires and the notification still posts — only the
 missing. Vibration is disabled on both channels so the box owns the buzz, rate-limited to
 one per 1.5s.
 
+The **ongoing card** the ticker runs under is the score itself, not a receipt, so since v2.3 it
+sets `Notifier.EXTRA_LOCK_KEEP` (`com.gios.lightcontrol.extra.LOCK_KEEP`) — the one-boolean
+contract BrightControl's `NoteFilter.LOCK_KEEP` reads to keep an ongoing card on the lock face
+and exempt it from the importance gate. Nothing else changes: it is still silent
+(`IMPORTANCE_LOW`), still never a banner (BrightControl's banner takes the newest
+*non*-persistent row), still hidden if the app is hidden by name. `TickerPlan.card` builds what
+it says — a line per live game, the situation under a single one, and the game a tap opens — so
+the poll and the relay listener draw the same card.
+
 Per-sport loudness: `EVERY_SCORE` for baseball/hockey/soccer, **`PERIOD_ONLY` for
 basketball** (forty buckets a night is a pager, not a notification), `FINAL_ONLY` for F1.
 Football is the user's choice (Settings → Football alerts): every score, **touchdowns**
@@ -417,6 +426,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.3 | The live score card reaches BrightControl's lock face (one opt-in extra), carries the situation on a second line, and opens the game it names |
 | v2.2 | Live scores over the BasilNet relay (ESPN FastCast → ntfy at sports.gzl.dev): one websocket, updates in 1–2 s, poll kept as a safety net; see `relay/README.md` |
 | v2.1 | Find a game (search any team or league), a refresh button in the action bar, tapping a team opens its live game |
 | v2.0.45 | Fix: the feed's score column is pinned to the right edge; tennis rows carry the set line and VS |

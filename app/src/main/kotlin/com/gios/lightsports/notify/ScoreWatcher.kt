@@ -150,7 +150,8 @@ object ScoreWatcher {
         val active: Boolean,
         val nextWakeMillis: Long,
         val tickerIntervalMillis: Long,
-        val lines: List<String>,
+        /** What the ongoing card should say right now. */
+        val card: TickerPlan.Card,
     )
 
     // ------------------------------------------------------------------ poll
@@ -194,7 +195,7 @@ object ScoreWatcher {
                 active = false,
                 nextWakeMillis = 0L,
                 tickerIntervalMillis = 0L,
-                lines = emptyList(),
+                card = TickerPlan.Card(emptyList()),
             )
         }
 
@@ -296,9 +297,10 @@ object ScoreWatcher {
             tickerIntervalMillis = TickerPlan.intervalMillis(watched, now) {
                 Leagues.byId(it.leagueId)?.kind
             },
-            lines = watched.filter { it.state == GameState.LIVE }.map {
-                TickerPlan.line(it, Leagues.byId(it.leagueId)?.kind, showScores)
-            },
+            card = TickerPlan.card(
+                watched.filter { it.state == GameState.LIVE },
+                showScores,
+            ) { Leagues.byId(it.leagueId)?.kind },
         )
     }
 

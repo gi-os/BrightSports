@@ -135,7 +135,10 @@ class LiveTicker : Service() {
             if (!outcome.active || TickerPlan.expired(startedAt, System.currentTimeMillis())) break
 
             runCatching {
-                Notifier.updateTicker(context, NOTIFICATION_ID, outcome.lines)
+                val card = outcome.card
+                Notifier.updateTicker(
+                    context, NOTIFICATION_ID, card.lines, card.detail, card.gameId, card.leagueId,
+                )
             }
             // With the relay socket up the scores arrive as they happen and the poll is a
             // safety net every few minutes; without it the poll is the source and keeps
@@ -154,9 +157,17 @@ class LiveTicker : Service() {
     private val onRelayGame: (com.gios.lightsports.model.Game) -> Unit = { _ ->
         val app = applicationContext
         val showScores = !com.gios.lightsports.data.Prefs(app).delayEnabled
-        val lines = LiveRelay.current().filter { it.state == com.gios.lightsports.model.GameState.LIVE }
-            .map { TickerPlan.line(it, com.gios.lightsports.data.Leagues.byId(it.leagueId)?.kind, showScores) }
-        if (lines.isNotEmpty()) runCatching { Notifier.updateTicker(app, NOTIFICATION_ID, lines) }
+        val card = TickerPlan.card(
+            LiveRelay.current().filter { it.state == com.gios.lightsports.model.GameState.LIVE },
+            showScores,
+        ) { com.gios.lightsports.data.Leagues.byId(it.leagueId)?.kind }
+        if (card.lines.isNotEmpty()) {
+            runCatching {
+                Notifier.updateTicker(
+                    app, NOTIFICATION_ID, card.lines, card.detail, card.gameId, card.leagueId,
+                )
+            }
+        }
     }
 
     /** Interruptible: stopping the service should not wait out a sleep. */

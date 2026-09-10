@@ -23,6 +23,20 @@ object Notifier {
     const val CHANNEL_SCHEDULE = "schedule"
     const val CHANNEL_LIVE = "live"
 
+    /**
+     * The one-boolean contract with BrightControl's lock face.
+     *
+     * A foreground service's notification carries `FLAG_ONGOING_EVENT` and
+     * `FLAG_FOREGROUND_SERVICE`, and BrightControl's lock face drops both on sight —
+     * rightly, since that is what a sync, a download and a VPN look like, and a lock screen
+     * full of receipts is the thing that filter exists to prevent. This card is not a
+     * receipt: it *is* the score, and the lock screen is where a score is worth having.
+     * This extra is the app saying so. BrightControl keeps an ongoing card that sets it and
+     * exempts that one card from the flag and importance rules; every other app's permanent
+     * notice is unaffected. A phone without BrightControl ignores it.
+     */
+    const val EXTRA_LOCK_KEEP = "com.gios.lightcontrol.extra.LOCK_KEEP"
+
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         // Vibration off on both channels: the box in ScoreAlert owns the buzz, so it can
@@ -69,14 +83,28 @@ object Notifier {
         context: Context,
         title: String,
         lines: List<String>,
+        detail: String? = null,
+        gameId: String? = null,
+        leagueId: String? = null,
     ): Notification {
         ensureChannels(context)
+        val open = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        // One game live: the card opens that game. Several: the feed, which is where you
+        // would have to choose anyway.
+        if (gameId != null) {
+            open.putExtra(MainActivity.EXTRA_GAME_ID, gameId)
+            if (leagueId != null) open.putExtra(MainActivity.EXTRA_LEAGUE_ID, leagueId)
+        }
         val tap = PendingIntent.getActivity(
             context,
             TICKER_REQUEST,
-            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP),
+            open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+        // The rest of the games on a doubleheader evening; otherwise the situation line.
+        val second = if (lines.size > 1) lines.drop(1).joinToString(" · ") else detail.orEmpty()
+        val expanded = (lines + listOfNotNull(detail.takeIf { lines.size <= 1 })).joinToString("\n")
         val builder = Notification.Builder(context, CHANNEL_LIVE)
             .setSmallIcon(R.drawable.ic_stat_score)
             .setContentTitle(lines.firstOrNull() ?: title)
@@ -86,18 +114,39 @@ object Notifier {
             // as a stale notification rather than a running one.
             .setShowWhen(false)
             .setOnlyAlertOnce(true)
-        // The first line is the headline; the rest only exist on a doubleheader evening.
-        if (lines.size > 1) {
-            builder.setContentText(lines.drop(1).joinToString(" · "))
-            builder.setStyle(Notification.BigTextStyle().bigText(lines.joinToString("\n")))
+            // A score is not private. Without this the platform may redact the card on a
+            // secured lock screen, which is the one place it is most worth reading.
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            // Running information, not a service the user should have to think about.
+            // Deliberately not CATEGORY_SERVICE: BrightControl's lock face reads that as a
+            // permanent notice and drops it.
+            .setCategory(Notification.CATEGORY_STATUS)
+        if (second.isNotEmpty()) {
+            builder.setContentText(second)
+            builder.setStyle(Notification.BigTextStyle().bigText(expanded))
         }
+        // The lock-face contract. Set last, because Builder.build() copies the extras it
+        // owns over this bundle and a value written after the build is never seen.
+        builder.extras.putBoolean(EXTRA_LOCK_KEEP, true)
         return builder.build()
     }
 
-    /** Redraw the ticker card in place. Silent by channel, so it never re-alerts. */
-    fun updateTicker(context: Context, id: Int, lines: List<String>) {
+    /**
+     * Redraw the ticker card in place. Silent by channel, so it never re-alerts.
+     *
+     * @param detail the situation line, drawn under the score when one game is live.
+     * @param gameId the game the card opens, when exactly one game is live.
+     */
+    fun updateTicker(
+        context: Context,
+        id: Int,
+        lines: List<String>,
+        detail: String? = null,
+        gameId: String? = null,
+        leagueId: String? = null,
+    ) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        manager.notify(id, tickerNotification(context, "Live", lines))
+        manager.notify(id, tickerNotification(context, "Live", lines, detail, gameId, leagueId))
     }
 
     fun post(context: Context, entry: PendingQueue.Entry) {

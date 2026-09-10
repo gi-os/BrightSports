@@ -1,3 +1,13 @@
+## BrightSports v2.3 — the live card reaches the lock screen
+
+**The score card now asks to stay.** While a followed game is on, BrightSports keeps an ongoing card in the shade. BrightControl's lock face dropped it, and it was right to. A foreground service's notification carries the same two flags whether it is a download, a VPN, or a score. A lock screen full of receipts is what that filter is for. The card now sets one extra, `com.gios.lightcontrol.extra.LOCK_KEEP`, to say it is content rather than a receipt. BrightControl v4.29 keeps a card that sets it. A phone without BrightControl ignores the extra.
+
+**The card says more.** One live game shows the score on the first line and the situation on the second. Football: "SEA ball · 2nd & 7 at NE 16 · RED ZONE". Baseball: "2-1 · 1 out · Runners on 1st and 2nd". Tapping it opens that game. Two or more games list them all, and the card opens the feed.
+
+**The spoiler hold covers the second line too.** With the hold on, the card reads "Patriots at Seahawks · Q2" and nothing else. A drive that has reached the ten gets ahead of a stream as surely as a score does.
+
+**Also:** the card is public, so a secured lock screen shows it instead of redacting it. Its category is status, not service.
+
 ## BrightSports v2.2 — live scores over a relay, not a poll
 
 **One socket instead of a poll.** A relay on BasilNet (`relay/` in this repo) sits on ESPN's own live feed, the FastCast websocket behind espn.com's scoreboard. It pushes each change to `sports.gzl.dev` the moment it lands. The phone opens one websocket to that host and subscribes to the games in its own feed. A score arrives in one to two seconds. The poll took fifteen seconds with the screen on and thirty to sixty in a pocket.

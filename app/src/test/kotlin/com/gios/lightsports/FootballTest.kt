@@ -11,6 +11,7 @@ import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.notify.AlertText
 import com.gios.lightsports.notify.PendingQueue
 import com.gios.lightsports.notify.ScoreDiff
+import com.gios.lightsports.notify.TickerPlan
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -288,5 +289,62 @@ class FootballTest {
         val (due, waiting) = q.takeDue(t0 + 1)
         assertEquals(listOf("TD 7"), due.map { it.title })
         assertTrue(waiting.isEmpty())
+    }
+}
+
+/** The ongoing card: what the shade and BrightControl's lock face are handed. */
+class TickerCardTest {
+
+    private val sea = Side("26", "Seattle Seahawks", "Seahawks", "SEA", 14)
+    private val ne = Side("17", "New England Patriots", "Patriots", "NE", 7)
+
+    private fun football(situation: Situation?) = Game(
+        id = "g1", leagueId = "nfl", state = GameState.LIVE, startMillis = 0L,
+        statusDetail = "3:24 - 2nd", period = 2, clock = "3:24",
+        home = sea, away = ne, situation = situation,
+    )
+
+    @Test
+    fun `one live game gives a score line, a situation line and the game to open`() {
+        val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16", isRedZone = true))
+        val card = TickerPlan.card(listOf(g), showScores = true) { SportKind.FOOTBALL }
+        assertEquals(listOf("Patriots 7 · Seahawks 14 · Q2"), card.lines)
+        assertEquals("SEA ball · 2nd & 7 at NE 16 · RED ZONE", card.detail)
+        assertEquals("g1", card.gameId)
+        assertEquals("nfl", card.leagueId)
+    }
+
+    @Test
+    fun `the spoiler delay holds back the score and the situation both`() {
+        val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16"))
+        val card = TickerPlan.card(listOf(g), showScores = false) { SportKind.FOOTBALL }
+        assertEquals(listOf("Patriots at Seahawks · Q2"), card.lines)
+        assertNull(card.detail)
+    }
+
+    @Test
+    fun `two live games list both and open neither`() {
+        val g = football(null)
+        val card = TickerPlan.card(listOf(g, g.copy(id = "g2")), showScores = true) { SportKind.FOOTBALL }
+        assertEquals(2, card.lines.size)
+        assertNull(card.gameId)
+        assertNull(card.detail)
+    }
+
+    @Test
+    fun `baseball counts the count, the outs and the runners`() {
+        val g = football(Situation(balls = 2, strikes = 1, outs = 1, onFirst = true, onSecond = true))
+            .copy(leagueId = "mlb", period = 7, clock = null, statusDetail = "Top 7th")
+        val card = TickerPlan.card(listOf(g), showScores = true) { SportKind.BASEBALL }
+        assertEquals("2-1 · 1 out · Runners on 1st and 2nd", card.detail)
+    }
+
+    @Test
+    fun `a game with nothing to add says nothing twice`() {
+        // No situation and no clock: the first line already carries the period.
+        val g = football(null).copy(clock = null)
+        assertNull(TickerPlan.detail(g, SportKind.FOOTBALL))
+        // Not live: never a detail line.
+        assertNull(TickerPlan.detail(g.copy(state = GameState.FINAL), SportKind.FOOTBALL))
     }
 }
