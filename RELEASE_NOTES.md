@@ -1,3 +1,19 @@
+## BrightSports v2.8 — a socket that goes quiet no longer slows the poll
+
+**The lock screen could sit unchanged for five minutes, and here is why.** While the relay socket was up, the ticker's own poll dropped to a five-minute safety pace, because scores were supposed to arrive on their own. It asked only whether the socket was *open*. An open socket carrying nothing looks exactly like a healthy one from the phone: the relay container restarting, a network holding the stream, ESPN's feed going quiet for a game. In all of those the card waited out the full five minutes.
+
+**Now it asks whether the socket is carrying traffic.** The relay sends a heartbeat every sixty seconds whether or not a game moved, so silence past two and a half minutes is silence. The poll goes back to its ordinary 30–60 s the moment the stream goes quiet, and the game screen back to fifteen seconds. The safety net itself is three minutes rather than five.
+
+**Settings → Delivery → Live relay says which fault it is.** Down and quiet are different problems with different answers, and only one of them was visible before. It also reports the last heartbeat and the last score, and it reports them correctly — it was printing a timestamp where it meant an age, so that line read as a number of hours in the hundreds of thousands.
+
+**Worth granting over adb** on a phone that follows live games, since LightOS has no screen for it:
+
+```
+adb shell dumpsys deviceidle whitelist +com.gios.lightsports
+```
+
+That exempts the app from Doze, which is what keeps the socket and the alarm chain alive through an evening with the screen off.
+
 ## BrightSports v2.7 — you can see it working
 
 **The update line flashes white each time an update lands.** A live game screen says it refreshes every fifteen seconds and then gives no sign of having done it, because the score is usually the same score. The line now goes white for a moment whenever data arrives, whether or not anything changed. A fetch that changed nothing still happened, and that is the case worth showing.

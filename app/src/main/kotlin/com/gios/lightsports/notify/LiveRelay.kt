@@ -32,15 +32,49 @@ object LiveRelay {
 
     private const val TAG = "LiveRelay"
 
-    /** Poll cadence for the ticker while the socket is up: a safety net, not the source. */
-    const val SAFETY_INTERVAL = 5L * 60_000
+    /** Poll cadence for the ticker while the socket is **delivering**: a safety net, not the source. */
+    const val SAFETY_INTERVAL = 3L * 60_000
 
-    /** How long an open game screen waits between fetches while the socket is up. */
+    /** How long an open game screen waits between fetches while the socket is delivering. */
     const val SCREEN_INTERVAL = 60_000L
+
+    /**
+     * How long the socket may go quiet before it is treated as down.
+     *
+     * The relay publishes a heartbeat on `bs-relay` every sixty seconds whether or not a game
+     * moved, so silence past a couple of those is silence, not a quiet afternoon. Two and a half
+     * minutes leaves room for one missed beat on a bad radio.
+     */
+    const val SILENCE_GRACE = 150_000L
 
     @Volatile var connected: Boolean = false; private set
     @Volatile var lastMessageAt: Long = 0L; private set
     @Volatile var lastHeartbeatAt: Long = 0L; private set
+    @Volatile var connectedAt: Long = 0L; private set
+
+    /**
+     * Whether the socket is not merely open but actually carrying traffic.
+     *
+     * **This, and never [connected], is what may slow a poll down.** A TCP connection that is up
+     * and silent looks exactly like a healthy one from here — the relay container restarting, a
+     * captive network holding the stream, FastCast going quiet for a game — and the ticker was
+     * trusting it, so a card could sit unchanged for the whole safety interval while the game
+     * moved. Reported from the phone as the lock screen not updating for five minutes. The poll
+     * now falls back to its ordinary pace the moment the stream goes quiet, which costs a fetch
+     * or two and cannot cost a stale score.
+     */
+    val delivering: Boolean
+        get() {
+            if (!connected) return false
+            val last = maxOf(lastMessageAt, lastHeartbeatAt, connectedAt)
+            return System.currentTimeMillis() - last < SILENCE_GRACE
+        }
+
+    /** How long the stream has been quiet, for the health line. Zero when it never opened. */
+    fun silenceMillis(nowMillis: Long = System.currentTimeMillis()): Long {
+        val last = maxOf(lastMessageAt, lastHeartbeatAt, connectedAt)
+        return if (last == 0L) 0L else (nowMillis - last).coerceAtLeast(0L)
+    }
     @Volatile private var lastId: String? = null
 
     private val client: OkHttpClient by lazy {
@@ -136,6 +170,7 @@ object LiveRelay {
         override fun onOpen(webSocket: WebSocket, response: Response) {
             synchronized(lock) { if (socket !== webSocket) return }
             connected = true
+            connectedAt = System.currentTimeMillis()
             backoffMs = 2_000L
             Health.recordRelay(appContext, connected = true)
         }

@@ -58,17 +58,32 @@ object Health {
         prefs.putLong(KEY_RELAY_AT, System.currentTimeMillis())
     }
 
-    /** One line for the settings screen: whether scores arrive over the relay right now. */
+    /**
+     * One line for the settings screen: whether scores arrive over the relay right now.
+     *
+     * It says **quiet** as well as **down**, because those are different faults and only one of
+     * them is visible from the socket. A connection that is open and carrying nothing looks
+     * healthy from the phone's side and leaves the poll running at its slow safety pace, which
+     * is the shape of "the lock screen has not moved in five minutes". See [LiveRelay.delivering].
+     */
     fun relayLine(context: Context): String {
         val prefs = Prefs(context)
         if (!prefs.relayEnabled) return "Off. Scores arrive by polling, every 30–60 s in a game."
+        val now = System.currentTimeMillis()
         val heartbeat = LiveRelay.lastHeartbeatAt
+        val score = LiveRelay.lastMessageAt
         return when {
-            LiveRelay.connected && heartbeat > 0L ->
-                "Connected. Relay heartbeat ${ago(heartbeat)}."
-            LiveRelay.connected -> "Connected, waiting for the relay's first heartbeat."
+            LiveRelay.delivering && heartbeat > 0L ->
+                "Connected. Relay heartbeat ${ago(now - heartbeat)}" +
+                    (if (score > 0L) ", last score ${ago(now - score)}." else ".")
+            LiveRelay.delivering -> "Connected, waiting for the relay's first heartbeat."
+            // Open and silent. Worth its own sentence: nothing else on this screen would say so,
+            // and the answer to it is not the same as the answer to a dropped socket.
+            LiveRelay.connected ->
+                "Connected but quiet for ${span(LiveRelay.silenceMillis(now))} — polling instead."
             prefs.getLong(KEY_RELAY_AT) > 0L ->
-                "Not connected (last ${prefs.getString(KEY_RELAY_STATE)} ${ago(prefs.getLong(KEY_RELAY_AT))}). " +
+                "Not connected (last ${prefs.getString(KEY_RELAY_STATE)} " +
+                    "${ago(now - prefs.getLong(KEY_RELAY_AT))}). " +
                     "The socket opens when a followed game is on or about to start."
             else -> "Not connected yet. The socket opens when a followed game is on or about to start."
         }
@@ -157,9 +172,20 @@ object Health {
         }
     }
 
+    /** The same reading without the "ago": a length of time, not a moment. */
+    private fun span(millis: Long): String {
+        val seconds = millis / 1000
+        return when {
+            seconds < 90 -> "${seconds}s"
+            seconds < 90 * 60 -> "${seconds / 60} min"
+            else -> "${seconds / 3600}h"
+        }
+    }
+
     private fun ago(millis: Long): String {
         val seconds = millis / 1000
         return when {
+            seconds < 5 -> "just now"
             seconds < 90 -> "${seconds}s ago"
             seconds < 90 * 60 -> "${seconds / 60} min ago"
             else -> "${seconds / 3600}h ago"

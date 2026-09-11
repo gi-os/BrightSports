@@ -152,11 +152,11 @@ class LiveTicker : Service() {
             if (!outcome.active || TickerPlan.expired(startedAt, System.currentTimeMillis())) break
 
             runCatching { draw(context, outcome.cards) }
-            // With the relay socket up the scores arrive as they happen and the poll is a
-            // safety net every few minutes; without it the poll is the source and keeps
-            // its 30-60 s pace. Decided per tick, so a socket that drops mid-game speeds
-            // the poll back up on the next round.
-            sleep(if (LiveRelay.connected) LiveRelay.SAFETY_INTERVAL else outcome.tickerIntervalMillis)
+            // With the relay socket *delivering* the scores arrive as they happen and the
+            // poll is a safety net every few minutes; otherwise the poll is the source and
+            // keeps its 30-60 s pace. Decided per tick, so a socket that drops -- or one
+            // that stays open and goes quiet -- speeds the poll back up on the next round.
+            sleep(if (LiveRelay.delivering) LiveRelay.SAFETY_INTERVAL else outcome.tickerIntervalMillis)
         }
         stopSelf()
     }

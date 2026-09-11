@@ -362,8 +362,24 @@ game away. A card in the shade with the score on it would walk straight through 
 setting whose whole purpose is that the phone must not get ahead of the stream.
 
 Live updates can be turned off in Settings, which puts the app back on alarms alone.
-`adb shell dumpsys deviceidle whitelist +com.gios.lightsports` also removes the throttle,
-if you'd rather have no card at all.
+
+Two adb grants are worth having on a phone that follows live games, and neither has a screen
+on LightOS to grant it from:
+
+```
+adb shell dumpsys deviceidle whitelist +com.gios.lightsports
+adb shell appops set com.gios.lightsports SYSTEM_ALERT_WINDOW allow
+```
+
+The first exempts the app from Doze, which is what keeps the relay socket and the alarm chain
+alive through a long evening with the screen off. The second is the on-screen alert box; without
+it the buzz still fires and the card still posts, and only the box is missing.
+
+**Settings → Delivery → Live relay** is the first place to look when scores stop arriving. Since
+v2.8 it distinguishes a socket that is **down** from one that is **connected but quiet**, which
+are different faults with different answers — and a quiet socket no longer slows the poll down,
+which is what used to turn "the relay went silent" into "the lock screen has not moved in five
+minutes".
 
 ## The wheel
 
@@ -445,6 +461,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.8 | **A quiet socket no longer slows the poll.** The ticker dropped to a five-minute safety pace whenever the relay socket was merely *open*, so a silent stream froze the card for five minutes; pacing now keys on `LiveRelay.delivering` (a heartbeat or message inside 150 s), the safety net is three minutes, and the health line separates **down** from **connected but quiet** — and prints an age rather than a raw timestamp |
 | v2.7 | **The app shows its work.** The game screen's update line flashes white on every update (`flashOnUpdate`) and names the cadence it is actually running at; a white band sweeps the rule under the top bar while a refresh is in flight (`ProgressRule`); and the 90-second alert hold on a card now steps aside for a score it has not seen, so a two-point conversion reaches the lock screen at once |
 | v2.6 | The spoiler hold now **holds** the live card's score by the same minutes it holds an alert, instead of suppressing it for the whole game (`notify/ScoreHold.kt`); the first score seen for a game shows at once, a flurry is walked through in order, and the situation line waits for the score it belongs to |
 | v2.5 | The alert card ships as five extras beside the title (`SPORT_KIND`, `SPORT_TEAM`, `SPORT_VALUE`, `SPORT_DETAIL`, `SPORT_FOOT`) plus the team crest as the large icon, so BrightControl v4.31 draws the design instead of parsing the title |

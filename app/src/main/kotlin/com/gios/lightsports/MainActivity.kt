@@ -232,12 +232,13 @@ private fun App(openGameId: String?) {
             val polling = TickerPlan.screenShouldPoll(
                 current, System.currentTimeMillis(), ScoreWatcher.LEAD,
             )
-            // With the relay socket up the screen already moves as the game does; the
-            // fetch becomes a once-a-minute check rather than the source.
+            // With the relay socket delivering, the screen already moves as the game does
+            // and the fetch is a once-a-minute check rather than the source. A socket that
+            // has gone quiet does not count: see [LiveRelay.delivering].
             delay(
                 when {
                     !polling -> TickerPlan.SCREEN_IDLE_INTERVAL
-                    LiveRelay.connected -> LiveRelay.SCREEN_INTERVAL
+                    LiveRelay.delivering -> LiveRelay.SCREEN_INTERVAL
                     else -> TickerPlan.SCREEN_INTERVAL
                 },
             )
@@ -327,7 +328,7 @@ private fun App(openGameId: String?) {
                     // What the loop below actually waits, so the line does not promise
                     // fifteen seconds while the relay has it checking once a minute.
                     everySeconds = (
-                        if (LiveRelay.connected) LiveRelay.SCREEN_INTERVAL
+                        if (LiveRelay.delivering) LiveRelay.SCREEN_INTERVAL
                         else TickerPlan.SCREEN_INTERVAL
                         ).let { (it / 1000).toInt() },
                     logos = logos,
