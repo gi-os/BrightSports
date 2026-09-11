@@ -308,18 +308,23 @@ class TickerCardTest {
     fun `one live game gives a score line, a situation line and the game to open`() {
         val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16", isRedZone = true))
         val card = TickerPlan.cards(listOf(g), showScores = true) { SportKind.FOOTBALL }.single()
-        assertEquals("Patriots 7 · Seahawks 14 · Q2", card.title)
-        assertEquals("SEA ball · 2nd & 7 at NE 16 · RED ZONE", card.detail)
+        assertEquals("Patriots 7 · Seahawks 14 · Q2", card.text.title)
+        assertEquals("SEA ball · 2nd & 7 at NE 16 · RED ZONE", card.text.detail)
         assertEquals("g1", card.gameId)
         assertEquals("nfl", card.leagueId)
+        // The card's own design: the matchup on the left, the score on the right.
+        assertEquals("NE @ SEA", card.text.kind)
+        assertEquals("7–14", card.text.value)
+        assertEquals("Q2 3:24", card.text.foot)
     }
 
     @Test
     fun `the spoiler delay holds back the score and the situation both`() {
         val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16"))
         val card = TickerPlan.cards(listOf(g), showScores = false) { SportKind.FOOTBALL }.single()
-        assertEquals("Patriots at Seahawks · Q2", card.title)
-        assertNull(card.detail)
+        assertEquals("Patriots at Seahawks · Q2", card.text.title)
+        assertNull(card.text.detail)
+        assertNull(card.text.value)
     }
 
     @Test
@@ -336,7 +341,7 @@ class TickerCardTest {
         val g = football(Situation(balls = 2, strikes = 1, outs = 1, onFirst = true, onSecond = true))
             .copy(leagueId = "mlb", period = 7, clock = null, statusDetail = "Top 7th")
         val card = TickerPlan.cards(listOf(g), showScores = true) { SportKind.BASEBALL }.single()
-        assertEquals("2-1 · 1 out · Runners on 1st and 2nd", card.detail)
+        assertEquals("2-1 · 1 out · Runners on 1st and 2nd", card.text.detail)
     }
 
     @Test

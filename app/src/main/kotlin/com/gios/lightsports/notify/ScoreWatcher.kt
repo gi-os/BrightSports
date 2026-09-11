@@ -242,6 +242,10 @@ object ScoreWatcher {
                     kind = ScoreDiff.Kind.FINAL,
                     title = AlertText.raceTitle(race),
                     body = AlertText.raceBody(race, league),
+                    // A race has no score to put on the right; the podium is the detail.
+                    label = "FINAL",
+                    detail = AlertText.raceBody(race, league),
+                    foot = league.short,
                 )
             }
         }
@@ -382,6 +386,7 @@ object ScoreWatcher {
         // The alert carries the snapshot to store, which is how the markers advance.
         alerts.firstOrNull()?.let { stored = it.snapshot }
         val entries = alerts.map { alert ->
+            val card = AlertText.cardText(game, league, alert.kind, zone, alert.prev)
             // A touchdown seen at six points is waiting for its kick. Held a little
             // beyond the spoiler delay so the seven-point version replaces it rather
             // than following it -- see PendingQueue.Entry.createdAt.
@@ -419,8 +424,15 @@ object ScoreWatcher {
                 // A card for a game in progress is ongoing; the whistle, a postponement and
                 // the fifteen-minute warning all leave one that can be swiped away.
                 live = game.state == GameState.LIVE && alert.kind != ScoreDiff.Kind.FINAL,
-                title = AlertText.title(game, alert.kind, alert.prev, league.kind),
-                body = AlertText.body(game, league, alert.kind, zone, alert.prev),
+                title = card.title,
+                body = card.body.orEmpty(),
+                // The same words, cut where the card's design cuts them. See [GameCardText].
+                label = card.kind,
+                team = card.team,
+                value = card.value,
+                detail = card.detail,
+                foot = card.foot,
+                crestTeamId = card.crestTeamId,
             )
         }
         return stored to entries

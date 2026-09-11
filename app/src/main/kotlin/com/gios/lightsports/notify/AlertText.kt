@@ -197,6 +197,120 @@ object AlertText {
         return t.trimEnd('.', ' ').takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * The alert as the card draws it: the kind on the left, the score on the right, the play
+     * under them, the clock at the foot.
+     *
+     * The same words the shade gets, cut where the design cuts them, so the lock face does not
+     * have to take a sentence apart to draw it. [title] and [body] are exactly what they were.
+     */
+    fun cardText(
+        game: Game,
+        league: League,
+        kind: ScoreDiff.Kind,
+        zone: ZoneId,
+        prev: ScoreDiff.Snapshot? = null,
+    ): GameCardText {
+        val title = title(game, kind, prev, league.kind)
+        val body = body(game, league, kind, zone, prev)
+        val score = scoreLine(game)
+        val clock = listOfNotNull(
+            periodLabel(league.kind, game.period).takeIf { it.isNotEmpty() },
+            game.clock,
+        ).joinToString(" ").takeIf { it.isNotEmpty() }
+        val (label, team, _) = splitKind(title)
+        return when (kind) {
+            // "RED ZONE" with the team on the right, because the score is not the news.
+            ScoreDiff.Kind.REDZONE -> GameCardText(
+                title = title, body = body,
+                kind = "RED ZONE",
+                value = game.offense?.abbrev ?: game.home.abbrev,
+                detail = listOfNotNull(game.situation?.downDistance, standing(game))
+                    .joinToString(" · ").takeIf { it.isNotEmpty() },
+                foot = clock,
+                crestTeamId = game.offense?.teamId,
+            )
+            ScoreDiff.Kind.CLOSE -> GameCardText(
+                title = title, body = body,
+                kind = "ONE-SCORE GAME",
+                value = margin(game),
+                detail = listOfNotNull(
+                    leads(game),
+                    game.clock?.let { "$it left" },
+                ).joinToString(" · ").takeIf { it.isNotEmpty() },
+                foot = listOfNotNull(
+                    periodLabel(league.kind, game.period).takeIf { it.isNotEmpty() },
+                    game.offense?.let { off ->
+                        listOfNotNull("${off.abbrev} ball", game.situation?.shortDownDistance)
+                            .joinToString(" ")
+                    },
+                ).joinToString(" · ").takeIf { it.isNotEmpty() },
+            )
+            ScoreDiff.Kind.SCORE -> GameCardText(
+                title = title, body = body,
+                kind = label ?: "SCORE",
+                team = team,
+                value = score,
+                detail = if (league.kind == SportKind.FOOTBALL) footballPlay(game, prev)
+                else game.situation?.lastPlay,
+                foot = clock ?: game.statusDetail.takeIf { it.isNotEmpty() },
+                crestTeamId = team?.let { abbrev ->
+                    listOf(game.home, game.away).firstOrNull { it.abbrev == abbrev }?.teamId
+                },
+            )
+            ScoreDiff.Kind.FINAL -> GameCardText(
+                title = title, body = body,
+                kind = "FINAL",
+                value = score,
+                detail = game.headline ?: leads(game),
+                foot = listOfNotNull(league.short, game.statusDetail.takeIf { it.isNotEmpty() })
+                    .joinToString(" · "),
+            )
+            ScoreDiff.Kind.PERIOD -> GameCardText(
+                title = title, body = body,
+                kind = boundaryLabel(league.kind, game).uppercase(),
+                value = score,
+                detail = leads(game),
+                foot = league.short,
+            )
+            // A kickoff reminder, a delay, a resumption: the matchup is the headline and there
+            // is no score to put on the right.
+            else -> GameCardText(
+                title = title, body = body,
+                kind = when (kind) {
+                    ScoreDiff.Kind.SOON, ScoreDiff.Kind.START ->
+                        if (league.kind == SportKind.FOOTBALL) "KICKOFF" else "STARTING"
+                    ScoreDiff.Kind.OFF -> "DELAYED"
+                    else -> "BACK ON"
+                },
+                detail = body,
+                foot = listOfNotNull(league.short, game.broadcast).joinToString(" · "),
+            )
+        }
+    }
+
+    /** "NE 7 · SEA 14", the way the right-hand side of the card writes it. */
+    fun scoreLine(game: Game): String =
+        "${game.away.abbrev} ${game.away.score ?: 0} · ${game.home.abbrev} ${game.home.score ?: 0}"
+
+    /** "24–20", the two scores in the order they finished, for a one-score card. */
+    private fun margin(game: Game): String? {
+        val h = game.home.score ?: return null
+        val a = game.away.score ?: return null
+        return if (h >= a) "$h–$a" else "$a–$h"
+    }
+
+    /** "SEA leads NE", or "tied" when nobody does. */
+    fun leads(game: Game): String? {
+        val h = game.home.score ?: return null
+        val a = game.away.score ?: return null
+        return when {
+            h > a -> "${game.home.abbrev} leads ${game.away.abbrev}"
+            a > h -> "${game.away.abbrev} leads ${game.home.abbrev}"
+            else -> "tied $h–$a"
+        }
+    }
+
     /** Games per set, away first to match the title: "6-3 1-6 1-0". */
     fun setLine(game: Game): String {
         val sets = maxOf(game.away.lineScore.size, game.home.lineScore.size)

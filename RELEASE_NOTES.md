@@ -1,3 +1,15 @@
+## BrightSports v2.5 — the card says where the design cuts
+
+**A score on the lock face is now the card you drew.** BrightSports used to write the whole alert into the title. `TD SEA · Patriots 7 · Seahawks 21`. BrightControl took that apart again with a regular expression, which holds right up to the day the wording changes.
+
+**The card now ships as five strings beside the title.** The kind (`TD`, `RED ZONE`, `ONE-SCORE GAME`, or a live game's matchup), the team, the figure, the play, and the clock. They are `SPORT_KIND`, `SPORT_TEAM`, `SPORT_VALUE`, `SPORT_DETAIL` and `SPORT_FOOT`. BrightControl v4.31 reads them and draws the box. Nothing infers anything.
+
+**The team's crest rides along** as the card's large icon, off the file the feed already downloaded. There is no network call. A card with no crest reads perfectly well.
+
+**The title and the body do not change.** The shade, LightGlance and any other phone show what they showed before.
+
+**The figure is a scoreline now.** `NE 7 · SEA 14`, not the full club names, so the whole card fits one line of a 3.9" panel. A red-zone card shows the team in the zone. A one-score card shows the margin.
+
 ## BrightSports v2.4 — one card per game, and it is the alert
 
 **A game is one notification now, start to finish.** The fifteen-minute warning, the live score, every touchdown, and the final all land on the same card. Until now a live game could hold two: the ticker's ongoing card, and whatever the last alert posted. On a Sunday afternoon that was two rows a game.

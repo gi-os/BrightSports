@@ -46,7 +46,26 @@ class PendingQueue(private val file: File) {
          * cards have to be clearable; a score is a card the app is still driving.
          */
         val live: Boolean = false,
-    )
+        /**
+         * The same words, cut where the card's design cuts them. Carried on the entry because
+         * the alert is written when it is detected and drawn when the hold runs out, and the
+         * game object is long gone by then.
+         */
+        // Not `kind`: that name is taken by the alert kind, and this is the word the card
+        // draws — they are close but not the same (a SCORE alert's label is "TD").
+        val label: String? = null,
+        val team: String? = null,
+        val value: String? = null,
+        val detail: String? = null,
+        val foot: String? = null,
+        val crestTeamId: String? = null,
+    ) {
+        /** The pieces the card draws, back in one shape. */
+        fun card(): GameCardText = GameCardText(
+            title = title, body = body, kind = label, team = team, value = value,
+            detail = detail, foot = foot, crestTeamId = crestTeamId,
+        )
+    }
 
     fun load(): List<Entry> {
         val text = runCatching { file.readText() }.getOrNull() ?: return emptyList()
@@ -65,6 +84,12 @@ class PendingQueue(private val file: File) {
                 expiresAt = o.optLong("expiresAt"),
                 createdAt = o.optLong("createdAt"),
                 live = o.optBoolean("live"),
+                label = o.optString("label").takeIf { it.isNotEmpty() },
+                team = o.optString("team").takeIf { it.isNotEmpty() },
+                value = o.optString("value").takeIf { it.isNotEmpty() },
+                detail = o.optString("detail").takeIf { it.isNotEmpty() },
+                foot = o.optString("foot").takeIf { it.isNotEmpty() },
+                crestTeamId = o.optString("crest").takeIf { it.isNotEmpty() },
             )
         }
     }
@@ -82,7 +107,13 @@ class PendingQueue(private val file: File) {
                     .put("body", e.body)
                     .put("expiresAt", e.expiresAt)
                     .put("createdAt", e.createdAt)
-                    .put("live", e.live),
+                    .put("live", e.live)
+                    .put("label", e.label)
+                    .put("team", e.team)
+                    .put("value", e.value)
+                    .put("detail", e.detail)
+                    .put("foot", e.foot)
+                    .put("crest", e.crestTeamId),
             )
         }
         runCatching { file.writeText(array.toString()) }

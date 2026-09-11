@@ -257,6 +257,15 @@ and exempt it from the importance gate. Nothing else changes: it is still silent
 it says — a line per live game, the situation under a single one, and the game a tap opens — so
 the poll and the relay listener draw the same card.
 
+Since v2.5 the card also carries **the design itself**, as five extras beside the ordinary title
+and text: `SPORT_KIND` (`TD`, `RED ZONE`, `ONE-SCORE GAME`, or `NE @ SEA` for a live game),
+`SPORT_TEAM`, `SPORT_VALUE` (`NE 7 · SEA 14`), `SPORT_DETAIL` and `SPORT_FOOT`, plus the team's
+crest as the large icon (`data/Crests.kt`, read off the file `ui/Logos.kt` already cached — never
+the network). `notify/GameCardText.kt` is the shape and `AlertText.cardText` builds it, pinned
+string by string in `CardTextTest`. BrightControl v4.31 draws a box from them; every other phone
+shows the title and the text, which do not change. The title-shape reading BrightControl used in
+v4.30 is still there as a fallback for an older app.
+
 Per-sport loudness: `EVERY_SCORE` for baseball/hockey/soccer, **`PERIOD_ONLY` for
 basketball** (forty buckets a night is a pager, not a notification), `FINAL_ONLY` for F1.
 Football is the user's choice (Settings → Football alerts): every score, **touchdowns**
@@ -426,6 +435,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.5 | The alert card ships as five extras beside the title (`SPORT_KIND`, `SPORT_TEAM`, `SPORT_VALUE`, `SPORT_DETAIL`, `SPORT_FOOT`) plus the team crest as the large icon, so BrightControl v4.31 draws the design instead of parsing the title |
 | v2.4 | One card per game from the kickoff reminder to the final, carrying the alert wording; one silent channel; the lock face draws the kind label |
 | v2.3 | The live score card reaches BrightControl's lock face (one opt-in extra), carries the situation on a second line, and opens the game it names |
 | v2.2 | Live scores over the BasilNet relay (ESPN FastCast → ntfy at sports.gzl.dev): one websocket, updates in 1–2 s, poll kept as a safety net; see `relay/README.md` |

@@ -163,21 +163,36 @@ object TickerPlan {
     data class Card(
         val gameId: String,
         val leagueId: String,
-        val title: String,
-        val detail: String? = null,
+        val text: GameCardText,
     )
 
     fun cards(live: List<Game>, showScores: Boolean, kindOf: (Game) -> SportKind?): List<Card> =
         live.map { game ->
             val kind = kindOf(game)
+            val clock = listOfNotNull(
+                kind?.let { AlertText.periodLabel(it, game.period) }?.takeIf { it.isNotEmpty() },
+                game.clock,
+            ).joinToString(" ").takeIf { it.isNotEmpty() }
             Card(
                 gameId = game.id,
                 leagueId = game.leagueId,
-                title = line(game, kind, showScores),
-                // Held back with the score. The spoiler hold exists to keep the phone behind
-                // the broadcast, and a drive that has reached the ten is the kind of thing
-                // that gets there first.
-                detail = if (showScores) detail(game, kind) else null,
+                text = GameCardText(
+                    title = line(game, kind, showScores),
+                    body = if (showScores) detail(game, kind) else null,
+                    // The matchup in the kind's slot: a game in progress is drawn the same way
+                    // an event is, and the two sides read left to right in both.
+                    kind = "${game.away.abbrev} @ ${game.home.abbrev}",
+                    // Held back with the score. The spoiler hold exists to keep the phone
+                    // behind the broadcast, and a drive that has reached the ten is the kind of
+                    // thing that gets there first.
+                    value = if (showScores) {
+                        "${game.away.score ?: 0}–${game.home.score ?: 0}"
+                    } else {
+                        null
+                    },
+                    detail = if (showScores) detail(game, kind) else null,
+                    foot = clock ?: game.statusDetail.takeIf { it.isNotEmpty() },
+                ),
             )
         }
 

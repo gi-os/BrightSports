@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import com.gios.lightsports.MainActivity
 import com.gios.lightsports.R
+import com.gios.lightsports.data.Crests
 
 /**
  * Posting the notifications.
@@ -54,6 +55,26 @@ object Notifier {
     const val EXTRA_LOCK_KEEP = "com.gios.lightcontrol.extra.LOCK_KEEP"
 
     /**
+     * The card's design, in five strings, for whoever draws the notification themselves.
+     *
+     * The shade gets an ordinary title and text and always will — every other launcher, and
+     * every phone without BrightControl, shows those. These are the same words cut where the
+     * design cuts them, so BrightControl's lock face and banner can lay a score out the way
+     * the app's own box does instead of parsing a sentence back apart:
+     *
+     *     TD  (crest) SEA                        NE 7 · SEA 14     KIND / TEAM  ·  VALUE
+     *     K. Walker 12 yd run · Myers kick good                    DETAIL
+     *     Q2 3:24                                                  FOOT
+     *
+     * Anything that does not know the keys ignores them. See `SportsCard` in BrightControl.
+     */
+    const val EXTRA_KIND = "com.gios.lightcontrol.extra.SPORT_KIND"
+    const val EXTRA_TEAM = "com.gios.lightcontrol.extra.SPORT_TEAM"
+    const val EXTRA_VALUE = "com.gios.lightcontrol.extra.SPORT_VALUE"
+    const val EXTRA_DETAIL = "com.gios.lightcontrol.extra.SPORT_DETAIL"
+    const val EXTRA_FOOT = "com.gios.lightcontrol.extra.SPORT_FOOT"
+
+    /**
      * How long an alert owns the card before the live updates take it back.
      *
      * The card is one thing saying two: what just happened, and where the game is. A
@@ -98,8 +119,7 @@ object Notifier {
         context: Context,
         gameId: String,
         leagueId: String?,
-        title: String,
-        text: String?,
+        text: GameCardText,
         ongoing: Boolean,
         lockKeep: Boolean = ongoing,
     ): Notification {
@@ -116,7 +136,7 @@ object Notifier {
         )
         val builder = Notification.Builder(context, CHANNEL_GAME)
             .setSmallIcon(R.drawable.ic_stat_score)
-            .setContentTitle(title)
+            .setContentTitle(text.title)
             .setContentIntent(tap)
             .setOngoing(ongoing)
             // A finished game is worth a timestamp; a card that has been up for two hours
@@ -133,17 +153,26 @@ object Notifier {
             // Deliberately not CATEGORY_SERVICE: BrightControl's lock face reads that as a
             // permanent notice and drops it.
             .setCategory(Notification.CATEGORY_STATUS)
-        if (!text.isNullOrBlank()) {
-            builder.setContentText(text)
+        if (!text.body.isNullOrBlank()) {
+            builder.setContentText(text.body)
             // The same words again, expanded, so a play description is not cut at one line
             // in the shade. Title and text stay as plain extras on purpose: BrightControl's
             // banner and lock face read EXTRA_TITLE / EXTRA_TEXT, and a style that carries
             // the words elsewhere would draw a blank box there.
-            builder.setStyle(Notification.BigTextStyle().bigText(title + "\n" + text))
+            builder.setStyle(Notification.BigTextStyle().bigText(text.title + "\n" + text.body))
         }
+        // The crest, when one has already been fetched for the feed. Best effort and never a
+        // download: this runs on whatever thread a score arrived on.
+        val crest = text.crestTeamId?.let { Crests.bitmap(context, leagueId, it) }
+        if (crest != null) builder.setLargeIcon(crest)
         // Set last: Builder.build() copies the extras it owns over this bundle, so a value
         // written afterwards is never seen.
         if (lockKeep) builder.extras.putBoolean(EXTRA_LOCK_KEEP, true)
+        text.kind?.let { builder.extras.putString(EXTRA_KIND, it) }
+        text.team?.let { builder.extras.putString(EXTRA_TEAM, it) }
+        text.value?.let { builder.extras.putString(EXTRA_VALUE, it) }
+        text.detail?.let { builder.extras.putString(EXTRA_DETAIL, it) }
+        text.foot?.let { builder.extras.putString(EXTRA_FOOT, it) }
         return builder.build()
     }
 
@@ -158,8 +187,7 @@ object Notifier {
         context: Context,
         gameId: String,
         leagueId: String?,
-        title: String,
-        detail: String?,
+        text: GameCardText,
         ongoing: Boolean,
         lockKeep: Boolean = ongoing,
     ) {
@@ -167,10 +195,7 @@ object Notifier {
         if (System.currentTimeMillis() - recent < ALERT_STICKY) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         runCatching {
-            manager.notify(
-                cardId(gameId),
-                gameCard(context, gameId, leagueId, title, detail, ongoing, lockKeep),
-            )
+            manager.notify(cardId(gameId), gameCard(context, gameId, leagueId, text, ongoing, lockKeep))
         }
     }
 
@@ -188,6 +213,8 @@ object Notifier {
             val card = live.firstOrNull { it.id == cardId(id) } ?: continue
             if (card.notification.flags and Notification.FLAG_ONGOING_EVENT == 0) continue
             val extras = card.notification.extras
+            // Re-posted with what it already said, design and all: this is the same card
+            // losing a flag, not a new one.
             runCatching {
                 manager.notify(
                     cardId(id),
@@ -195,8 +222,15 @@ object Notifier {
                         context,
                         gameId = id,
                         leagueId = null,
-                        title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
-                        text = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+                        text = GameCardText(
+                            title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty(),
+                            body = extras.getCharSequence(Notification.EXTRA_TEXT)?.toString(),
+                            kind = extras.getString(EXTRA_KIND),
+                            team = extras.getString(EXTRA_TEAM),
+                            value = extras.getString(EXTRA_VALUE),
+                            detail = extras.getString(EXTRA_DETAIL),
+                            foot = extras.getString(EXTRA_FOOT),
+                        ),
                         ongoing = false,
                     ),
                 )
@@ -218,8 +252,7 @@ object Notifier {
                     context,
                     gameId = entry.gameId,
                     leagueId = entry.leagueId,
-                    title = entry.title,
-                    text = entry.body,
+                    text = entry.card(),
                     // A final, a postponement and a kickoff reminder are all news about a game
                     // that is not running: those cards must be clearable.
                     ongoing = entry.live,
