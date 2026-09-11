@@ -449,6 +449,10 @@ object ScoreWatcher {
                 detail = card.detail,
                 foot = card.foot,
                 crestTeamId = card.crestTeamId,
+                // The numbers behind the words, so the card's hold can tell a redraw that
+                // agrees with this alert from one that has moved past it.
+                away = game.away.score,
+                home = game.home.score,
             )
         }
         return stored to entries

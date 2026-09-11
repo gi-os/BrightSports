@@ -88,6 +88,17 @@ object Notifier {
     /** When each game's card last carried an alert, so a live update does not step on it. */
     private val alertAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
+    /**
+     * The score each alert announced, so the hold above can tell a redraw that agrees with it
+     * from one that has moved past it.
+     *
+     * The hold protects the *wording* -- "TD SEA" rather than "Patriots 7 · Seahawks 21" a
+     * second later. It was never meant to protect a *score*, and it did: a two-point conversion
+     * or a second touchdown inside the ninety seconds sat unlisted on the lock screen while the
+     * card said the old number. A newer score is never less current than an older alert.
+     */
+    private val alertScore = java.util.concurrent.ConcurrentHashMap<String, Pair<Int, Int>>()
+
     fun ensureChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
@@ -190,9 +201,13 @@ object Notifier {
         text: GameCardText,
         ongoing: Boolean,
         lockKeep: Boolean = ongoing,
+        score: Pair<Int, Int>? = null,
     ) {
         val recent = alertAt[gameId] ?: 0L
-        if (System.currentTimeMillis() - recent < ALERT_STICKY) return
+        // Held only while this redraw says what the alert already said. A caller that does not
+        // know its score (nothing released yet, a game with no figure) keeps the old behaviour.
+        val agrees = score == null || score == alertScore[gameId]
+        if (agrees && System.currentTimeMillis() - recent < ALERT_STICKY) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         runCatching {
             manager.notify(cardId(gameId), gameCard(context, gameId, leagueId, text, ongoing, lockKeep))
@@ -245,6 +260,9 @@ object Notifier {
         // is not a second notification about a game already in the shade; it is that card,
         // saying what just happened.
         alertAt[entry.gameId] = System.currentTimeMillis()
+        val away = entry.away
+        val home = entry.home
+        if (away != null && home != null) alertScore[entry.gameId] = away to home else alertScore.remove(entry.gameId)
         runCatching {
             manager.notify(
                 cardId(entry.gameId),

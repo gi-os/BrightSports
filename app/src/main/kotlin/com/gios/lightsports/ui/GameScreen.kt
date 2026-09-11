@@ -71,6 +71,13 @@ import java.time.ZoneId
 fun GameScreen(
     game: Game,
     tracking: Boolean = false,
+    /**
+     * The moment this screen last had data handed to it — a poll that landed, a relay message,
+     * a manual refresh. Drives the flash on the update line; see [flashOnUpdate].
+     */
+    stamp: Long = 0L,
+    /** How often it is actually refreshing, which is not a constant: the relay changes it. */
+    everySeconds: Int = (TickerPlan.SCREEN_INTERVAL / 1000).toInt(),
     logos: Map<String, String> = emptyMap(),
     plays: List<Play> = emptyList(),
     scoring: List<ScoringPlay>? = null,
@@ -127,8 +134,10 @@ fun GameScreen(
             Text(
                 when {
                     // Says so once rather than counting down: a ticking "12s ago" on a
-                    // matte panel is a distraction from the score it sits next to.
-                    tracking -> "UPDATING EVERY ${TickerPlan.SCREEN_INTERVAL / 1000} S"
+                    // matte panel is a distraction from the score it sits next to. It goes
+                    // white for a moment each time an update lands, which is the part that
+                    // makes the sentence believable.
+                    tracking -> "UPDATING EVERY $everySeconds S"
                     game.state == GameState.PRE ->
                         Fmt.until(game.startMillis, System.currentTimeMillis()).uppercase()
                             .let { if (it == "NOW") "STARTING" else (if (football) "KICKOFF " else "STARTS ") + it }
@@ -138,7 +147,7 @@ fun GameScreen(
                     ).joinToString(" · ")
                 },
                 style = MaterialTheme.typography.labelSmall,
-                color = Faint,
+                color = if (tracking) flashOnUpdate(stamp, Faint) else Faint,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(start = 12.dp).weight(1f, fill = false),

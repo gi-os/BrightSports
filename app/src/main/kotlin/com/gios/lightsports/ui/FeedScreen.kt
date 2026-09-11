@@ -105,7 +105,10 @@ fun FeedScreen(
                     if (state.loading) "REFRESHING…"
                     else "UPDATED ${Fmt.ago(state.updatedAt, System.currentTimeMillis()).uppercase()}",
                     style = MaterialTheme.typography.labelSmall,
-                    color = Faint,
+                    // White while it is working, and a flash of white when the answer
+                    // lands. The band on the rule above says the same thing at the top of
+                    // the screen; this says it next to the scores that just changed.
+                    color = if (state.loading) Color.White else flashOnUpdate(state.updatedAt, Faint),
                     maxLines = 1,
                 )
                 if (state.subtitle != null) {

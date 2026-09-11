@@ -195,6 +195,7 @@ class LiveTicker : Service() {
                 text = card.text,
                 ongoing = true,
                 lockKeep = i == 0,
+                score = card.score,
             )
         }
         drawn.addAll(cards.map { it.gameId })

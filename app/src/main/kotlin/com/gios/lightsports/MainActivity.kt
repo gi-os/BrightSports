@@ -21,6 +21,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -49,6 +50,7 @@ import com.gios.lightsports.ui.GameScreen
 import kotlinx.coroutines.delay
 import com.gios.lightsports.ui.LightBottomBar
 import com.gios.lightsports.ui.LightTopBar
+import com.gios.lightsports.ui.ProgressRule
 import com.gios.lightsports.ui.Rule
 import com.gios.lightsports.ui.SearchScreen
 import com.gios.lightsports.ui.SettingsScreen
@@ -168,6 +170,11 @@ private fun App(openGameId: String?) {
 
     var tab by remember { mutableIntStateOf(TAB_SCORES) }
     var openGame by remember { mutableStateOf<Game?>(null) }
+
+    // When the open game last had data land on it, whether or not the data differed. The
+    // update line flashes on it, and a fetch that changed nothing is still a fetch: that is
+    // exactly the case the flash exists to make visible.
+    var gameStamp by remember { mutableLongStateOf(0L) }
     var openLeague by remember { mutableStateOf<League?>(null) }
     var teamsOpen by remember { mutableStateOf(false) }
     var openStanding by remember { mutableStateOf<Pair<StandingsRow, League>?>(null) }
@@ -210,6 +217,7 @@ private fun App(openGameId: String?) {
     LaunchedEffect(feed.games, feed.updatedAt) {
         val open = openGame ?: return@LaunchedEffect
         val fresh = feed.games.firstOrNull { it.id == open.id } ?: return@LaunchedEffect
+        gameStamp = System.currentTimeMillis()
         if (fresh != open) openGame = fresh
     }
 
@@ -234,7 +242,12 @@ private fun App(openGameId: String?) {
                 },
             )
             if (openGame?.id != id) break
-            if (polling) vm.track(current)?.let { openGame = it }
+            if (polling) {
+                vm.track(current)?.let {
+                    openGame = it
+                    gameStamp = System.currentTimeMillis()
+                }
+            }
         }
     }
 
@@ -298,7 +311,10 @@ private fun App(openGameId: String?) {
                 } else null,
             )
         }
-        Rule()
+        // The rule under the bar carries a band while a refresh is in flight. A tap on the
+        // refresh icon over a slow radio used to show nothing at all for a second or two,
+        // which reads as a tap that missed. See [ProgressRule].
+        ProgressRule(feed.loading && game == null && team == null)
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
@@ -307,6 +323,13 @@ private fun App(openGameId: String?) {
                     tracking = TickerPlan.screenShouldPoll(
                         game, System.currentTimeMillis(), ScoreWatcher.LEAD,
                     ),
+                    stamp = gameStamp,
+                    // What the loop below actually waits, so the line does not promise
+                    // fifteen seconds while the relay has it checking once a minute.
+                    everySeconds = (
+                        if (LiveRelay.connected) LiveRelay.SCREEN_INTERVAL
+                        else TickerPlan.SCREEN_INTERVAL
+                        ).let { (it / 1000).toInt() },
                     logos = logos,
                     plays = plays[game.id].orEmpty(),
                     scoring = scoring[game.id]?.second,

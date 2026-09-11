@@ -277,7 +277,12 @@ alerts are titled by what happened — `TD SEA · NE 7 · SEA 14` — with the p
 body; two extra kinds, `REDZONE` (a followed team crosses the 20, once per possession) and
 `CLOSE` (Q4 under 5:00, margin within 8, once per game), are switches in the same section.
 A game seen for the first time never alerts, so installing mid-Sunday doesn't replay the
-day. Score alerts are held 5 minutes by default against stream spoilers; several scores in
+day. An alert owns its card for 90 s (`Notifier.ALERT_STICKY`) so the relay's next message does not
+wipe `TD SEA` a second later — but since v2.7 that hold **steps aside for a score it has not
+seen** (`Notifier.alertScore`, `TickerPlan.Card.score`): the hold is on the wording, never on a
+number, and a two-point conversion inside the window used to sit unlisted.
+
+Score alerts are held 5 minutes by default against stream spoilers; several scores in
 one window collapse into a single notification. Since v2.6 the **live card is held by the same
 clock rather than stripped of its score** (`notify/ScoreHold.kt`): a short list of samples per
 game in `score-hold.json`, the card drawing the newest sample older than the hold, falling back
@@ -440,6 +445,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.7 | **The app shows its work.** The game screen's update line flashes white on every update (`flashOnUpdate`) and names the cadence it is actually running at; a white band sweeps the rule under the top bar while a refresh is in flight (`ProgressRule`); and the 90-second alert hold on a card now steps aside for a score it has not seen, so a two-point conversion reaches the lock screen at once |
 | v2.6 | The spoiler hold now **holds** the live card's score by the same minutes it holds an alert, instead of suppressing it for the whole game (`notify/ScoreHold.kt`); the first score seen for a game shows at once, a flurry is walked through in order, and the situation line waits for the score it belongs to |
 | v2.5 | The alert card ships as five extras beside the title (`SPORT_KIND`, `SPORT_TEAM`, `SPORT_VALUE`, `SPORT_DETAIL`, `SPORT_FOOT`) plus the team crest as the large icon, so BrightControl v4.31 draws the design instead of parsing the title |
 | v2.4 | One card per game from the kickoff reminder to the final, carrying the alert wording; one silent channel; the lock face draws the kind label |

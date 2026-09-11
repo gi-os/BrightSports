@@ -59,6 +59,15 @@ class PendingQueue(private val file: File) {
         val detail: String? = null,
         val foot: String? = null,
         val crestTeamId: String? = null,
+        /**
+         * The score this alert announced, as two numbers.
+         *
+         * Not derivable from [value], which is a designed string and not a record. It is here
+         * so [Notifier.updateGameCard] can tell a live redraw that agrees with the alert from
+         * one that has moved past it -- see `ALERT_STICKY`.
+         */
+        val away: Int? = null,
+        val home: Int? = null,
     ) {
         /** The pieces the card draws, back in one shape. */
         fun card(): GameCardText = GameCardText(
@@ -90,6 +99,8 @@ class PendingQueue(private val file: File) {
                 detail = o.optString("detail").takeIf { it.isNotEmpty() },
                 foot = o.optString("foot").takeIf { it.isNotEmpty() },
                 crestTeamId = o.optString("crest").takeIf { it.isNotEmpty() },
+                away = if (o.has("away") && !o.isNull("away")) o.optInt("away") else null,
+                home = if (o.has("home") && !o.isNull("home")) o.optInt("home") else null,
             )
         }
     }
@@ -113,6 +124,8 @@ class PendingQueue(private val file: File) {
                     .put("value", e.value)
                     .put("detail", e.detail)
                     .put("foot", e.foot)
+                    .put("away", e.away)
+                    .put("home", e.home)
                     .put("crest", e.crestTeamId),
             )
         }

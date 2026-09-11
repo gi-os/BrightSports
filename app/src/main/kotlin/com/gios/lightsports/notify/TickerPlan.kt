@@ -164,6 +164,13 @@ object TickerPlan {
         val gameId: String,
         val leagueId: String,
         val text: GameCardText,
+        /**
+         * The score the card is drawing, as two numbers rather than as the designed string.
+         *
+         * Read by [Notifier.updateGameCard] to decide whether a redraw agrees with the alert
+         * currently holding the card. Null when nothing has been released yet.
+         */
+        val score: Pair<Int, Int>? = null,
     )
 
     fun cards(
@@ -186,6 +193,7 @@ object TickerPlan {
             Card(
                 gameId = game.id,
                 leagueId = game.leagueId,
+                score = shown?.let { it.away to it.home },
                 text = GameCardText(
                     title = line(game, kind, shown),
                     body = situation,

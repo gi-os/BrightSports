@@ -1,3 +1,13 @@
+## BrightSports v2.7 — you can see it working
+
+**The update line flashes white each time an update lands.** A live game screen says it refreshes every fifteen seconds and then gives no sign of having done it, because the score is usually the same score. The line now goes white for a moment whenever data arrives, whether or not anything changed. A fetch that changed nothing still happened, and that is the case worth showing.
+
+**And the line says the real number.** With the relay socket up the screen checks once a minute instead of every fifteen seconds, since the scores arrive on their own. It used to claim fifteen either way.
+
+**The refresh button shows its work.** A white band runs along the rule under the top bar while a refresh is in flight, and the `UPDATED` line turns white and reads `REFRESHING…`. A tap over a slow radio used to change nothing on screen for a second or two, which reads as a tap that missed.
+
+**A score reaches the lock screen as soon as it happens, with the hold off.** An alert owns its card for ninety seconds so that `TD SEA` is not wiped by the kickoff a second later. That hold was also swallowing the next *score*: a two-point conversion, or a second touchdown inside the minute and a half, sat unlisted while the card showed the old number. The hold now protects the wording and steps aside for a score it has not seen.
+
 ## BrightSports v2.6 — the spoiler hold holds the score, it does not delete it
 
 **The live card shows the score again.** The setting said hold score alerts, and that is what it did to a buzz. An alert waits its five minutes, then goes off carrying the score. The ongoing card read the same setting and did something else. It drew no score at all, all game, with the hold on by default. That is why the lock screen said `Patriots at Seahawks · Q2` and stopped there.
