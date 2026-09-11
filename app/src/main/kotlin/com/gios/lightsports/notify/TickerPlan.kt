@@ -166,34 +166,52 @@ object TickerPlan {
         val text: GameCardText,
     )
 
-    fun cards(live: List<Game>, showScores: Boolean, kindOf: (Game) -> SportKind?): List<Card> =
+    fun cards(
+        live: List<Game>,
+        kindOf: (Game) -> SportKind?,
+        shownFor: (Game) -> ScoreHold.Shown?,
+    ): List<Card> =
         live.map { game ->
             val kind = kindOf(game)
+            val shown = shownFor(game)
             val clock = listOfNotNull(
                 kind?.let { AlertText.periodLabel(it, game.period) }?.takeIf { it.isNotEmpty() },
                 game.clock,
             ).joinToString(" ").takeIf { it.isNotEmpty() }
+            // The situation rides with the *current* score and nothing else. A down and
+            // distance, a count, a red zone -- all of them describe this second, so putting
+            // them beside a score the delay is still holding back would hand over the news the
+            // delay exists to hold. With the score current there is nothing left to protect.
+            val situation = if (shown?.current == true) detail(game, kind) else null
             Card(
                 gameId = game.id,
                 leagueId = game.leagueId,
                 text = GameCardText(
-                    title = line(game, kind, showScores),
-                    body = if (showScores) detail(game, kind) else null,
+                    title = line(game, kind, shown),
+                    body = situation,
                     // The matchup in the kind's slot: a game in progress is drawn the same way
                     // an event is, and the two sides read left to right in both.
                     kind = "${game.away.abbrev} @ ${game.home.abbrev}",
-                    // Held back with the score. The spoiler hold exists to keep the phone
-                    // behind the broadcast, and a drive that has reached the ten is the kind of
-                    // thing that gets there first.
-                    value = if (showScores) {
-                        "${game.away.score ?: 0}–${game.home.score ?: 0}"
-                    } else {
-                        null
-                    },
-                    detail = if (showScores) detail(game, kind) else null,
+                    value = shown?.let { "${it.away}–${it.home}" },
+                    detail = situation,
                     foot = clock ?: game.statusDetail.takeIf { it.isNotEmpty() },
                 ),
             )
+        }
+
+    /**
+     * The same cards with the delay left out, for a caller that has already decided.
+     *
+     * `showScores = false` draws what a card with nothing released yet draws: the matchup, the
+     * period, and no figure.
+     */
+    fun cards(live: List<Game>, showScores: Boolean, kindOf: (Game) -> SportKind?): List<Card> =
+        cards(live, kindOf) { game ->
+            if (showScores) {
+                ScoreHold.Shown(game.away.score ?: 0, game.home.score ?: 0, current = true)
+            } else {
+                null
+            }
         }
 
     /**
@@ -244,14 +262,21 @@ object TickerPlan {
 
     private fun periodLabel(kind: SportKind, period: Int) = AlertText.periodLabel(kind, period)
 
-    fun line(game: Game, kind: SportKind?, showScores: Boolean): String {
+    fun line(game: Game, kind: SportKind?, shown: ScoreHold.Shown?): String {
         val where = kind?.let { AlertText.periodLabel(it, game.period) }.orEmpty()
             .ifEmpty { game.statusDetail }
-        val head = if (showScores) {
-            "${game.away.short} ${game.away.score ?: 0} · ${game.home.short} ${game.home.score ?: 0}"
+        val head = if (shown != null) {
+            "${game.away.short} ${shown.away} · ${game.home.short} ${shown.home}"
         } else {
             "${game.away.short} at ${game.home.short}"
         }
         return if (where.isEmpty()) head else "$head · $where"
     }
+
+    /** The title as it reads with the score shown or withheld outright. */
+    fun line(game: Game, kind: SportKind?, showScores: Boolean): String = line(
+        game,
+        kind,
+        if (showScores) ScoreHold.Shown(game.away.score ?: 0, game.home.score ?: 0, true) else null,
+    )
 }

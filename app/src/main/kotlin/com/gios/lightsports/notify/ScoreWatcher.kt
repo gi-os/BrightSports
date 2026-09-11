@@ -288,7 +288,6 @@ object ScoreWatcher {
         // but it will not put a service and a card up for a game it is never going to
         // say anything about.
         val watched = games.filter { it.involves(notifyKeys) }
-        val showScores = !prefs.delayEnabled
         // The relay socket follows the poll's view of what is on: it opens for the games
         // worth hearing about and closes when none is left. Silenced teams stay out, as
         // they do for the ticker.
@@ -301,12 +300,29 @@ object ScoreWatcher {
             tickerIntervalMillis = TickerPlan.intervalMillis(watched, now) {
                 Leagues.byId(it.leagueId)?.kind
             },
-            cards = TickerPlan.cards(
-                watched.filter { it.state == GameState.LIVE },
-                showScores,
-            ) { Leagues.byId(it.leagueId)?.kind },
+            cards = liveCards(context, watched.filter { it.state == GameState.LIVE }, now),
         )
     }
+
+    /**
+     * The live cards, with the spoiler delay applied to the score rather than to its existence.
+     *
+     * Shared by the poll and by the relay's redraw so both draw the same figure: the store is
+     * rolled forward here, once, and a card is never built from a score the other path has not
+     * seen. See [ScoreHold].
+     */
+    fun liveCards(context: Context, live: List<Game>, now: Long): List<TickerPlan.Card> {
+        val delay = Prefs(context).effectiveDelayMillis
+        val shown = synchronized(holdLock) {
+            runCatching {
+                ScoreHold.release(File(context.filesDir, "score-hold.json"), live, delay, now)
+            }.getOrDefault(emptyMap())
+        }
+        return TickerPlan.cards(live, { Leagues.byId(it.leagueId)?.kind }) { shown[it.id] }
+    }
+
+    /** The hold's file, like the snapshot store, is written from the poll and the socket both. */
+    private val holdLock = Any()
 
     /**
      * One game through the diff: the snapshot to store and the alerts it produced.

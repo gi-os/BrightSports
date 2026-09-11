@@ -168,11 +168,11 @@ class LiveTicker : Service() {
      */
     private val onRelayGame: (com.gios.lightsports.model.Game) -> Unit = { _ ->
         val app = applicationContext
-        val showScores = !com.gios.lightsports.data.Prefs(app).delayEnabled
-        val cards = TickerPlan.cards(
+        val cards = ScoreWatcher.liveCards(
+            app,
             LiveRelay.current().filter { it.state == com.gios.lightsports.model.GameState.LIVE },
-            showScores,
-        ) { com.gios.lightsports.data.Leagues.byId(it.leagueId)?.kind }
+            System.currentTimeMillis(),
+        )
         runCatching { draw(app, cards) }
     }
 

@@ -11,6 +11,7 @@ import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.notify.AlertText
 import com.gios.lightsports.notify.PendingQueue
 import com.gios.lightsports.notify.ScoreDiff
+import com.gios.lightsports.notify.ScoreHold
 import com.gios.lightsports.notify.TickerPlan
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -319,12 +320,25 @@ class TickerCardTest {
     }
 
     @Test
-    fun `the spoiler delay holds back the score and the situation both`() {
+    fun `a card with nothing released has no score and no situation`() {
         val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16"))
         val card = TickerPlan.cards(listOf(g), showScores = false) { SportKind.FOOTBALL }.single()
         assertEquals("Patriots at Seahawks · Q2", card.text.title)
         assertNull(card.text.detail)
         assertNull(card.text.value)
+    }
+
+    @Test
+    fun `the spoiler delay shows the older score and drops the situation`() {
+        // What the delay does now: the card carries a score, five minutes behind. The down and
+        // distance describes this second, so it waits with the score it belongs to.
+        val g = football(Situation(possession = "26", downDistance = "2nd & 7 at NE 16"))
+        val card = TickerPlan.cards(listOf(g), { SportKind.FOOTBALL }) {
+            ScoreHold.Shown(away = 7, home = 7, current = false)
+        }.single()
+        assertEquals("Patriots 7 · Seahawks 7 · Q2", card.text.title)
+        assertEquals("7–7", card.text.value)
+        assertNull(card.text.detail)
     }
 
     @Test

@@ -278,7 +278,12 @@ body; two extra kinds, `REDZONE` (a followed team crosses the 20, once per posse
 `CLOSE` (Q4 under 5:00, margin within 8, once per game), are switches in the same section.
 A game seen for the first time never alerts, so installing mid-Sunday doesn't replay the
 day. Score alerts are held 5 minutes by default against stream spoilers; several scores in
-one window collapse into a single notification.
+one window collapse into a single notification. Since v2.6 the **live card is held by the same
+clock rather than stripped of its score** (`notify/ScoreHold.kt`): a short list of samples per
+game in `score-hold.json`, the card drawing the newest sample older than the hold, falling back
+to the oldest sample kept — which is the first score the phone ever saw for that game, and is
+shown at once for the same reason a newly-seen game never alerts. The situation line is drawn
+only when the released score is the current one, since a down and distance describes now.
 
 Every sport except baseball also gets a **period mark** (halftime, end of quarter,
 intermission) — a 0-0 halftime still counts, since the mark doesn't wait for a score.
@@ -435,6 +440,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.6 | The spoiler hold now **holds** the live card's score by the same minutes it holds an alert, instead of suppressing it for the whole game (`notify/ScoreHold.kt`); the first score seen for a game shows at once, a flurry is walked through in order, and the situation line waits for the score it belongs to |
 | v2.5 | The alert card ships as five extras beside the title (`SPORT_KIND`, `SPORT_TEAM`, `SPORT_VALUE`, `SPORT_DETAIL`, `SPORT_FOOT`) plus the team crest as the large icon, so BrightControl v4.31 draws the design instead of parsing the title |
 | v2.4 | One card per game from the kickoff reminder to the final, carrying the alert wording; one silent channel; the lock face draws the kind label |
 | v2.3 | The live score card reaches BrightControl's lock face (one opt-in extra), carries the situation on a second line, and opens the game it names |

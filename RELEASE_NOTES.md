@@ -1,3 +1,17 @@
+## BrightSports v2.6 — the spoiler hold holds the score, it does not delete it
+
+**The live card shows the score again.** The setting said hold score alerts, and that is what it did to a buzz. An alert waits its five minutes, then goes off carrying the score. The ongoing card read the same setting and did something else. It drew no score at all, all game, with the hold on by default. That is why the lock screen said `Patriots at Seahawks · Q2` and stopped there.
+
+**Now the card runs five minutes behind.** A touchdown reaches the lock screen at the moment the alert for it fires. A game nobody has scored in reads as live. Set the hold to none and the card is live to the second.
+
+**A game the phone has only picked up shows its score right away.** Nothing about it is news yet. The alerts have always worked that way, and holding the first score back would leave a blank card for five minutes at the start of every game.
+
+**Several scores inside one window arrive in order.** Two touchdowns ninety seconds apart reach the card ninety seconds apart, five minutes later. The card never skips ahead to the newest.
+
+**The situation line waits for the score it belongs to.** A down and distance, a count, a red zone: each describes this second. The card carries them once its score has caught up.
+
+**The setting now reads "Hold scores"**, since it holds both.
+
 ## BrightSports v2.5 — the card says where the design cuts
 
 **A score on the lock face is now the card you drew.** BrightSports used to write the whole alert into the title. `TD SEA · Patriots 7 · Seahawks 21`. BrightControl took that apart again with a regular expression, which holds right up to the day the wording changes.

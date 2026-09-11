@@ -276,7 +276,7 @@ fun SettingsScreen(
 
         SectionHeader("SPOILER DELAY")
         MenuRow(
-            label = "Hold score alerts",
+            label = "Hold scores",
             detail = if (delayOn) "[ ON ]" else "OFF",
             sub = "Streams run a minute or two behind live",
             onClick = {
@@ -300,8 +300,8 @@ fun SettingsScreen(
                 }
             }
             Text(
-                "Alerts are held $delay min. Several scores in one window collapse " +
-                    "into a single notification carrying the current score.",
+                "Alerts and the live card both run $delay min behind. Several scores in one " +
+                    "window collapse into a single alert; the card walks through them in order.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Dim,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
