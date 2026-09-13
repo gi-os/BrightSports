@@ -119,6 +119,8 @@ object TickerPlan {
         SportKind.HOCKEY -> 3
         SportKind.SOCCER -> 2
         SportKind.RACING -> 0
+        // A tournament is four rounds, and none of them is a period anybody comes back in.
+        SportKind.GOLF -> 0
         // The third set is the earliest a match can end in either format, and past it
         // every set is a deciding one for somebody.
         SportKind.TENNIS -> 3
@@ -135,6 +137,7 @@ object TickerPlan {
         SportKind.HOCKEY -> 1
         SportKind.SOCCER -> 1
         SportKind.RACING -> 0
+        SportKind.GOLF -> 0
         // Sets. A set apart is one set from over either way.
         SportKind.TENNIS -> 1
     }

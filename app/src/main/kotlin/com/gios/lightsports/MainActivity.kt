@@ -44,6 +44,7 @@ import com.gios.lightsports.report.CrashLog
 import com.gios.lightsports.report.ReportOverlay
 import com.gios.lightsports.ui.BarItem
 import com.gios.lightsports.ui.FeedScreen
+import com.gios.lightsports.ui.FieldScreen
 import com.gios.lightsports.ui.FollowScreen
 import com.gios.lightsports.notify.TickerPlan
 import com.gios.lightsports.ui.GameScreen

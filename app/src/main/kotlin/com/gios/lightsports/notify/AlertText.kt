@@ -357,6 +357,7 @@ object AlertText {
             SportKind.SOCCER -> if (period > 2) ot(period - 2) else "H$period"
             SportKind.BASEBALL -> ordinal(period)
             SportKind.RACING -> "Lap $period"
+            SportKind.GOLF -> "R$period"
             SportKind.TENNIS -> "Set $period"
         }
     }
