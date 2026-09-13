@@ -2,7 +2,7 @@ package com.gios.lightsports.notify
 
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.League
-import com.gios.lightsports.model.RaceEvent
+import com.gios.lightsports.model.FieldEvent
 import com.gios.lightsports.model.SportKind
 import java.time.Instant
 import java.time.ZoneId
@@ -374,12 +374,29 @@ object AlertText {
         return "$n$suffix"
     }
 
-    fun raceTitle(race: RaceEvent): String = race.shortName
+    fun fieldTitle(event: FieldEvent): String = event.shortName
 
-    fun raceBody(race: RaceEvent, league: League): String {
-        val podium = race.podium.take(3)
+    fun fieldBody(event: FieldEvent, league: League): String {
+        val podium = event.podium.take(3)
         return if (podium.isEmpty()) "${league.short} · Final"
         else "${league.short} · " + podium.mapIndexed { i, name -> "${i + 1}. $name" }
             .joinToString("  ")
+    }
+
+    /**
+     * How a followed player finished: "T7 · Scottie Scheffler −12", or the win said
+     * plainly.
+     *
+     * The tour alert already names the top three, so a follower of one player who also
+     * follows the tour would otherwise be told the leaderboard twice and never told where
+     * their own player came.
+     */
+    fun finishBody(event: FieldEvent, league: League, followedIds: Set<String>): String? {
+        val mine = event.entries.filter { it.athleteId != null && it.athleteId in followedIds }
+        if (mine.isEmpty()) return null
+        return mine.joinToString("  ·  ") { entry ->
+            val where = if (entry.position == "1") "WON" else entry.position
+            listOfNotNull(where, entry.shortName, entry.total).joinToString(" ")
+        }.let { "${league.short} · $it" }
     }
 }

@@ -171,6 +171,11 @@ private fun App(openGameId: String?) {
 
     var tab by remember { mutableIntStateOf(TAB_SCORES) }
     var openGame by remember { mutableStateOf<Game?>(null) }
+    /**
+     * The open race weekend or golf tournament, held by id rather than by value: the feed
+     * refetches under it and a leaderboard the reader is looking at has to move with it.
+     */
+    var openEventId by remember { mutableStateOf<String?>(null) }
 
     // When the open game last had data land on it, whether or not the data differed. The
     // update line flashes on it, and a fetch that changed nothing is still a fetch: that is
@@ -257,10 +262,11 @@ private fun App(openGameId: String?) {
     // stack rather than leave the app, so it is handled wherever there is a level to
     // pop and left alone at the root.
     val canPop = openGame != null || openLeague != null || teamsOpen || openStanding != null ||
-        openTeam != null
+        openTeam != null || openEventId != null
     BackHandler(enabled = canPop) {
         when {
             openGame != null -> openGame = null
+            openEventId != null -> openEventId = null
             openTeam != null -> openTeam = null
             openStanding != null -> openStanding = null
             openLeague != null -> openLeague = null
@@ -270,6 +276,7 @@ private fun App(openGameId: String?) {
 
     Column(Modifier.fillMaxSize()) {
         val game = openGame
+        val event = openEventId?.let { id -> feed.events.firstOrNull { it.id == id } }
         val league = openLeague
         val standing = openStanding
         val team = openTeam
@@ -281,6 +288,11 @@ private fun App(openGameId: String?) {
             team != null -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { openTeam = null }, "Back"),
                 title = team.league.short,
+            )
+            event != null -> LightTopBar(
+                left = BarItem.Icon(R.drawable.ic_back_white, { openEventId = null }, "Back"),
+                title = Leagues.byId(event.leagueId)?.short ?: "EVENT",
+                right = BarItem.Icon(R.drawable.ic_refresh_white, { vm.refresh() }, "Refresh"),
             )
             standing != null -> LightTopBar(
                 left = BarItem.Icon(R.drawable.ic_back_white, { openStanding = null }, "Back"),
@@ -320,6 +332,13 @@ private fun App(openGameId: String?) {
 
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when {
+                event != null -> FieldScreen(
+                    event = event,
+                    followed = follows,
+                    onFollow = { entry ->
+                        entry.athleteId?.let { vm.toggleFollow("${event.leagueId}:$it") }
+                    },
+                )
                 game != null -> GameScreen(
                     game,
                     tracking = TickerPlan.screenShouldPoll(
@@ -378,6 +397,7 @@ private fun App(openGameId: String?) {
                     hasFollows = follows.isNotEmpty(),
                     logos = logos,
                     onGame = { openGame = it },
+                    onEvent = { openEventId = it.id },
                     onEditTeams = { teamsOpen = true },
                     onRefresh = { vm.refresh() },
                     onTeam = { key ->

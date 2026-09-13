@@ -145,7 +145,7 @@ class FeedTest {
 
     @Test
     fun `a followed series counts as busy when any race is in the window`() {
-        val race = com.gios.lightsports.model.RaceEvent(
+        val race = com.gios.lightsports.model.FieldEvent(
             id = "1", leagueId = "f1", name = "GP", shortName = "GP",
             state = GameState.PRE, startMillis = now, sessionLabel = null, sessionMillis = null,
         )

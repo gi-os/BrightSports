@@ -4,7 +4,7 @@ package com.gios.lightsports.model
  * What kind of game this is. Drives two things only: how a period is spelled
  * ("Bot 7th" vs "Q3" vs "P2"), and how loud the notifications are allowed to be.
  */
-enum class SportKind { BASEBALL, FOOTBALL, BASKETBALL, HOCKEY, SOCCER, RACING, TENNIS }
+enum class SportKind { BASEBALL, FOOTBALL, BASKETBALL, HOCKEY, SOCCER, RACING, TENNIS, GOLF }
 
 enum class GameState { PRE, LIVE, FINAL, OFF }
 
@@ -83,8 +83,12 @@ data class League(
     /** HockeyTech `client_code`, e.g. `pwhl`. */
     val hockeyTechClient: String? = null,
     val loudness: Loudness = Loudness.EVERY_SCORE,
-    /** Racing has no home/away pair; the feed renders those rows differently. */
-    val isRacing: Boolean = false,
+    /**
+     * A league of field events rather than games: racing, golf. There is no home/away
+     * pair, so the feed draws the card differently and the whole league can be followed
+     * in one toggle.
+     */
+    val isField: Boolean = false,
     /**
      * Whether this league's feed carries recognisable one-off events. Only the ESPN
      * leagues do — MiLB's StatsAPI and the PWHL's HockeyTech feed publish neither the
@@ -336,18 +340,72 @@ data class Game(
  * A racing weekend. One row in the feed, not one row per session — nobody wants
  * five identical Hungarian Grand Prix cards.
  */
-data class RaceEvent(
+/**
+ * An event with a ranked field rather than two sides: a grand prix weekend, a golf
+ * tournament. One shape covers both because the feed, the alerts and the screen behind
+ * the card all want the same four things — what it is, where it is in its schedule, who
+ * is winning, and the standing in full.
+ */
+data class FieldEvent(
     val id: String,
     val leagueId: String,
     val name: String,
     val shortName: String,
     val state: GameState,
     val startMillis: Long,
-    /** Next session if the weekend hasn't finished, else the race session. */
+    /** Next session if the weekend hasn't finished, else the race session. Golf: the round. */
     val sessionLabel: String?,
     val sessionMillis: Long?,
+    /** The first three names, for the feed card and the alert. */
     val podium: List<String> = emptyList(),
+    /** The circuit, or the golf course. */
     val circuit: String? = null,
+    /** The whole field in order, for the screen behind the card. Empty before it starts. */
+    val entries: List<FieldEntry> = emptyList(),
+    /**
+     * Every part of the event that is scored on its own. A grand prix weekend has five
+     * of them and the classification after practice is not the classification after the
+     * race. A golf tournament has one, so the screen skips the picker.
+     */
+    val sessions: List<FieldSession> = emptyList(),
+    /** "Par 71 · 7,296 yds" and the like: one line of context under the title. */
+    val note: String? = null,
+)
+
+/** One scored part of a field event: a practice session, qualifying, the race itself. */
+data class FieldSession(
+    val id: String,
+    /** "FP1", "Qual", "Race". */
+    val label: String,
+    val state: GameState,
+    val startMillis: Long,
+    val entries: List<FieldEntry> = emptyList(),
+)
+
+/**
+ * One competitor's line in a field event.
+ *
+ * Golf fills nearly all of it: position, player, total to par, the rounds so far, how far
+ * through the current one. A racing session fills the first two, because the site
+ * scoreboard sends a finishing order and nothing else — no times, no points, no team.
+ */
+data class FieldEntry(
+    /** "1", "T7", "DNF". The provider's own word where it has one, else the order. */
+    val position: String,
+    val name: String,
+    /** "S. Scheffler" where the provider sends one, else [name]. */
+    val shortName: String,
+    /** The number that ranks the field: "-16" in golf. Null for a racing session. */
+    val total: String? = null,
+    /** "F", "Thru 14", "7:50 AM" — where this player is in the round. */
+    val thru: String? = null,
+    /** Each round played, in order: "65", "67". Empty outside golf. */
+    val rounds: List<String> = emptyList(),
+    /** Under par, over par, or level, for colouring the total. */
+    val toPar: Int? = null,
+    val athleteId: String? = null,
+    /** The country flag the provider sends, for nothing but the picker. */
+    val country: String? = null,
 )
 
 data class StandingsRow(

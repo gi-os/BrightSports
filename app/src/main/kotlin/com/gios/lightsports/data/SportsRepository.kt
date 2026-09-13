@@ -7,7 +7,7 @@ import com.gios.lightsports.model.Play
 import com.gios.lightsports.model.ScoringPlay
 import com.gios.lightsports.model.Provider
 import com.gios.lightsports.model.SportKind
-import com.gios.lightsports.model.RaceEvent
+import com.gios.lightsports.model.FieldEvent
 import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.model.TeamSeason
@@ -37,6 +37,7 @@ class SportsRepository(context: Context) {
      */
     fun teams(league: League): List<TeamRef> {
         if (league.kind == SportKind.TENNIS) return players(league)
+        if (league.kind == SportKind.GOLF) return golfers(league)
         // A league with a `groups` filter (college football) needs the standings
         // tree instead of the plain teams endpoint, which ignores that filter — see
         // League.espnGroup.
@@ -104,7 +105,7 @@ class SportsRepository(context: Context) {
     }
 
     /** Racing has no followable clubs; the series itself is the thing to follow. */
-    fun isFollowableAsWhole(league: League): Boolean = league.isRacing
+    fun isFollowableAsWhole(league: League): Boolean = league.isField
 
     // ---------------------------------------------------------------- games
 
@@ -208,7 +209,7 @@ class SportsRepository(context: Context) {
      * nothing under the score.
      */
     fun plays(league: League, gameId: String): List<Play> {
-        if (league.provider != Provider.ESPN || league.isRacing) return emptyList()
+        if (league.provider != Provider.ESPN || league.isField) return emptyList()
         if (league.kind == SportKind.TENNIS) return emptyList()
         val body = Http.get(EspnParser.playsUrl(league, gameId)) ?: return emptyList()
         return runCatching { EspnParser.parsePlays(body) }.getOrDefault(emptyList())
@@ -220,7 +221,7 @@ class SportsRepository(context: Context) {
      * the caller says the score has moved.
      */
     fun scoring(league: League, gameId: String, final: Boolean): List<ScoringPlay> {
-        if (league.provider != Provider.ESPN || league.isRacing) return emptyList()
+        if (league.provider != Provider.ESPN || league.isField) return emptyList()
         if (league.kind == SportKind.TENNIS) return emptyList()
         val url = EspnParser.summaryUrl(league, gameId)
         val body = if (final) {
@@ -241,14 +242,64 @@ class SportsRepository(context: Context) {
      * not a thing to download on the chance somebody wants the story.
      */
     fun recap(league: League, gameId: String): List<String> {
-        if (league.provider != Provider.ESPN || league.isRacing) return emptyList()
+        if (league.provider != Provider.ESPN || league.isField) return emptyList()
         val url = EspnParser.summaryUrl(league, gameId)
         val body = Http.cached(cacheDir, "scoring-$gameId.json", url, Long.MAX_VALUE)
             ?: return emptyList()
         return runCatching { EspnParser.parseRecapStory(body) }.getOrDefault(emptyList())
     }
 
-    fun races(league: League, nowMillis: Long, zone: ZoneId): List<RaceEvent> {
+    /**
+     * PGA tournaments across a narrow window: the one being played, the one just
+     * finished, and the one coming.
+     *
+     * Cached for five minutes, which no other scoreboard here is. A golf scoreboard is
+     * the whole leaderboard — a hundred and fifty players, each carrying four rounds of
+     * eighteen holes — and one tournament is about half a megabyte. The score watcher
+     * asks for this every thirty seconds while anything is live, so without the cache a
+     * Sunday afternoon would cost sixty megabytes. Five minutes is also about the
+     * resolution golf has: a group plays a hole in fifteen.
+     */
+    fun golf(league: League, nowMillis: Long, zone: ZoneId, shiftDays: Long = 0L): List<FieldEvent> {
+        val today = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate()
+        val from = today.minusDays(GOLF_BACK_DAYS).plusDays(shiftDays)
+        val to = today.plusDays(GOLF_AHEAD_DAYS).plusDays(shiftDays)
+        val body = Http.cached(
+            cacheDir, "golf-${league.id}-$shiftDays.json",
+            EspnParser.golfUrl(league, from.format(ymd), to.format(ymd)),
+            LEADERBOARD_CACHE_MILLIS,
+        ) ?: return emptyList()
+        return runCatching { EspnParser.parseGolf(league, body, nowMillis) }
+            .getOrDefault(emptyList())
+    }
+
+    /**
+     * The followable golfers: everyone in a field this week.
+     *
+     * There is no roster endpoint for golf worth using. `athletes` answers with four
+     * thousand `$ref` links and nothing else, a page each, and the season's scoreboard is
+     * eleven megabytes. The field in front of the app is the list that matters anyway —
+     * these are the players whose scores will move today — and it comes from the body
+     * already fetched for the feed, so the picker costs nothing.
+     */
+    private fun golfers(league: League): List<TeamRef> {
+        val zone = ZoneId.systemDefault()
+        return golf(league, System.currentTimeMillis(), zone)
+            .flatMap { it.entries }
+            .distinctBy { it.athleteId ?: it.name }
+            .mapNotNull { entry ->
+                TeamRef(
+                    leagueId = league.id,
+                    teamId = entry.athleteId ?: return@mapNotNull null,
+                    displayName = entry.name,
+                    short = entry.shortName,
+                    abbrev = entry.shortName,
+                )
+            }
+            .sortedBy { it.displayName }
+    }
+
+    fun races(league: League, nowMillis: Long, zone: ZoneId): List<FieldEvent> {
         val year = Instant.ofEpochMilli(nowMillis).atZone(zone).year
         val body = Http.get(EspnParser.raceUrl(league, year)) ?: return emptyList()
         return runCatching { EspnParser.parseRaces(league, body, nowMillis) }
@@ -260,15 +311,19 @@ class SportsRepository(context: Context) {
      * Leagues are fetched one at a time on purpose: a followed set usually touches two
      * or three leagues, and serialising them keeps the Doze allowlist window short.
      */
-    fun followedGames(nowMillis: Long, zone: ZoneId, shiftDays: Long = 0L): Pair<List<Game>, List<RaceEvent>> {
+    fun followedGames(nowMillis: Long, zone: ZoneId, shiftDays: Long = 0L): Pair<List<Game>, List<FieldEvent>> {
         val follows = prefs.follows
         if (follows.isEmpty()) return emptyList<Game>() to emptyList()
         val gameOut = mutableListOf<Game>()
-        val raceOut = mutableListOf<RaceEvent>()
+        val raceOut = mutableListOf<FieldEvent>()
         for (leagueId in prefs.followedLeagueIds()) {
             val league = Leagues.byId(leagueId) ?: continue
-            if (league.isRacing) {
-                raceOut += races(league, nowMillis, zone)
+            if (league.isField) {
+                raceOut += if (league.kind == SportKind.GOLF) {
+                    golf(league, nowMillis, zone, shiftDays)
+                } else {
+                    races(league, nowMillis, zone)
+                }
             } else {
                 gameOut += games(league, nowMillis, zone, shiftDays).filter { it.involves(follows) }
             }
@@ -287,12 +342,12 @@ class SportsRepository(context: Context) {
         val q = query.trim().lowercase()
         if (q.length < 2) return emptyList()
         val leagueHits = Leagues.all.filter { l ->
-            !l.isRacing && l.kind != SportKind.TENNIS &&
+            !l.isField && l.kind != SportKind.TENNIS &&
                 (l.short.lowercase().contains(q) || l.name.lowercase().contains(q) || l.id == q)
         }
         val teamHits = mutableMapOf<League, Set<String>>()
         for (league in Leagues.all) {
-            if (league.isRacing || league.kind == SportKind.TENNIS || league in leagueHits) continue
+            if (league.isField || league.kind == SportKind.TENNIS || league in leagueHits) continue
             val ids = teams(league).filter { t ->
                 t.displayName.lowercase().contains(q) || t.short.lowercase().contains(q) ||
                     t.abbrev.lowercase() == q
@@ -314,7 +369,7 @@ class SportsRepository(context: Context) {
      * finished game is already in the feed, so the schedule can lag.
      */
     fun teamSeason(league: League, teamId: String): TeamSeason? {
-        if (league.provider != Provider.ESPN || league.isRacing) return null
+        if (league.provider != Provider.ESPN || league.isField) return null
         if (league.kind == SportKind.TENNIS) return null
         val body = Http.cached(
             cacheDir, "season-${league.id}-$teamId.json",
@@ -334,6 +389,8 @@ class SportsRepository(context: Context) {
     // ------------------------------------------------------------- standings
 
     fun standings(league: League, nowMillis: Long, zone: ZoneId): List<StandingsGroup> {
+        // See SportsViewModel.followedLeagues: golf has no table worth the download.
+        if (league.kind == SportKind.GOLF) return emptyList()
         val season = Instant.ofEpochMilli(nowMillis).atZone(zone).year
         return runCatching {
             when (league.provider) {
@@ -347,7 +404,7 @@ class SportsRepository(context: Context) {
                         }
                     }
                     val body = Http.get(EspnParser.standingsUrl(league)) ?: return emptyList()
-                    if (league.isRacing) EspnParser.parseRacingStandings(body)
+                    if (league.isField) EspnParser.parseRacingStandings(body)
                     else EspnParser.parseStandings(league, body)
                 }
                 Provider.STATSAPI -> {
@@ -395,8 +452,16 @@ class SportsRepository(context: Context) {
         private const val SEASON_CACHE_MILLIS = 24L * 60 * 60 * 1000
         private const val SCHEDULE_CACHE_MILLIS = 6L * 60 * 60 * 1000
 
+        /** See [golf]: half a megabyte a fetch is worth five minutes of staleness. */
+        private const val LEADERBOARD_CACHE_MILLIS = 5L * 60 * 1000
+
         /** Enough history for "RECENT", enough future for a week of schedule. */
         const val BACK_DAYS = 4L
         const val AHEAD_DAYS = 11L
+
+        /** Tighter than the games window on purpose: every extra tournament in range is
+         *  another half-megabyte of leaderboard. */
+        private const val GOLF_BACK_DAYS = 3L
+        private const val GOLF_AHEAD_DAYS = 8L
     }
 }

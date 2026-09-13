@@ -29,6 +29,7 @@ import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.model.League
+import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.ui.theme.Dim
 import com.gios.lightsports.ui.theme.Faint
@@ -67,18 +68,21 @@ fun FollowScreen(
                 for (l in leagues) {
                     item(key = "l-${l.id}") {
                         val count = follows.count { it.startsWith("${l.id}:") }
+                        // Racing has no clubs to choose between, so following the series
+                        // is the whole interaction and the row is the toggle. Golf has a
+                        // field of players as well as a tour, so its row opens a picker
+                        // like any other league and the tour sits at the top of it.
+                        val seriesOnly = l.isField && l.kind != SportKind.GOLF
                         MenuRow(
                             label = l.short,
                             sub = l.name,
-                            detail = if (l.isRacing) {
-                                state("${l.id}:series", follows, muted)
-                            } else if (count > 0) "$count" else null,
-                            onClick = {
-                                // Racing has no clubs to choose between; following the
-                                // series is the whole interaction.
-                                if (l.isRacing) onToggle("${l.id}:series") else onOpenLeague(l)
+                            detail = when {
+                                seriesOnly -> state("${l.id}:series", follows, muted)
+                                count > 0 -> "$count"
+                                else -> null
                             },
-                            onLongClick = if (l.isRacing && "${l.id}:series" in follows) {
+                            onClick = { if (seriesOnly) onToggle("${l.id}:series") else onOpenLeague(l) },
+                            onLongClick = if (seriesOnly && "${l.id}:series" in follows) {
                                 { onToggleMute("${l.id}:series") }
                             } else null,
                         )
@@ -97,6 +101,23 @@ fun FollowScreen(
     Column(Modifier.fillMaxSize()) {
         if (openLeague.hasEvents) {
             EventToggles(openLeague, follows, muted, onToggle, onToggleMute)
+        }
+        // The tour itself, above the field. Following it puts every tournament in the
+        // feed whether or not anybody in it is followed, which is what somebody who just
+        // likes golf wants, and it is one row rather than a hundred and fifty.
+        if (openLeague.isField) {
+            val seriesKey = "${openLeague.id}:series"
+            MenuRow(
+                label = "The whole ${openLeague.short} season",
+                sub = "Every tournament in the feed",
+                detail = state(seriesKey, follows, muted),
+                dim = seriesKey !in follows,
+                onClick = { onToggle(seriesKey) },
+                onLongClick = if (seriesKey in follows) {
+                    { onToggleMute(seriesKey) }
+                } else null,
+            )
+            Rule()
         }
         SearchField(query, hint = "${openLeague.followNoun} name") { query = it }
         Rule()

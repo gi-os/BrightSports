@@ -603,8 +603,13 @@ private fun Recap(
 }
 
 /**
- * The scoring summary, newest first: what kind of score, who, when, and the score it
+ * The scoring summary in game order: what kind of score, who, when, and the score it
  * made. Null while loading; empty when the provider has none.
+ *
+ * Oldest first, which is how a box score reads and how ESPN prints it. It ran newest
+ * first until v2.10 on the theory that the latest score is the one you want, but a
+ * scoring summary is a story of a game rather than a feed of updates, and reading a game
+ * backwards is work.
  */
 @Composable
 private fun ScoringList(game: Game, scoring: List<ScoringPlay>?) {
@@ -623,7 +628,7 @@ private fun ScoringList(game: Game, scoring: List<ScoringPlay>?) {
         )
         else -> Column(Modifier.padding(bottom = 8.dp)) {
             val kind = Leagues.byId(game.leagueId)?.kind ?: SportKind.FOOTBALL
-            for (play in scoring.asReversed()) {
+            for (play in scoring) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 7.dp),
                     verticalAlignment = Alignment.Top,

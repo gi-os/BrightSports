@@ -7,7 +7,9 @@ import com.gios.lightsports.model.League
 import com.gios.lightsports.model.Moment
 import com.gios.lightsports.model.Play
 import com.gios.lightsports.model.ScoringPlay
-import com.gios.lightsports.model.RaceEvent
+import com.gios.lightsports.model.FieldEntry
+import com.gios.lightsports.model.FieldEvent
+import com.gios.lightsports.model.FieldSession
 import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.Situation
 import com.gios.lightsports.model.StandingsGroup
@@ -601,9 +603,9 @@ object EspnParser {
      * sessions, qualifying and the race. The feed wants one card per weekend showing
      * the next session, so the sessions are collapsed here rather than in the UI.
      */
-    fun parseRaces(league: League, body: String, nowMillis: Long): List<RaceEvent> {
+    fun parseRaces(league: League, body: String, nowMillis: Long): List<FieldEvent> {
         val events = JSONObject(body).optJSONArray("events") ?: return emptyList()
-        val out = mutableListOf<RaceEvent>()
+        val out = mutableListOf<FieldEvent>()
         for (e in events.objects()) {
             val comps = e.optJSONArray("competitions")?.objects() ?: emptyList()
             val race = comps.lastOrNull()
@@ -631,7 +633,7 @@ object EspnParser {
                     .orEmpty()
             } else emptyList()
 
-            out += RaceEvent(
+            out += FieldEvent(
                 id = e.optString("id"),
                 leagueId = league.id,
                 name = e.optString("name"),
@@ -649,9 +651,176 @@ object EspnParser {
                 sessionMillis = (next ?: race)?.let { Iso.millis(it.optString("date")) },
                 podium = podium,
                 circuit = e.optJSONObject("circuit")?.optString("fullName")?.takeIf { it.isNotEmpty() },
+                entries = fieldOf(race),
+                sessions = comps.map { c ->
+                    FieldSession(
+                        id = c.optString("id"),
+                        label = c.optJSONObject("type")?.optString("abbreviation")
+                            ?.takeIf { it.isNotEmpty() } ?: "Session",
+                        state = when (sessionState(c)) {
+                            "in" -> GameState.LIVE
+                            "post" -> GameState.FINAL
+                            else -> GameState.PRE
+                        },
+                        startMillis = Iso.millis(c.optString("date")),
+                        entries = fieldOf(c),
+                    )
+                },
             )
         }
         return out
+    }
+
+    /**
+     * The finishing order of one racing session.
+     *
+     * Order and name are all there is. The site scoreboard sends `statistics: []` for
+     * every driver in every session — no lap time, no gap, no points, not even the
+     * constructor — and the per-driver `$ref` documents that do carry those would be one
+     * request each, twenty-two of them a session. The championship points are in the
+     * standings instead, which is one request for the whole season.
+     */
+    private fun fieldOf(comp: JSONObject?): List<FieldEntry> {
+        val competitors = comp?.optJSONArray("competitors")?.objects() ?: return emptyList()
+        return competitors.sortedBy { it.optInt("order", 99) }.mapNotNull { c ->
+            val athlete = c.optJSONObject("athlete") ?: return@mapNotNull null
+            val name = athlete.optString("displayName").takeIf { it.isNotEmpty() }
+                ?: return@mapNotNull null
+            FieldEntry(
+                position = c.optInt("order", 0).takeIf { it > 0 }?.toString() ?: "-",
+                name = name,
+                shortName = athlete.optString("shortName").takeIf { it.isNotEmpty() } ?: name,
+                athleteId = c.optString("id").takeIf { it.isNotEmpty() },
+                country = athlete.optJSONObject("flag")?.optString("alt")?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+
+    // ------------------------------------------------------------------ golf
+
+    /**
+     * A tournament is one event with the whole field under it, so the scoreboard is the
+     * leaderboard. Unlike every other sport here, `dates=` is not optional: without a
+     * range the endpoint answers with the next tournament only, and a Sunday result
+     * disappears from the feed the moment it finishes.
+     */
+    fun golfUrl(league: League, startYmd: String, endYmd: String): String =
+        "$SITE/${league.espnPath}/scoreboard?dates=$startYmd-$endYmd"
+
+    /**
+     * PGA tournaments as field events.
+     *
+     * The field is `competitors`, ordered by `order`, each an athlete with a total to par
+     * in `score` and one `linescores` entry per round played.
+     */
+    fun parseGolf(league: League, body: String, nowMillis: Long): List<FieldEvent> {
+        val events = JSONObject(body).optJSONArray("events") ?: return emptyList()
+        val out = mutableListOf<FieldEvent>()
+        for (e in events.objects()) {
+            val comp = e.optJSONArray("competitions")?.optJSONObject(0) ?: continue
+            val status = comp.optJSONObject("status")
+            val state = status?.optJSONObject("type")?.optString("state").orEmpty()
+            val round = status?.optInt("period", 0) ?: 0
+            val startMillis = Iso.millis(e.optString("date"))
+            val entries = leaderboard(comp, finished = state == "post")
+
+            out += FieldEvent(
+                id = e.optString("id"),
+                leagueId = league.id,
+                name = e.optString("name"),
+                shortName = e.optString("shortName").ifEmpty { e.optString("name") },
+                state = when (state) {
+                    "post" -> GameState.FINAL
+                    "in" -> GameState.LIVE
+                    else -> GameState.PRE
+                },
+                startMillis = startMillis,
+                // Which round is being played. It is the only clock golf has, and ESPN
+                // keeps it in `status.period` rather than anywhere named.
+                sessionLabel = when {
+                    state == "post" -> "Final"
+                    round in 1..4 -> "R$round"
+                    else -> null
+                },
+                sessionMillis = startMillis,
+                podium = entries.take(3).map { it.shortName },
+                entries = entries,
+                note = comp.optString("broadcast").takeIf { it.isNotEmpty() },
+            )
+        }
+        return out
+    }
+
+    /**
+     * The leaderboard in order, positions written the way a leaderboard writes them.
+     *
+     * `order` is a rank with no ties in it: three players on -13 come back as 5, 6 and 7,
+     * and printing that is wrong on a golf leaderboard. A tie is instead a run of players
+     * sharing a `score`, so the runs are found here and each one takes the position of
+     * its first player with a T in front. The run has to be consecutive: a player who
+     * withdrew is sorted to the bottom of the field still carrying the score he stopped
+     * at, and matching on score alone would tie him to a group forty places above.
+     *
+     * @param finished a played tournament, where a short card means the player did not
+     *   make the weekend. Said plainly rather than left as a position among players who
+     *   played two more rounds.
+     */
+    private fun leaderboard(comp: JSONObject, finished: Boolean): List<FieldEntry> {
+        val competitors = comp.optJSONArray("competitors")?.objects().orEmpty()
+        if (competitors.isEmpty()) return emptyList()
+        val ordered = competitors.sortedBy { it.optInt("order", 9999) }
+        val scores = ordered.map { it.optString("score") }
+        val fullCard = ordered.maxOf { it.optJSONArray("linescores")?.length() ?: 0 }
+
+        // Where each run of equal scores starts and how long it is, so every player in
+        // the run shares one position and a run of more than one is a tie.
+        val runStart = IntArray(scores.size)
+        val runLength = IntArray(scores.size)
+        var i = 0
+        while (i < scores.size) {
+            var j = i
+            while (j + 1 < scores.size && scores[j + 1] == scores[i] && scores[i].isNotEmpty()) j++
+            for (k in i..j) { runStart[k] = i; runLength[k] = j - i + 1 }
+            i = j + 1
+        }
+
+        return ordered.mapIndexedNotNull { index, c ->
+            val athlete = c.optJSONObject("athlete") ?: return@mapIndexedNotNull null
+            val name = athlete.optString("displayName").takeIf { it.isNotEmpty() }
+                ?: return@mapIndexedNotNull null
+            val score = c.optString("score").takeIf { it.isNotEmpty() }
+            val rounds = c.optJSONArray("linescores")?.objects().orEmpty().mapNotNull { r ->
+                val v = r.optDouble("value", Double.NaN)
+                if (v.isNaN()) null else v.toInt().toString()
+            }
+            val start = runStart[index]
+            FieldEntry(
+                position = when {
+                    finished && fullCard > rounds.size && rounds.isNotEmpty() -> "CUT"
+                    runLength[index] > 1 -> "T${start + 1}"
+                    else -> (start + 1).toString()
+                },
+                name = name,
+                shortName = athlete.optString("shortName").takeIf { it.isNotEmpty() } ?: name,
+                total = score,
+                thru = c.optJSONObject("status")?.let { st ->
+                    st.optString("displayValue").takeIf { it.isNotEmpty() }
+                        ?: st.optJSONObject("type")?.optString("shortDetail")
+                            ?.takeIf { it.isNotEmpty() }
+                },
+                rounds = rounds,
+                toPar = toPar(score),
+                athleteId = c.optString("id").takeIf { it.isNotEmpty() },
+                country = athlete.optJSONObject("flag")?.optString("alt")?.takeIf { it.isNotEmpty() },
+            )
+        }
+    }
+
+    /** "-16" to -16, "E" to 0, "+3" to 3, a withdrawal to null. */
+    private fun toPar(score: String?): Int? = when {
+        score == null -> null
+        score.equals("E", ignoreCase = true) -> 0
+        else -> score.removePrefix("+").toIntOrNull()
     }
 
     // ---------------------------------------------------------------- tennis
@@ -1014,7 +1183,12 @@ object EspnParser {
                     rank = stat("rank").takeIf { it != "-" } ?: (i + 1).toString(),
                     name = who.optString("displayName"),
                     abbrev = who.optString("abbreviation"),
-                    values = listOf(stat("championshipPts")),
+                    // Drivers keep their total under `championshipPts` and constructors
+                    // under `points`, so the constructors' table read as a column of
+                    // dashes while the drivers' was right beside it.
+                    values = listOf(
+                        stat("championshipPts").takeIf { it != "-" } ?: stat("points"),
+                    ),
                     // For a driver this is the points scored at every round of the
                     // season, which is the whole story of their year.
                     allStats = stats.mapNotNull { s ->

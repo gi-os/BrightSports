@@ -689,4 +689,31 @@ class ParserTest {
         assertEquals("21st", AlertText.periodLabel(SportKind.BASEBALL, 21))
         assertEquals("", AlertText.periodLabel(SportKind.BASEBALL, 0))
     }
+    @Test
+    fun `a race weekend carries every session and its classification`() {
+        val body = """
+            {"events":[{"id":"600","name":"Spanish GP","shortName":"ESP GP",
+              "date":"2026-06-01T13:00Z","endDate":"2026-06-01T15:00Z",
+              "circuit":{"fullName":"Circuit de Barcelona-Catalunya"},
+              "competitions":[
+                {"id":"a","date":"2026-05-30T11:00Z","type":{"abbreviation":"FP1"},
+                 "status":{"type":{"state":"post"}},
+                 "competitors":[{"id":"9","order":2,"athlete":{"displayName":"Lando Norris","shortName":"L. Norris"}},
+                                {"id":"8","order":1,"athlete":{"displayName":"Kimi Antonelli","shortName":"K. Antonelli"}}]},
+                {"id":"b","date":"2026-06-01T13:00Z","type":{"abbreviation":"Race"},
+                 "status":{"type":{"state":"post"}},
+                 "competitors":[{"id":"8","order":1,"athlete":{"displayName":"Kimi Antonelli","shortName":"K. Antonelli"}},
+                                {"id":"9","order":2,"athlete":{"displayName":"Lando Norris","shortName":"L. Norris"}}]}
+              ]}]}
+        """
+        val race = EspnParser.parseRaces(Leagues.F1, body, 1780000000000L).single()
+        assertEquals(listOf("FP1", "Race"), race.sessions.map { it.label })
+        // Order, not the order they arrived in: practice had the winner listed second.
+        assertEquals("K. Antonelli", race.sessions[0].entries[0].shortName)
+        assertEquals("1", race.sessions[0].entries[0].position)
+        assertEquals(2, race.entries.size)
+        // A racing session sends a finishing order and no times, so there is no total.
+        assertNull(race.entries[0].total)
+    }
+
 }

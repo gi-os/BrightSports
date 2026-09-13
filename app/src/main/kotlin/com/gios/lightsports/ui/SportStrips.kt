@@ -195,7 +195,9 @@ fun TimelineList(game: Game, moments: List<Moment>) {
         return
     }
     Column(Modifier.padding(bottom = 8.dp)) {
-        for (m in moments.asReversed()) {
+        // Match order, like the scoring summary next to it: a timeline read backwards is
+        // not a timeline.
+        for (m in moments) {
             val team = when (m.teamId) {
                 game.home.teamId -> game.home.abbrev
                 game.away.teamId -> game.away.abbrev

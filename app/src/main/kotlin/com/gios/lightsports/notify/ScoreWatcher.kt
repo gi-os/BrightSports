@@ -233,18 +233,33 @@ object ScoreWatcher {
             if (prev != null && prev.state != GameState.FINAL && race.state == GameState.FINAL) {
                 janitor.schedule(key, now + CLEANUP_DELAY)
             }
-            if ("${race.leagueId}:series" !in notifyKeys) continue
+            // Two ways to be told about a tournament: the tour is followed, or somebody
+            // in the field is. A player alert says where that player came, since the tour
+            // alert already says who won.
+            val mine = notifyKeys.filter { it.startsWith("${race.leagueId}:") }
+                .map { it.substringAfter(':') }
+                .filterTo(mutableSetOf()) { it != "series" }
+            val followsTour = "${race.leagueId}:series" in notifyKeys
+            val played = mine.isNotEmpty() && race.entries.any { it.athleteId in mine }
+            if (!followsTour && !played) continue
             if (prev != null && prev.state != GameState.FINAL && race.state == GameState.FINAL) {
+                val finish = AlertText.finishBody(race, league, mine)
+                val body = if (followsTour || finish == null) {
+                    AlertText.fieldBody(race, league)
+                } else {
+                    finish
+                }
                 newEntries += PendingQueue.Entry(
                     dueAt = now + delay,
                     gameId = key,
                     leagueId = race.leagueId,
                     kind = ScoreDiff.Kind.FINAL,
-                    title = AlertText.raceTitle(race),
-                    body = AlertText.raceBody(race, league),
-                    // A race has no score to put on the right; the podium is the detail.
+                    title = AlertText.fieldTitle(race),
+                    body = body,
+                    // A field event has no score to put on the right; the result is the
+                    // detail.
                     label = "FINAL",
-                    detail = AlertText.raceBody(race, league),
+                    detail = finish ?: body,
                     foot = league.short,
                 )
             }

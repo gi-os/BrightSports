@@ -8,6 +8,7 @@ import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.data.SportsRepository
+import com.gios.lightsports.model.FieldEvent
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.Play
@@ -47,6 +48,11 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val loading: Boolean = false,
         val sections: List<Feed.Section> = emptyList(),
         val games: List<Game> = emptyList(),
+        /**
+         * Race weekends and golf tournaments, kept beside the sections so the screen
+         * behind a card can be looked up by id and stays live through a refresh.
+         */
+        val events: List<FieldEvent> = emptyList(),
         val updatedAt: Long = 0L,
         val offline: Boolean = false,
         /** Followed teams with no fixture in the window, for the feed's last rows. */
@@ -220,6 +226,7 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 loading = false,
                 sections = sections,
                 games = games,
+                events = races,
                 idle = idle,
                 updatedAt = now,
                 // Followed teams but nothing came back: almost always the network,
@@ -432,9 +439,16 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         return name ?: "${league?.short ?: leagueId.uppercase()} $teamId"
     }
 
-    /** Leagues with at least one followed team, for the standings picker. */
+    /**
+     * Leagues with at least one followed team, for the standings picker.
+     *
+     * Golf is left out. The PGA Tour keeps a season standing but ESPN serves it as five
+     * and a half megabytes of season history, and the leaderboard of the tournament being
+     * played is the standing anybody opens this app to read.
+     */
     fun followedLeagues(): List<League> =
         prefs.followedLeagueIds().mapNotNull { Leagues.byId(it) }
+            .filter { it.kind != SportKind.GOLF }
             .sortedBy { Leagues.all.indexOf(it) }
 
     fun setNotificationsEnabled(enabled: Boolean) {

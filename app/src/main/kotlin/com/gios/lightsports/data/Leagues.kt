@@ -112,7 +112,20 @@ object Leagues {
     val F1 = League(
         id = "f1", name = "Formula 1", short = "F1",
         kind = SportKind.RACING, provider = Provider.ESPN, espnPath = "racing/f1",
-        loudness = Loudness.FINAL_ONLY, isRacing = true,
+        loudness = Loudness.FINAL_ONLY, isField = true,
+    )
+
+    /**
+     * The PGA Tour. A tournament is one event that runs Thursday to Sunday, so it sits in
+     * the feed for four days the way a race weekend does, and the leaderboard is the
+     * score. `golf/pga` answers the ordinary scoreboard endpoint, but only to a date
+     * range: with no `dates=` it returns the next tournament and nothing that has been
+     * played.
+     */
+    val PGA = League(
+        id = "pga", name = "PGA Tour", short = "PGA",
+        kind = SportKind.GOLF, provider = Provider.ESPN, espnPath = "golf/pga",
+        loudness = Loudness.FINAL_ONLY, isField = true, followNoun = "player",
     )
 
     // European domestic soccer. Same ESPN site API, same parser as MLS/NWSL — only the
@@ -221,7 +234,7 @@ object Leagues {
     )
 
     val all: List<League> = listOf(
-        MLB, NFL, NBA, NHL, MLS, F1,
+        MLB, NFL, NBA, NHL, MLS, F1, PGA,
         EPL, LALIGA, BUNDESLIGA, SERIE_A, LIGUE_1, UCL, UEL,
         CFB, FCS,
         TENNIS,
@@ -238,6 +251,7 @@ object Leagues {
         "WOMEN'S" to listOf(WNBA, NWSL, PWHL, WPBL),
         "MINOR LEAGUE BASEBALL" to listOf(AAA, AA, HIGH_A, SINGLE_A),
         "RACING" to listOf(F1),
+        "GOLF" to listOf(PGA),
     )
 
     fun byId(id: String): League? = all.firstOrNull { it.id == id }

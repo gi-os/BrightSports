@@ -31,7 +31,7 @@ import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
-import com.gios.lightsports.model.RaceEvent
+import com.gios.lightsports.model.FieldEvent
 import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.SportKind
 import com.gios.lightsports.notify.AlertText
@@ -55,6 +55,7 @@ fun FeedScreen(
     logos: Map<String, String>,
     onGame: (Game) -> Unit,
     onEditTeams: () -> Unit,
+    onEvent: (FieldEvent) -> Unit = {},
     onTeam: (String) -> Unit = {},
     onRefresh: () -> Unit = {},
 ) {
@@ -132,8 +133,8 @@ fun FeedScreen(
                         GameRow(item.game, zone, logos) { onGame(item.game) }
                         Rule()
                     }
-                    is Feed.Item.RaceItem -> item(key = "r-${item.race.id}") {
-                        RaceRow(item.race, zone)
+                    is Feed.Item.EventItem -> item(key = "r-${item.race.id}") {
+                        FieldRow(item.race, zone) { onEvent(item.race) }
                         Rule()
                     }
                 }
@@ -438,35 +439,75 @@ private fun TeamLine(
     }
 }
 
+/**
+ * A race weekend or a golf tournament: what it is, where it is in its own schedule, and
+ * who is at the top of it. The whole field is a tap away.
+ */
 @Composable
-fun RaceRow(race: RaceEvent, zone: ZoneId) {
-    val league = Leagues.byId(race.leagueId)
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+fun FieldRow(event: FieldEvent, zone: ZoneId, onClick: () -> Unit = {}) {
+    val league = Leagues.byId(event.leagueId)
+    val live = event.state == GameState.LIVE
+    Column(
+        Modifier.fillMaxWidth().clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
         Text(
             listOfNotNull(
                 league?.short,
-                when (race.state) {
+                when (event.state) {
                     GameState.FINAL -> "Final"
-                    GameState.LIVE -> race.sessionLabel ?: "Live"
-                    else -> race.sessionMillis?.let { Fmt.dayTime(it, zone) }
+                    GameState.LIVE -> event.sessionLabel ?: "Live"
+                    else -> event.sessionMillis?.let { Fmt.dayTime(it, zone) }
                 },
-                race.sessionLabel?.takeIf { race.state == GameState.PRE },
+                event.sessionLabel?.takeIf { event.state == GameState.PRE },
             ).joinToString(" · "),
             style = MaterialTheme.typography.labelSmall,
-            color = if (race.state == GameState.LIVE) Color.White else Dim,
+            color = if (live) Color.White else Dim,
             maxLines = 1,
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            race.shortName,
+            event.shortName,
             style = MaterialTheme.typography.titleMedium,
             color = Color.White,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
         )
-        if (race.podium.isNotEmpty()) {
+        // The leaders. Golf has a number beside each name and racing does not, so the
+        // score column only appears when there is something to put in it.
+        val leaders = event.entries.take(3)
+        if (leaders.isNotEmpty()) {
+            Spacer(Modifier.height(6.dp))
+            for ((i, entry) in leaders.withIndex()) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        entry.position,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Faint,
+                        maxLines = 1,
+                        modifier = Modifier.width(30.dp),
+                    )
+                    Text(
+                        entry.shortName,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (i == 0) Color.White else Dim,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (entry.total != null) {
+                        Text(
+                            entry.total,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (i == 0) Color.White else Dim,
+                            maxLines = 1,
+                        )
+                    }
+                }
+            }
+        } else if (event.podium.isNotEmpty()) {
             Spacer(Modifier.height(4.dp))
-            race.podium.forEachIndexed { i, name ->
+            event.podium.forEachIndexed { i, name ->
                 Text(
                     "${i + 1}  $name",
                     style = MaterialTheme.typography.bodyMedium,

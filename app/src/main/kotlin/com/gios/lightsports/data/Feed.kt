@@ -2,7 +2,7 @@ package com.gios.lightsports.data
 
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
-import com.gios.lightsports.model.RaceEvent
+import com.gios.lightsports.model.FieldEvent
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -25,7 +25,7 @@ object Feed {
             override val sortMillis: Long get() = game.startMillis
         }
 
-        data class RaceItem(val race: RaceEvent) : Item {
+        data class EventItem(val race: FieldEvent) : Item {
             override val sortMillis: Long get() = race.sessionMillis ?: race.startMillis
         }
     }
@@ -54,7 +54,7 @@ object Feed {
 
     fun build(
         games: List<Game>,
-        races: List<RaceEvent>,
+        races: List<FieldEvent>,
         nowMillis: Long,
         zone: ZoneId,
         /** How far back and ahead of today a game is kept. Widened when the feed is paged to another week. */
@@ -78,7 +78,7 @@ object Feed {
         for (race in races) {
             val at = race.sessionMillis ?: race.startMillis
             val bucket = bucketFor(race.state, at, today, zone, backDays, aheadDays) ?: continue
-            add(bucket, at, Item.RaceItem(race))
+            add(bucket, at, Item.EventItem(race))
         }
 
         val out = mutableListOf<Section>()
@@ -201,7 +201,7 @@ object Feed {
     fun idleFollows(
         follows: Set<String>,
         games: List<Game>,
-        races: List<RaceEvent>,
+        races: List<FieldEvent>,
         label: (String) -> String?,
     ): List<String> {
         if (follows.isEmpty()) return emptyList()
