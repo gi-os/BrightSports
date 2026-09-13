@@ -133,20 +133,36 @@ object EspnParser {
         }
     }
 
-    /** The summary's `scoringPlays`, in game order. */
+    /**
+     * The summary's `scoringPlays`, in game order.
+     *
+     * Baseball does not have that array. Its summary carries the whole play-by-play
+     * under `plays` instead, with the runs flagged `scoringPlay`, so a game that looked
+     * like it had no scoring summary in fact had every run in it — six hundred plays
+     * away from the key the parser was reading. When `scoringPlays` is absent, filter
+     * `plays` for the scoring ones and read them the same way.
+     */
     fun parseScoringPlays(body: String): List<ScoringPlay> {
-        val plays = JSONObject(body).optJSONArray("scoringPlays") ?: return emptyList()
+        val root = JSONObject(body)
+        val listed = root.optJSONArray("scoringPlays")
+        val plays = listed ?: root.optJSONArray("plays") ?: return emptyList()
         return plays.objects().mapNotNull { p ->
+            if (listed == null && !p.optBoolean("scoringPlay", false)) return@mapNotNull null
             val text = p.optString("text").takeIf { it.isNotEmpty() } ?: return@mapNotNull null
             val team = p.optJSONObject("team")
+            val period = p.optJSONObject("period")
             ScoringPlay(
                 id = p.optString("id"),
                 text = text,
                 kind = p.optJSONObject("scoringType")?.optString("abbreviation")
                     ?.takeIf { it.isNotEmpty() } ?: p.optJSONObject("type")
-                    ?.optString("abbreviation").orEmpty(),
-                period = p.optJSONObject("period")?.optInt("number") ?: 0,
+                    ?.optString("abbreviation")?.takeIf { it.isNotEmpty() }
+                    // Baseball names the play under `alternativeType`: HR, 1B, 2B, SF.
+                    // `type` there is the flat "Play Result", which says nothing.
+                    ?: p.optJSONObject("alternativeType")?.optString("abbreviation").orEmpty(),
+                period = period?.optInt("number") ?: 0,
                 clock = p.optJSONObject("clock")?.optString("displayValue")?.takeIf { it.isNotEmpty() },
+                periodLabel = halfLabel(period),
                 teamId = team?.optString("id")?.takeIf { it.isNotEmpty() },
                 teamAbbrev = team?.optString("abbreviation")?.takeIf { it.isNotEmpty() },
                 awayScore = p.optInt("awayScore", 0),
@@ -154,6 +170,84 @@ object EspnParser {
             )
         }
     }
+
+    /** "TOP 3RD", "BOT 8TH" — baseball's half-inning, or null for the sports without one. */
+    private fun halfLabel(period: JSONObject?): String? {
+        val half = when (period?.optString("type").orEmpty().lowercase()) {
+            "top" -> "Top"
+            "bottom" -> "Bot"
+            else -> return null
+        }
+        val number = period?.optInt("number") ?: 0
+        if (number <= 0) return null
+        return "$half ${ordinal(number)}"
+    }
+
+    private fun ordinal(n: Int): String {
+        val suffix = when {
+            n % 100 in 11..13 -> "th"
+            n % 10 == 1 -> "st"
+            n % 10 == 2 -> "nd"
+            n % 10 == 3 -> "rd"
+            else -> "th"
+        }
+        return "$n$suffix"
+    }
+
+    /**
+     * The recap story from a game summary, one entry per paragraph. ESPN files it as
+     * HTML with the players and clubs linked, and opens it with a dateline the app has
+     * no use for ("DETROIT -- — "), so the tags come out, the entities are decoded and
+     * the dateline is trimmed.
+     *
+     * Two things in the markup are structure rather than decoration and have to survive
+     * the tag strip: `<hl2>` heads a section ("Up next") and belongs on its own line, and
+     * a rule of dashes marks the end of the story — under it is the wire service's own
+     * boilerplate, which is not part of the game.
+     */
+    fun parseRecapStory(body: String): List<String> {
+        val article = JSONObject(body).optJSONObject("article") ?: return emptyList()
+        val story = article.optString("story").takeIf { it.isNotEmpty() } ?: return emptyList()
+        val headed = story.replace(
+            Regex("<hl\\d?>(.*?)</hl\\d?>", RegexOption.DOT_MATCHES_ALL),
+            "\n\n\$1\n\n",
+        )
+        val text = decodeEntities(headed.replace(Regex("<[^>]+>"), ""))
+        return text.split(Regex("\\n\\s*\\n"))
+            .map { it.replace(Regex("\\s+"), " ").trim() }
+            .mapIndexed { i, para -> if (i == 0) cleanRecap(para) else para }
+            .filter { it.isNotEmpty() }
+            .takeWhile { !it.matches(Regex("[-–—_]{3,}")) }
+    }
+
+    /**
+     * The recap sentence as it should read on the phone. ESPN leaves the dateline's
+     * trailing em dash on the front of the description field, and the story puts the
+     * city in front of that again.
+     */
+    private fun cleanRecap(raw: String): String =
+        decodeEntities(raw).replace(Regex("^\\s*[A-Z][A-Za-z.,'\\- ]{0,30}\\s+--\\s*"), "")
+            .replace(Regex("^[\\s—–-]+"), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+    /**
+     * The handful of entities a recap actually contains, plus the numeric ones: ESPN
+     * writes its em dashes and curly apostrophes as `&#8212;` and `&#8217;` about as
+     * often as it writes the characters themselves.
+     */
+    private fun decodeEntities(s: String): String = s
+        .replace(Regex("&#(\\d{1,7});")) { m ->
+            m.groupValues[1].toIntOrNull()?.takeIf { it in 1..0x10FFFF }
+                ?.let { String(Character.toChars(it)) } ?: m.value
+        }
+        .replace("&nbsp;", " ")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        // Last, so an `&amp;lt;` in the copy does not turn into a tag on the way through.
+        .replace("&amp;", "&")
 
     // ---------------------------------------------------------------- teams
 
@@ -299,6 +393,8 @@ object EspnParser {
                 week = e.optJSONObject("week")?.optInt("number", 0)?.takeIf { it > 0 },
                 headline = comp.optJSONArray("headlines")?.optJSONObject(0)
                     ?.optString("shortLinkText")?.takeIf { it.isNotEmpty() },
+                recap = comp.optJSONArray("headlines")?.optJSONObject(0)
+                    ?.optString("description")?.let { cleanRecap(it) }?.takeIf { it.isNotEmpty() },
                 neutralSite = comp.optBoolean("neutralSite", false),
                 timeline = timeline(comp, home.teamId, away.teamId),
             )

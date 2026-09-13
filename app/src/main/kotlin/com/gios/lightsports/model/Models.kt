@@ -289,6 +289,12 @@ data class Game(
     val week: Int? = null,
     /** ESPN's one-line recap of a finished game: "Walker's late TD lifts Seahawks". */
     val headline: String? = null,
+    /**
+     * The same recap written out rather than compressed into a link title. The feed has
+     * room for one clipped line of [headline]; this is what the game screen prints in
+     * full.
+     */
+    val recap: String? = null,
     val neutralSite: Boolean = false,
     /** Soccer: goals and cards in match order. Empty elsewhere. */
     val timeline: List<Moment> = emptyList(),
@@ -397,6 +403,12 @@ data class ScoringPlay(
     val kind: String,
     val period: Int,
     val clock: String?,
+    /**
+     * The provider's own name for the moment, when the period number alone does not say
+     * it. Baseball is the reason: a run in the 3rd is a different moment depending on
+     * whether it came in the top or the bottom, and "3rd" says neither.
+     */
+    val periodLabel: String? = null,
     val teamId: String?,
     val teamAbbrev: String?,
     val awayScore: Int,

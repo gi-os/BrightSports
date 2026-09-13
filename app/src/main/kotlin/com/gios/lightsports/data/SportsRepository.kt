@@ -231,6 +231,23 @@ class SportsRepository(context: Context) {
         return runCatching { EspnParser.parseScoringPlays(body) }.getOrDefault(emptyList())
     }
 
+    /**
+     * The recap story of a finished game, one entry per paragraph, or empty when the
+     * provider has not written one.
+     *
+     * Same body as [scoring], and for a final game that body is cached forever, so the
+     * two together cost one request. Asked for only on a final game and only when the
+     * reader opens the recap: baseball's summary is a megabyte of play-by-play, which is
+     * not a thing to download on the chance somebody wants the story.
+     */
+    fun recap(league: League, gameId: String): List<String> {
+        if (league.provider != Provider.ESPN || league.isRacing) return emptyList()
+        val url = EspnParser.summaryUrl(league, gameId)
+        val body = Http.cached(cacheDir, "scoring-$gameId.json", url, Long.MAX_VALUE)
+            ?: return emptyList()
+        return runCatching { EspnParser.parseRecapStory(body) }.getOrDefault(emptyList())
+    }
+
     fun races(league: League, nowMillis: Long, zone: ZoneId): List<RaceEvent> {
         val year = Instant.ofEpochMilli(nowMillis).atZone(zone).year
         val body = Http.get(EspnParser.raceUrl(league, year)) ?: return emptyList()

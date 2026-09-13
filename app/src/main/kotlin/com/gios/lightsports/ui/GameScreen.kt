@@ -66,6 +66,8 @@ import java.time.ZoneId
  *
  * @param plays the last few plays, newest first, or empty when the provider has none.
  * @param scoring the scoring summary once loaded; [onLoadScoring] asks for it.
+ * @param recapStory the recap in paragraphs once loaded; [onLoadRecap] asks for it. Null
+ *   is "not asked for yet", an empty list is "asked, and there is no story".
  */
 @Composable
 fun GameScreen(
@@ -81,7 +83,9 @@ fun GameScreen(
     logos: Map<String, String> = emptyMap(),
     plays: List<Play> = emptyList(),
     scoring: List<ScoringPlay>? = null,
+    recapStory: List<String>? = null,
     onLoadScoring: () -> Unit = {},
+    onLoadRecap: () -> Unit = {},
     onLoadPlays: () -> Unit = {},
     onTeam: (Side) -> Unit = {},
 ) {
@@ -233,6 +237,23 @@ fun GameScreen(
         }
         Spacer(Modifier.height(18.dp))
         Rule()
+
+        // ---- the recap
+        // The feed prints one clipped line of this and there is nowhere on that screen to
+        // put the rest of it. Here there is room, and for a final game the whole story is
+        // one tap further in.
+        val recapLead = game.recap
+        if (recapLead != null) {
+            SectionHeader("RECAP")
+            Recap(
+                lead = recapLead,
+                story = recapStory,
+                canExpand = final,
+                onExpand = onLoadRecap,
+            )
+            Spacer(Modifier.height(12.dp))
+            Rule()
+        }
 
         // ---- the last plays, live only
         if (live && plays.isNotEmpty()) {
@@ -535,6 +556,53 @@ private fun PlayRow(play: Play, kind: SportKind, first: Boolean) {
 }
 
 /**
+ * The recap. The sentence from the feed always; the full story on a tap, for a game that
+ * has finished and so has one written about it.
+ *
+ * The tap is the point: the story arrives inside a game summary that runs to a megabyte
+ * in baseball, and a reader who only wanted the score should not pay for a story they did
+ * not ask to read.
+ */
+@Composable
+private fun Recap(
+    lead: String,
+    story: List<String>?,
+    canExpand: Boolean,
+    onExpand: () -> Unit,
+) {
+    var asked by remember(lead) { mutableStateOf(false) }
+    val paragraphs = story.orEmpty()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+        // The story opens on the same sentence, so printing the lead as well would say it
+        // twice. Once the story is here, it is the recap.
+        val body = if (asked && paragraphs.isNotEmpty()) paragraphs else listOf(lead)
+        for ((i, para) in body.withIndex()) {
+            if (i > 0) Spacer(Modifier.height(10.dp))
+            Text(
+                para,
+                style = MaterialTheme.typography.bodyMedium,
+                color = Soft,
+            )
+        }
+        if (canExpand && !(asked && paragraphs.isNotEmpty())) {
+            Spacer(Modifier.height(10.dp))
+            Text(
+                when {
+                    !asked -> "READ THE FULL RECAP"
+                    story == null -> "LOADING…"
+                    else -> "NO FULL RECAP FOR THIS GAME"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = if (asked) Faint else Color.White,
+                modifier = Modifier
+                    .let { if (asked) it else it.clickable { asked = true; onExpand() } }
+                    .padding(vertical = 4.dp),
+            )
+        }
+    }
+}
+
+/**
  * The scoring summary, newest first: what kind of score, who, when, and the score it
  * made. Null while loading; empty when the provider has none.
  */
@@ -577,7 +645,8 @@ private fun ScoringList(game: Game, scoring: List<ScoringPlay>?) {
                         )
                         Text(
                             listOfNotNull(
-                                AlertText.periodLabel(kind, play.period).takeIf { it.isNotEmpty() },
+                                play.periodLabel
+                                    ?: AlertText.periodLabel(kind, play.period).takeIf { it.isNotEmpty() },
                                 play.clock,
                                 play.teamAbbrev,
                             ).let { parts ->

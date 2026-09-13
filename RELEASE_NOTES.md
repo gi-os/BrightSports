@@ -1,3 +1,13 @@
+## BrightSports v2.9 — the recap, and baseball's scoring summary
+
+**The game screen prints the recap in full.** The feed has room for one line of it and cuts the sentence off mid-word, which is where it has always ended. Open the game and the whole sentence is there under `RECAP`, above the line score.
+
+**And the whole story is one tap further.** `READ THE FULL RECAP` on a finished game fetches the wire recap and lays it out in paragraphs — how the eighth inning turned, who came out of the bullpen, who pitches tomorrow. It is behind a tap because that story arrives inside a summary that runs to a megabyte in baseball, and a score is not worth a megabyte.
+
+**Baseball has a scoring summary now.** It never did, and football's worked, which was the confusing part. Baseball's summary does not carry the `scoringPlays` list every other sport sends — the runs are in the play-by-play instead, flagged, six hundred plays deep. The app was reading the list that is not there and drawing the empty state. Every run in the game was in the response the whole time.
+
+**Each run reads as the half-inning it happened in.** `Top 3rd`, `Bot 8th` — a run in the 3rd is a different moment depending on which half, and "3rd" says neither. The play comes through named the way the box score names it: `HR`, `2B`, `1B`, `SF`.
+
 ## BrightSports v2.8 — a socket that goes quiet no longer slows the poll
 
 **The lock screen could sit unchanged for five minutes, and here is why.** While the relay socket was up, the ticker's own poll dropped to a five-minute safety pace, because scores were supposed to arrive on their own. It asked only whether the socket was *open*. An open socket carrying nothing looks exactly like a healthy one from the phone: the relay container restarting, a network holding the stream, ESPN's feed going quiet for a game. In all of those the card waited out the full five minutes.

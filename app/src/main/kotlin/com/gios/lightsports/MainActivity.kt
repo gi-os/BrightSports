@@ -167,6 +167,7 @@ private fun App(openGameId: String?) {
     val logos by vm.logos.collectAsState()
     val plays by vm.plays.collectAsState()
     val scoring by vm.scoring.collectAsState()
+    val recap by vm.recap.collectAsState()
 
     var tab by remember { mutableIntStateOf(TAB_SCORES) }
     var openGame by remember { mutableStateOf<Game?>(null) }
@@ -334,7 +335,9 @@ private fun App(openGameId: String?) {
                     logos = logos,
                     plays = plays[game.id].orEmpty(),
                     scoring = scoring[game.id]?.second,
+                    recapStory = recap[game.id],
                     onLoadScoring = { vm.loadScoring(game) },
+                    onLoadRecap = { vm.loadRecap(game) },
                     onLoadPlays = { Leagues.byId(game.leagueId)?.let { vm.loadPlays(it, game.id) } },
                     onTeam = { side ->
                         Leagues.byId(game.leagueId)?.let { l ->

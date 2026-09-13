@@ -178,6 +178,10 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val _scoring = MutableStateFlow<Map<String, Pair<String, List<ScoringPlay>>>>(emptyMap())
     val scoring: StateFlow<Map<String, Pair<String, List<ScoringPlay>>>> = _scoring.asStateFlow()
 
+    /** The recap story by game id, in paragraphs. Empty list means the provider has none. */
+    private val _recap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
+    val recap: StateFlow<Map<String, List<String>>> = _recap.asStateFlow()
+
     fun refresh() = refresh(_feed.value.weekOffset)
 
     /** Page the feed a week either way. Zero is this week. */
@@ -393,6 +397,20 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 repo.scoring(league, game.id, final = game.state == GameState.FINAL)
             }
             _scoring.value = _scoring.value + (game.id to (key to list))
+        }
+    }
+
+    /**
+     * Fetch the recap story, once per game. Only the reader opening the recap calls this:
+     * the story rides along with a summary that runs to a megabyte in baseball, so it is
+     * fetched on the tap rather than on the way in.
+     */
+    fun loadRecap(game: Game) {
+        val league = Leagues.byId(game.leagueId) ?: return
+        if (_recap.value.containsKey(game.id)) return
+        viewModelScope.launch {
+            val story = withContext(Dispatchers.IO) { repo.recap(league, game.id) }
+            _recap.value = _recap.value + (game.id to story)
         }
     }
 
