@@ -1,3 +1,15 @@
+## BrightSports v2.10 — the PGA Tour, and a screen behind the race card
+
+**Golf is in.** Follow the PGA Tour in My Teams. Every tournament then lands in the feed, Thursday through Sunday, with the top three and their scores on the card. Open it for the whole leaderboard. Position, player, total to par, the rounds played, and how far through today each group is. Ties read the way a leaderboard reads them, T4 rather than fourth, fifth and sixth. A player who missed the cut says so.
+
+**Follow a player, not only the tour.** PGA opens a picker like any other league. The names in it are this week's field. The tour itself sits at the top as one row. Press and hold a player on the leaderboard to follow them from there. When the tournament ends, a followed player gets an alert saying where they came.
+
+**The race card opens now.** A grand prix weekend used to be a card with a podium on it and nothing behind. Tap it for the classification of any session. The five chips across the top are FP1 through the race, and the screen opens on the last one to have run. The driver and constructor standings were already under STANDINGS. The constructors' points column now has numbers in it rather than dashes: ESPN files a driver's total under one name and a team's under another.
+
+**Golf costs the radio almost nothing.** One golf scoreboard is half a megabyte. It carries every hole of every round for a hundred and fifty players, and the score watcher asks for it every thirty seconds. The app now keeps it for five minutes. A group plays a hole in about fifteen.
+
+**The scoring summary reads down the page.** First score at the top, last at the bottom. That is how ESPN prints it and how a box score reads. It ran newest first until now. The soccer timeline was backwards the same way and is not any more.
+
 ## BrightSports v2.9 — the recap, and baseball's scoring summary
 
 **The game screen prints the recap in full.** The feed has one line for it and cuts the sentence off mid-word. Open the game. The whole sentence is there under `RECAP`, above the line score.
