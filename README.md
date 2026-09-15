@@ -2,6 +2,8 @@
 
 # BrightSports
 
+[**⬇ Download the latest APK**](https://github.com/gi-os/BrightSports/releases/latest) · free, open source.
+
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
 `com.gios.lightsports`. Current released version: **v1.19**.
