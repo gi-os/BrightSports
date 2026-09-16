@@ -110,6 +110,28 @@ class SportsRepository(context: Context) {
     // ---------------------------------------------------------------- games
 
     /**
+     * ESPN's scoreboard for a date window, with a fallback for the range query.
+     *
+     * As of 2026-09-15 ESPN answers *every* `dates=start-end` scoreboard request with
+     * HTTP 400 `{"code":400,"message":"Failed to get events endpoint."}` — the same
+     * endpoint serves a single day, a year, or no window at all. Since the feed and the
+     * live poll both ask per league per poll, that one 400 blanked every score in the
+     * app: nothing came back, so every followed team fell into the feed's idle list.
+     *
+     * So a window that answers with nothing is asked again with no window. ESPN's default
+     * is its own notion of "now" (today plus the last few days), which is enough to keep
+     * today's slate, the scores, and the ticker alive.
+     *
+     * ponytail: the fallback drops the days either side of today and the week paging.
+     * Remove it once ESPN's range query answers again.
+     */
+    private fun espnScoreboard(path: String, group: String?, fromYmd: String, toYmd: String): String? {
+        val windowed = Http.get(EspnParser.pathScoreboardUrl(path, fromYmd, toYmd, group))
+        if (windowed != null && windowed.contains("\"events\"")) return windowed
+        return Http.get(EspnParser.pathScoreboardUrl(path, fromYmd, toYmd, group, windowed = false))
+    }
+
+    /**
      * Games for one league across a date window. Not cached — a scoreboard is stale
      * the moment it lands.
      */
@@ -120,9 +142,10 @@ class SportsRepository(context: Context) {
         val from = today.minusDays(BACK_DAYS).plusDays(shiftDays)
         val to = today.plusDays(AHEAD_DAYS).plusDays(shiftDays)
         val body = when (league.provider) {
-            Provider.ESPN -> Http.get(
-                EspnParser.scoreboardUrl(league, from.format(ymd), to.format(ymd)),
+            Provider.ESPN -> espnScoreboard(
+                league.espnPath.orEmpty(), league.espnGroup, from.format(ymd), to.format(ymd),
             )
+
             Provider.STATSAPI -> Http.get(
                 StatsApiParser.scheduleUrl(league, from.format(dashed), to.format(dashed)),
             )
@@ -191,8 +214,7 @@ class SportsRepository(context: Context) {
         if (league.cups.isEmpty()) return emptyList()
         val out = mutableListOf<Game>()
         for (cup in league.cups) {
-            val body = Http.get(EspnParser.pathScoreboardUrl(cup.path, fromYmd, toYmd))
-                ?: continue
+            val body = espnScoreboard(cup.path, null, fromYmd, toYmd) ?: continue
             out += runCatching {
                 // No roster check here. A cup field is full of clubs from other leagues,
                 // so every game would look like an all-star fixture; in a cup the round

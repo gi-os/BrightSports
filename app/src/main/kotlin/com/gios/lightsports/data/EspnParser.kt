@@ -34,16 +34,33 @@ object EspnParser {
      * silently — no error, just a short list, which is indistinguishable from a quiet
      * fortnight until you count.
      */
-    fun scoreboardUrl(league: League, startYmd: String, endYmd: String): String {
-        val base = pathScoreboardUrl(league.espnPath.orEmpty(), startYmd, endYmd)
-        // Plural, confirmed against college football: `groups=80` is what actually
-        // narrows the scoreboard to FBS games.
-        return league.espnGroup?.let { "$base&groups=$it" } ?: base
-    }
+    fun scoreboardUrl(
+        league: League,
+        startYmd: String,
+        endYmd: String,
+        windowed: Boolean = true,
+    ): String = pathScoreboardUrl(league.espnPath.orEmpty(), startYmd, endYmd, league.espnGroup, windowed)
 
-    /** Any ESPN competition path, which is how the cups are reached. */
-    fun pathScoreboardUrl(path: String, startYmd: String, endYmd: String): String =
-        "$SITE/$path/scoreboard?limit=1000&dates=$startYmd-$endYmd"
+    /**
+     * Any ESPN competition path, which is how the cups are reached. `groups` is plural
+     * here, confirmed against college football: `groups=80` is what actually narrows the
+     * scoreboard to FBS games.
+     *
+     * `windowed = false` drops the `dates=` range. ESPN 400s every ranged scoreboard
+     * query since 2026-09-15 ("Failed to get events endpoint"), and the endpoint without
+     * it still answers with ESPN's default window. See `SportsRepository.espnScoreboard`.
+     */
+    fun pathScoreboardUrl(
+        path: String,
+        startYmd: String,
+        endYmd: String,
+        group: String? = null,
+        windowed: Boolean = true,
+    ): String = buildString {
+        append("$SITE/$path/scoreboard?limit=1000")
+        if (windowed) append("&dates=$startYmd-$endYmd")
+        group?.let { append("&groups=$it") }
+    }
 
     fun teamsUrl(league: League): String = "$SITE/${league.espnPath}/teams?limit=400"
 

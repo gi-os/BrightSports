@@ -84,7 +84,12 @@ fun FeedScreen(
         return
     }
 
-    if (state.sections.isEmpty() && state.idle.isEmpty()) {
+    // A fetch that came back with nothing still leaves every followed team in `idle`, so
+    // the empty state has to be allowed through on `offline` too — otherwise a dead
+    // scoreboard renders as "NO GAME THIS WEEK" over a bare list of team names, which
+    // reads as a fixture list rather than a failure. ponytail: only fires when every
+    // league and race came back empty; a half-dead follow set still shows the list.
+    if (state.sections.isEmpty() && (state.idle.isEmpty() || state.offline)) {
         EmptyState(
             if (state.loading) "Loading…"
             else if (state.offline) "Couldn't reach the scores.\nPull down to try again."

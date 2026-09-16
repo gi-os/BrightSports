@@ -326,6 +326,23 @@ class ParserTest {
     }
 
     @Test
+    fun `the date window can be dropped, keeping the groups filter`() {
+        // ESPN 400s every ranged scoreboard query, so the fetch falls back to the same
+        // request with no window. The fallback is only useful if it is otherwise
+        // identical to the request it replaces — above all for `groups=`.
+        val windowed = EspnParser.scoreboardUrl(Leagues.MLB, "20260911", "20260926")
+        assertTrue(windowed.contains("&dates=20260911-20260926"))
+
+        val bare = EspnParser.scoreboardUrl(Leagues.MLB, "20260911", "20260926", windowed = false)
+        assertTrue(!bare.contains("dates"))
+        assertTrue(bare.endsWith("/scoreboard?limit=1000"))
+
+        val grouped = EspnParser.scoreboardUrl(Leagues.CFB, "20260911", "20260926", windowed = false)
+        assertTrue(!grouped.contains("dates"))
+        assertTrue(grouped.endsWith("&groups=80"))
+    }
+
+    @Test
     fun `college football has no off-roster signal to misfire on`() {
         // An FBS-vs-FCS game is a normal non-conference Saturday, not a showcase — so
         // unlike the leagues that use the off-roster check, this one must not opt in.
