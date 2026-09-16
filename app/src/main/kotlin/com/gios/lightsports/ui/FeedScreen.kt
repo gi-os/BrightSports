@@ -119,9 +119,10 @@ fun FeedScreen(
                     color = if (state.loading) Color.White else flashOnUpdate(state.updatedAt, Faint),
                     maxLines = 1,
                 )
-                if (state.subtitle != null) {
+                val subtitle = state.subtitle
+                if (subtitle != null) {
                     Text(
-                        state.subtitle,
+                        subtitle,
                         style = MaterialTheme.typography.labelSmall,
                         color = Faint,
                         maxLines = 1,

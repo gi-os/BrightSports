@@ -67,7 +67,22 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val date: String = "",
         /** The date, plus "ALL FINAL" and "3–1 FOR YOUR TEAMS" on a day gone by. */
         val subtitle: String? = null,
-    )
+    ) {
+        /**
+         * One game swapped in where it already sits. A relay message moves the row it
+         * belongs to and nothing else — rebuilding the page would re-sort it out from
+         * under a thumb that is halfway down the list.
+         */
+        fun withGame(updated: Game): FeedPage = copy(
+            sections = sections.map { section ->
+                section.copy(items = section.items.map { item ->
+                    if (item is Feed.Item.GameItem && item.game.id == updated.id) {
+                        Feed.Item.GameItem(updated)
+                    } else item
+                })
+            },
+        )
+    }
 
     data class FeedState(
         val loading: Boolean = false,
@@ -88,6 +103,12 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val idle: List<IdleTeam> get() = page.idle
         val title: String get() = page.title
         val subtitle: String? get() = page.subtitle
+
+        /** See [FeedPage.withGame]. */
+        fun withGame(updated: Game): FeedState = copy(
+            games = games.map { if (it.id == updated.id) updated else it },
+            page = page.withGame(updated),
+        )
     }
 
     /** The lookup screen: what was typed, and what it found. */
@@ -157,17 +178,7 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val onRelayGame: (Game) -> Unit = { updated ->
         val state = _feed.value
         if (state.games.any { it.id == updated.id }) {
-            _feed.value = state.copy(
-                games = state.games.map { if (it.id == updated.id) updated else it },
-                sections = state.sections.map { section ->
-                    section.copy(items = section.items.map { item ->
-                        if (item is Feed.Item.GameItem && item.game.id == updated.id) {
-                            Feed.Item.GameItem(updated)
-                        } else item
-                    })
-                },
-                updatedAt = System.currentTimeMillis(),
-            )
+            _feed.value = state.withGame(updated).copy(updatedAt = System.currentTimeMillis())
         }
         // A game whose plays are on screen gets its play-by-play refreshed with the score.
         if (updated.state == GameState.LIVE && _plays.value.containsKey(updated.id)) {
@@ -334,7 +345,7 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         }
         // Only if the feed hasn't moved on under us.
         if (_feed.value.idle.map { it.key } == idle.map { it.key }) {
-            _feed.value = _feed.value.copy(idle = noted)
+            _feed.value = _feed.value.let { it.copy(page = it.page.copy(idle = noted)) }
         }
     }
 
@@ -432,17 +443,7 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         if (updated.state == GameState.LIVE) loadPlays(league, updated.id)
         if (updated == game) return updated
         val state = _feed.value
-        _feed.value = state.copy(
-            games = state.games.map { if (it.id == updated.id) updated else it },
-            sections = state.sections.map { section ->
-                section.copy(items = section.items.map { item ->
-                    if (item is Feed.Item.GameItem && item.game.id == updated.id) {
-                        Feed.Item.GameItem(updated)
-                    } else item
-                })
-            },
-            updatedAt = now,
-        )
+        _feed.value = state.withGame(updated).copy(updatedAt = now)
         if (updated.state != game.state) refresh()
         return updated
     }
