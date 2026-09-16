@@ -32,10 +32,30 @@ object EspnParser {
     private const val CORE = "https://site.api.espn.com/apis/v2/sports"
 
     /**
-     * `limit` has to clear the busiest window in the calendar. A fortnight of MLB is
-     * north of 200 games league-wide, and at limit=200 the tail was being cut off
-     * silently — no error, just a short list, which is indistinguishable from a quiet
-     * fortnight until you count.
+     * `limit` has to clear the busiest window in the calendar and must not go over 500.
+     *
+     * Both ends of that bite. A month of MLB is around 400 games league-wide, and a limit
+     * under it cuts the tail off silently — no error, just a short list, which is
+     * indistinguishable from a quiet month until you count. That is why this was raised
+     * to 1000 in the first place.
+     *
+     * But **college football answers any limit above 500 with its default 25 events**.
+     * Measured 2026-09-16 against the Saturday of 19 September, which has 71 FBS games on
+     * it: limits from 36 to 500 all return 71, 501 and everything above it return 25, and
+     * dropping the parameter entirely also returns 71. FCS behaves the same way. No other
+     * league does this — the NFL, MLB, the NHL and the soccer leagues all answer 1000
+     * normally — so for a year the app asked for every college football game and was
+     * handed a third of them, and a followed team outside those 25 simply had no game
+     * that week. It reads as a team going missing, never as a truncation.
+     *
+     * 500 clears every league's busiest month and sits under the cliff. Raising it breaks
+     * college football silently, so anything that changes this number wants a live count
+     * against a full Saturday, not a compile.
+     */
+    private const val LIMIT = 500
+
+    /**
+     * See [LIMIT].
      */
     fun scoreboardUrl(
         league: League,
@@ -60,7 +80,7 @@ object EspnParser {
         group: String? = null,
         windowed: Boolean = true,
     ): String = buildString {
-        append("$SITE/$path/scoreboard?limit=1000")
+        append("$SITE/$path/scoreboard?limit=$LIMIT")
         if (windowed) append("&dates=$startYmd-$endYmd")
         group?.let { append("&groups=$it") }
     }
@@ -75,7 +95,7 @@ object EspnParser {
      */
     fun monthScoreboardUrl(path: String, yyyymm: String, group: String? = null): String =
         buildString {
-            append("$SITE/$path/scoreboard?limit=1000&dates=$yyyymm")
+            append("$SITE/$path/scoreboard?limit=$LIMIT&dates=$yyyymm")
             group?.let { append("&groups=$it") }
         }
 
@@ -103,13 +123,15 @@ object EspnParser {
      * Fold month scoreboards back into one body holding only the window that was asked
      * for, in the shape [parseScoreboard] reads.
      *
-     * The filter is what makes the month query safe to send to every league. College
-     * football answers a month with a single week of it — whichever week ESPN considers
-     * current — so there the months land wholly outside the window, nothing survives the
-     * filter, and the caller falls through to the windowless query instead of drawing
-     * three-week-old games as this week's slate. A day of slack either side covers a
-     * night game whose UTC stamp has already rolled over; the feed buckets to the exact
-     * window afterwards.
+     * The filter is what makes the month query safe to send to every league: a month is a
+     * far wider net than the window, and without it a page would draw three-week-old games
+     * as this week's slate. A day of slack either side covers a night game whose UTC stamp
+     * has already rolled over; the feed buckets to the exact window afterwards.
+     *
+     * v2.11 said here that college football answers a month with one week of it. It does
+     * not. That was [LIMIT] at 1000, which collapses the college football scoreboard to 25
+     * events whatever is asked for — at 500 the month comes back whole, 323 games across
+     * September. The measurement was right and the cause was wrong.
      *
      * Returns null when nothing falls inside, which is the signal to fall through.
      */

@@ -1,3 +1,17 @@
+## BrightSports v2.13 — a third of a college football Saturday was missing
+
+**The app was asking ESPN for every college football game and being handed 25 of them.** Not this week — for as long as the scoreboard has carried `limit=1000`.
+
+The college football scoreboard answers **any limit above 500 with its default 25 events**, whatever it was asked for. Measured against the Saturday of 19 September, which has 71 FBS games on it: every limit from 36 to 500 returns all 71, and 501 and up return 25. Dropping the parameter returns 71 as well. No other league behaves this way. The NFL, MLB, the NHL and the soccer leagues all answer 1000 normally, which is why nothing caught it.
+
+There is no error in any of this. The response is a valid, complete-looking scoreboard with a short list in it, so a followed team that fell outside those 25 simply had no game that week. That reads as a team going missing, never as a truncation — and on a Saturday it was most of the board.
+
+**The limit is 500 now**, which clears MLB's busiest month at around 400 games and sits under the cliff. A test holds it there, because the failure has no symptom a compiler or a green build can see.
+
+**The list of teams with no game is gone from the bottom of the feed.** It was there so a team between fixtures could be told apart from a team that failed to load, and it never worked: a failed fetch drew exactly the same list, which is how the ESPN outage on Monday came through as "the teams are all condensed together". The day now says it. An empty page reads `No games.` over its date, and the football bye row goes with the list — a team's own page still has it.
+
+**This also corrects what v2.11 said about college football.** That release claimed the league answers a month-long query with one week of it. It does not. The month query was being truncated by the same limit, and at 500 it comes back whole — 323 games across September. The fallback that was written for it stays, since a league that answers nothing should still show today, but nothing is known to need it.
+
 ## BrightSports v2.12 — a page is a day
 
 **The chevrons move a day now, not a week.** The top bar says which day you are on: TODAY, YESTERDAY, TOMORROW, then the date. One press left is the day before, one press right the day after, seven days back and fourteen forward. The feed was already grouped by day inside a week. Now the day is the page, and a Sunday of football is a screen of football rather than the bottom third of one.

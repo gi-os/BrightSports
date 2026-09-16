@@ -336,11 +336,31 @@ class ParserTest {
 
         val bare = EspnParser.scoreboardUrl(Leagues.MLB, "20260911", "20260926", windowed = false)
         assertTrue(!bare.contains("dates"))
-        assertTrue(bare.endsWith("/scoreboard?limit=1000"))
+        assertTrue(bare.endsWith("/scoreboard?limit=500"))
 
         val grouped = EspnParser.scoreboardUrl(Leagues.CFB, "20260911", "20260926", windowed = false)
         assertTrue(!grouped.contains("dates"))
         assertTrue(grouped.endsWith("&groups=80"))
+    }
+
+    @Test
+    fun `every scoreboard url sits under ESPN's college football cliff`() {
+        // Above limit=500 the college football scoreboard answers with its default 25
+        // events however many are asked for — measured 2026-09-16 against the Saturday of
+        // 19 September, which has 71 FBS games on it. Below about 400 a month of MLB gets
+        // its tail cut off instead. Every URL the app builds has to sit in between, and
+        // this test is the only thing standing between that and a silent third of a
+        // Saturday.
+        val urls = listOf(
+            EspnParser.scoreboardUrl(Leagues.CFB, "20260913", "20260919"),
+            EspnParser.scoreboardUrl(Leagues.MLB, "20260913", "20260919", windowed = false),
+            EspnParser.pathScoreboardUrl("soccer/usa.1", "20260913", "20260919"),
+            EspnParser.monthScoreboardUrl("football/college-football", "202609", "80"),
+        )
+        for (url in urls) {
+            val limit = url.substringAfter("limit=").substringBefore('&').toInt()
+            assertTrue("$limit is outside 400..500 in $url", limit in 400..500)
+        }
     }
 
     @Test
@@ -360,7 +380,7 @@ class ParserTest {
         val url = EspnParser.monthScoreboardUrl("football/college-football", "202609", "80")
         assertEquals(
             "https://site.api.espn.com/apis/site/v2/sports/football/college-football" +
-                "/scoreboard?limit=1000&dates=202609&groups=80",
+                "/scoreboard?limit=500&dates=202609&groups=80",
             url,
         )
         assertTrue(!EspnParser.monthScoreboardUrl("baseball/mlb", "202609").contains("groups="))
@@ -388,9 +408,9 @@ class ParserTest {
 
     @Test
     fun `a month that misses the window entirely merges to nothing`() {
-        // College football answers a month with whichever week ESPN thinks is current,
-        // so its months can miss the window completely. Returning null there is what
-        // sends the fetch on to the windowless query rather than drawing a stale week.
+        // A month is a far wider net than the window, so a league whose month lands
+        // entirely outside it must merge to nothing rather than draw a stale week.
+        // Returning null is what sends the fetch on to the windowless query.
         val stale = """{"events":[{"id":"9","date":"2026-09-05T16:00Z"}]}"""
         assertNull(EspnParser.mergeScoreboards(listOf(stale), "20260913", "20260919"))
         assertNull(EspnParser.mergeScoreboards(emptyList(), "20260913", "20260919"))

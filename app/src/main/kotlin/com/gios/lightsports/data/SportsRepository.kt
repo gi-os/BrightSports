@@ -116,17 +116,20 @@ class SportsRepository(context: Context) {
      * HTTP 400 `{"code":400,"message":"Failed to get events endpoint."}`. A single day, a
      * calendar month, a year and no window at all all still answer, so it is the range
      * form alone that broke. Since the feed and the live poll both ask per league per
-     * poll, that one 400 blanked every score in the app: nothing came back, so every
-     * followed team fell into the feed's idle list, which is what a run of teams with no
-     * scores under them is.
+     * poll, that one 400 blanked every score in the app: nothing came back, so the feed
+     * fell through to the list of followed teams with no game, which is what the run of
+     * team names with no scores under them was. That list is gone as of v2.13 — an empty
+     * day names itself instead.
      *
      * 1. The range, which is the right question and starts working again on its own.
      * 2. Failing that, the calendar months the window touches, folded back down to the
      *    window. This is what keeps the results behind today and the week paging, both of
      *    which a bare query loses: ESPN's own default window for the NFL this morning
      *    began on the Friday, with Sunday's twelve games already out of reach behind it.
-     * 3. Failing that, no window at all, which is ESPN's notion of now. College football
-     *    ends up here, because it answers a month with one week of it.
+     * 3. Failing that, no window at all, which is ESPN's notion of now. Nothing is known
+     *    to need this since the limit was fixed in v2.13 — college football was thought to,
+     *    and was really being truncated by `EspnParser.LIMIT` — but a league that answers
+     *    neither of the first two should show today rather than nothing.
      *
      * The background watcher polls through this same path, so step 1 is not paid over and
      * over once it is known to fail: a refusal parks the range query for six hours, which

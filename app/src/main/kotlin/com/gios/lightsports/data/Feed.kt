@@ -222,34 +222,6 @@ object Feed {
     }
 
     /**
-     * Followed teams with nothing in the window, so the feed can say so rather than
-     * leaving them out. A team between fixtures and a team that failed to load look
-     * identical otherwise, and the app gives no way to tell them apart.
-     *
-     * @param follows keys as stored, `leagueId:teamId`.
-     * @param label resolves a key to something worth printing, or null to skip it.
-     */
-    fun idleFollows(
-        follows: Set<String>,
-        games: List<Game>,
-        races: List<FieldEvent>,
-        label: (String) -> String?,
-    ): List<String> {
-        if (follows.isEmpty()) return emptyList()
-        val busy = mutableSetOf<String>()
-        for (game in games) {
-            busy += "${game.leagueId}:${game.home.teamId}"
-            busy += "${game.leagueId}:${game.away.teamId}"
-            // A doubles pair counts for both its players.
-            for (id in game.home.memberIds + game.away.memberIds) busy += "${game.leagueId}:$id"
-        }
-        // Racing is followed as a series, so any race at all counts as the series being
-        // accounted for.
-        for (race in races) busy += "${race.leagueId}:series"
-        return follows.filter { it !in busy }.mapNotNull(label).sorted()
-    }
-
-    /**
      * `LocalDate.ofInstant` is a Java 9 addition and is missing from the java.time
      * subset on older Android releases, so the date is derived the Java 8 way.
      */

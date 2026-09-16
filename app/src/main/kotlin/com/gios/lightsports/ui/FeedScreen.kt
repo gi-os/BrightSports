@@ -56,7 +56,6 @@ fun FeedScreen(
     onGame: (Game) -> Unit,
     onEditTeams: () -> Unit,
     onEvent: (FieldEvent) -> Unit = {},
-    onTeam: (String) -> Unit = {},
     onRefresh: () -> Unit = {},
 ) {
     val zone = ZoneId.systemDefault()
@@ -84,12 +83,11 @@ fun FeedScreen(
         return
     }
 
-    // A fetch that came back with nothing still leaves every followed team in `idle`, so
-    // the empty state has to be allowed through on `offline` too — otherwise a dead
-    // scoreboard renders as "NO GAME SCHEDULED" over a bare list of team names, which
-    // reads as a fixture list rather than a failure. ponytail: only fires when every
-    // league and race came back empty; a half-dead follow set still shows the list.
-    if (state.sections.isEmpty() && (state.idle.isEmpty() || state.offline)) {
+    // The page is one day and nothing is on it. Until v2.13 a list of followed teams with
+    // no game sat under the day, which was there to tell a team between fixtures apart
+    // from a team that failed to load — but a failed fetch drew the same list, so it said
+    // the opposite of what it meant on the one day it mattered. The day says it now.
+    if (state.sections.isEmpty()) {
         EmptyState(
             if (state.loading) "Loading…"
             else if (state.offline) "Couldn't reach the scores.\nPull down to try again."
@@ -145,42 +143,6 @@ fun FeedScreen(
                         FieldRow(item.race, zone) { onEvent(item.race) }
                         Rule()
                     }
-                }
-            }
-        }
-        if (state.idle.isNotEmpty()) {
-            item(key = "idle-h") { SectionHeader("NO GAME SCHEDULED") }
-            for (team in state.idle) {
-                item(key = "idle-${team.key}") {
-                    // "Kansas City Chiefs" / "BYE · next vs BAL · Sun Sep 20 4:25 PM". Tap
-                    // for the team's season.
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onTeam(team.key) }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        TeamLogo(logos[team.key], size = 24.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                team.label,
-                                style = MaterialTheme.typography.bodyLarge,
-                                color = Dim,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            if (team.note != null) {
-                                Text(
-                                    team.note.uppercase(),
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = Faint,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                    }
-                    Rule()
                 }
             }
         }

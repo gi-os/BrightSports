@@ -401,12 +401,6 @@ private fun App(openGameId: String?) {
                     onEvent = { openEventId = it.id },
                     onEditTeams = { teamsOpen = true },
                     onRefresh = { vm.refresh() },
-                    onTeam = { key ->
-                        val l = Leagues.byId(key.substringBefore(':'))
-                        val id = key.substringAfter(':')
-                        val ref = teams[l?.id]?.firstOrNull { it.teamId == id }
-                        if (l != null) showTeam(l, id, ref?.displayName ?: id, ref?.abbrev ?: "")
-                    },
                 )
                 tab == TAB_SEARCH -> SearchScreen(
                     state = search,

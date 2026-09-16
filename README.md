@@ -6,7 +6,7 @@
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
-`com.gios.lightsports`. Current released version: **v2.12**.
+`com.gios.lightsports`. Current released version: **v2.13**.
 
 ## Install via BrightMarket
 
@@ -463,6 +463,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.13 | **The feed drops the trailing "no game scheduled" list** (`Feed.idleFollows` and the `IdleTeam` plumbing deleted) — a failed fetch drew the same list, so it read as a fixture list at the one moment it mattered; an empty day names itself instead. Also: **ESPN's college football scoreboard answers any `limit` above 500 with its default 25 events**, so the app had been receiving 25 of a 71-game FBS Saturday with no error to show for it; `EspnParser.LIMIT` drops 1000 → 500, which still clears MLB's ~400-game month, and a test pins it to 400..500. Also corrects v2.11's note that college football answers a month with one week — that was this truncation, and the month comes back whole at 500 |
 | v2.12 | **The feed pages by day.** The chevrons step one calendar day rather than seven (`SportsViewModel.shiftDay`, `FIRST_DAY`/`LAST_DAY` at -7/+14) and `Feed.build` takes an `onlyDay`; LIVE rides with today, an empty day names itself, and the football week moves to the subtitle as `Feed.weekLabel`. The fetch window widened to 7/15 so a page turn re-buckets what is in hand instead of refetching |
 | v2.11 | **ESPN stopped answering `dates=start-end`** with a 400 on 15 September, which emptied every league fetch and dropped every followed team into the feed's idle list; `SportsRepository.espnScoreboard` now falls from the range to the calendar months the window touches (`EspnParser.monthsIn` / `mergeScoreboards`, filtered back to the window) and only then to no window at all, so results, fixtures and week paging all come back. A refused range is parked for six hours rather than retried every poll |
 | v2.10 | **Golf.** The PGA Tour as a followable league with the leaderboard behind the card, ties read as `T4`, and players followable individually; the race card opens on a session classification; constructor points have numbers in them; the scoring summary and the soccer timeline read oldest-first |

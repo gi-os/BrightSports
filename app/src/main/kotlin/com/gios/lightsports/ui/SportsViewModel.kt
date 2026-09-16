@@ -50,17 +50,12 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val repo = SportsRepository(app)
     val prefs = Prefs(app)
 
-    /** A followed team with nothing in the window: its name, and where it is instead. */
-    data class IdleTeam(val key: String, val label: String, val note: String? = null)
-
     /**
      * The one day the feed is showing. Built from [FeedState.games] without a fetch, so
      * the chevrons answer immediately.
      */
     data class FeedPage(
         val sections: List<Feed.Section> = emptyList(),
-        /** Followed teams with no fixture anywhere in the window. Today's page only. */
-        val idle: List<IdleTeam> = emptyList(),
         /** "TODAY", "YESTERDAY", "TOMORROW", or "SAT SEP 19". */
         val title: String = "SPORTS",
         /** "SAT SEP 19" whatever the title says, so the empty page still names its day. */
@@ -100,7 +95,6 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val page: FeedPage = FeedPage(),
     ) {
         val sections: List<Feed.Section> get() = page.sections
-        val idle: List<IdleTeam> get() = page.idle
         val title: String get() = page.title
         val subtitle: String? get() = page.subtitle
 
@@ -272,20 +266,13 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
             // The relay socket follows the feed too, so opening the app during a game
             // connects it even before the ticker's next poll does.
             runCatching { LiveRelay.sync(getApplication(), games.filter { it.involves(prefs.notifyKeys) }, now) }
-            // A followed football team with no game this week is on its bye, or between
-            // a Monday night and the next Sunday. Its schedule says which, and what's next.
-            noteIdle(_feed.value.idle, now, zone)
         }
     }
 
     /**
-     * One day of the window, worked out from games already in hand. Pure but for the team
-     * labels, so a page turn costs nothing.
+     * One day of the window, worked out from games already in hand. Pure, so a page turn
+     * costs nothing.
      *
-     * The idle list is about the whole window rather than this day, so it rides with today
-     * only. Under a single day's heading a run of teams with no game is the thing the feed
-     * shows when a fetch has failed, and it should not be what every quiet Tuesday looks
-     * like.
      */
     private fun page(
         games: List<Game>,
@@ -303,15 +290,10 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         )
         val shown = sections.flatMap { it.items }.mapNotNull { (it as? Feed.Item.GameItem)?.game }
         val allFinal = shown.isNotEmpty() && shown.all { it.state == GameState.FINAL }
-        val idle = if (dayOffset != 0) emptyList() else {
-            Feed.idleFollows(prefs.follows, games, races) { key -> key }
-                .mapNotNull { key -> teamLabel(key)?.let { IdleTeam(key, it) } }
-        }
         val title = Feed.dayTitle(day, nowMillis, zone)
         val date = Feed.dayLine(day)
         return FeedPage(
             sections = sections,
-            idle = idle,
             title = title,
             date = date,
             subtitle = listOfNotNull(
@@ -321,32 +303,6 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 Feed.recordLine(shown, prefs.follows).takeIf { dayOffset != 0 || allFinal },
             ).joinToString(" · ").takeIf { it.isNotEmpty() },
         )
-    }
-
-    /** Fill in "BYE · next vs BAL · Sun 9/20 4:25" for idle teams whose league has a schedule. */
-    private suspend fun noteIdle(idle: List<IdleTeam>, now: Long, zone: ZoneId) {
-        if (idle.isEmpty()) return
-        val noted = idle.map { team ->
-            val leagueId = team.key.substringBefore(':')
-            val teamId = team.key.substringAfter(':')
-            val league = Leagues.byId(leagueId) ?: return@map team
-            if (league.kind != SportKind.FOOTBALL) return@map team
-            val season = withContext(Dispatchers.IO) { repo.teamSeason(league, teamId) }
-                ?: return@map team
-            _seasons.value = _seasons.value + (team.key to season)
-            val next = season.next(now)
-            val onBye = season.byeWeek != null && next?.week?.let { it == season.byeWeek + 1 } == true
-            val nextText = next?.let { g ->
-                val home = g.home.teamId == teamId
-                val other = if (home) g.away else g.home
-                "next ${if (home) "vs" else "@"} ${other.abbrev} · ${Fmt.dayDate(g.startMillis, zone)} ${Fmt.time(g.startMillis, zone)}"
-            }
-            team.copy(note = listOfNotNull("BYE".takeIf { onBye }, nextText).joinToString(" · ").takeIf { it.isNotEmpty() })
-        }
-        // Only if the feed hasn't moved on under us.
-        if (_feed.value.idle.map { it.key } == idle.map { it.key }) {
-            _feed.value = _feed.value.let { it.copy(page = it.page.copy(idle = noted)) }
-        }
     }
 
     fun loadSeason(league: League, teamId: String) {
@@ -484,24 +440,6 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
             val story = withContext(Dispatchers.IO) { repo.recap(league, game.id) }
             _recap.value = _recap.value + (game.id to story)
         }
-    }
-
-    /**
-     * A follow key as a human name. Falls back to the league and the raw id when the
-     * team list hasn't loaded — better a rough label than a team that seems to vanish.
-     */
-    private fun teamLabel(key: String): String? {
-        val leagueId = key.substringBefore(':')
-        val teamId = key.substringAfter(':')
-        val league = Leagues.byId(leagueId)
-        // A category is not a team, so "no game scheduled" would be nonsense for it —
-        // there is no fixture list to be absent from.
-        if (teamId == SpecialEvents.SUFFIX_SPECIAL || teamId == SpecialEvents.SUFFIX_CHAMPIONSHIP) {
-            return null
-        }
-        if (teamId == "series") return league?.name ?: leagueId.uppercase()
-        val name = _teams.value[leagueId]?.firstOrNull { it.teamId == teamId }?.displayName
-        return name ?: "${league?.short ?: leagueId.uppercase()} $teamId"
     }
 
     /**
