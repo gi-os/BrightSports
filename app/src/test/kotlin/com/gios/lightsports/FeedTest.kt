@@ -9,6 +9,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.time.LocalDate
 import java.time.ZoneId
 
 class FeedTest {
@@ -34,6 +35,40 @@ class FeedTest {
 
     private fun buckets(games: List<Game>) =
         Feed.build(games, emptyList(), now, newYork).map { it.bucket }
+
+    @Test
+    fun `a page is one day, and live games ride with today`() {
+        // now is 11am on 29 July in New York.
+        val today = game("today", GameState.PRE, "2026-07-29T23:05:00Z")
+        val live = game("live", GameState.LIVE, "2026-07-29T13:00:00Z")
+        val tomorrow = game("tomorrow", GameState.PRE, "2026-07-30T23:05:00Z")
+        val yesterday = game("yesterday", GameState.FINAL, "2026-07-28T23:05:00Z")
+        val all = listOf(today, live, tomorrow, yesterday)
+        val julyTwentyNine = LocalDate.of(2026, 7, 29).toEpochDay()
+
+        fun idsOn(day: Long) = Feed.build(all, emptyList(), now, newYork, onlyDay = day)
+            .flatMap { it.items }
+            .map { (it as Feed.Item.GameItem).game.id }
+
+        assertEquals(listOf("live", "today"), idsOn(julyTwentyNine))
+        assertEquals(listOf("tomorrow"), idsOn(julyTwentyNine + 1))
+        assertEquals(listOf("yesterday"), idsOn(julyTwentyNine - 1))
+        // A day with nothing on it is an empty page, not a fallback to the whole window.
+        assertEquals(emptyList<String>(), idsOn(julyTwentyNine + 5))
+    }
+
+    @Test
+    fun `a page is named for its day`() {
+        val today = LocalDate.of(2026, 7, 29)
+        assertEquals("TODAY", Feed.dayTitle(today, now, newYork))
+        assertEquals("YESTERDAY", Feed.dayTitle(today.minusDays(1), now, newYork))
+        assertEquals("TOMORROW", Feed.dayTitle(today.plusDays(1), now, newYork))
+        // Past that the weekday alone would name two days inside the chevrons' reach.
+        assertEquals("SAT AUG 8", Feed.dayTitle(today.plusDays(10), now, newYork))
+        assertEquals("SAT AUG 8", Feed.dayLine(today.plusDays(10)))
+        // The line always names the day, even where the title has a word for it.
+        assertEquals("WED JUL 29", Feed.dayLine(today))
+    }
 
     @Test
     fun `live games lead regardless of when they started`() {

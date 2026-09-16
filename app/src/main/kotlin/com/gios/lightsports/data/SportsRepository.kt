@@ -506,8 +506,13 @@ class SportsRepository(context: Context) {
         /** How long a refused `dates=start-end` query is left alone. See `espnScoreboard`. */
         private const val RANGE_PARK_MILLIS = 6L * 60 * 60 * 1000
 
-        const val BACK_DAYS = 4L
-        const val AHEAD_DAYS = 11L
+        /**
+         * The fetched window, which is also the range the feed's chevrons page over:
+         * `SportsViewModel.FIRST_DAY` and `LAST_DAY` sit inside it, so a page turn needs
+         * no fetch. Widen the paging range and these go with it.
+         */
+        const val BACK_DAYS = 7L
+        const val AHEAD_DAYS = 15L
 
         /** Tighter than the games window on purpose: every extra tournament in range is
          *  another half-megabyte of leaderboard. */

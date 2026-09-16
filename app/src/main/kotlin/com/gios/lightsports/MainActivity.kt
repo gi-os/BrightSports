@@ -307,12 +307,12 @@ private fun App(openGameId: String?) {
                 left = BarItem.Icon(R.drawable.ic_back_white, { teamsOpen = false }, "Back"),
                 title = "MY TEAMS",
             )
-            // The scores tab pages by week: the chevrons move the window seven days, the
-            // title says which week is in view. Refresh is a tap on the UPDATED line.
+            // The scores tab is one day a page: the chevrons move a day, the title says
+            // which day is in view. Refresh is a tap on the UPDATED line.
             tab == TAB_SCORES && follows.isNotEmpty() -> LightTopBar(
-                left = BarItem.Icon(R.drawable.ic_back_white, { vm.shiftWeek(-1) }, "Previous week"),
+                left = BarItem.Icon(R.drawable.ic_back_white, { vm.shiftDay(-1) }, "Previous day"),
                 title = feed.title,
-                right = BarItem.Icon(R.drawable.ic_arrow_right_white, { vm.shiftWeek(1) }, "Next week"),
+                right = BarItem.Icon(R.drawable.ic_arrow_right_white, { vm.shiftDay(1) }, "Next day"),
             )
             else -> LightTopBar(
                 title = when (tab) {

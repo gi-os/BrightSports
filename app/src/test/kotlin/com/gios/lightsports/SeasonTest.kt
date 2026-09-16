@@ -66,17 +66,17 @@ class SeasonTest {
     }
 
     @Test
-    fun `the week title prefers the NFL week and falls back to dates`() {
+    fun `the week label prefers the NFL week and gives up on a mixed page`() {
         val nfl = game("1", GameState.PRE, "2026-09-13T17:00Z", 2, home = sea, away = ne)
         val cfb = game("2", GameState.PRE, "2026-09-12T19:30Z", 3, league = "cfb", home = sea, away = ne)
-        val from = Iso.millis("2026-09-10T12:00Z"); val to = Iso.millis("2026-09-15T12:00Z")
-        assertEquals("WEEK 2", Feed.weekTitle(listOf(nfl, cfb), from, to, zone))
-        // No week numbers: the date range.
+        // College football counts a week ahead of the NFL. The NFL's number wins.
+        assertEquals("WEEK 2", Feed.weekLabel(listOf(nfl, cfb)))
+        // No week numbers at all, so the page is named by its date alone.
         val mlb = game("3", GameState.PRE, "2026-09-12T23:05Z", null, league = "mlb", home = sea, away = ne)
-        assertEquals("SEP 10 – 15", Feed.weekTitle(listOf(mlb), from, to, zone))
-        // Mostly baseball with one football game: still dates.
-        assertEquals("SEP 10 – 15", Feed.weekTitle(listOf(mlb, mlb, mlb, nfl), from, to, zone))
-        assertEquals("SEP 28 – OCT 3", Feed.weekTitle(emptyList(), Iso.millis("2026-09-28T12:00Z"), Iso.millis("2026-10-03T12:00Z"), zone))
+        assertNull(Feed.weekLabel(listOf(mlb)))
+        // Mostly baseball with one football game in it: still no week.
+        assertNull(Feed.weekLabel(listOf(mlb, mlb, mlb, nfl)))
+        assertNull(Feed.weekLabel(emptyList()))
     }
 
     @Test

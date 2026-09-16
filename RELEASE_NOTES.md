@@ -1,3 +1,17 @@
+## BrightSports v2.12 — a page is a day
+
+**The chevrons move a day now, not a week.** The top bar says which day you are on: TODAY, YESTERDAY, TOMORROW, then the date. One press left is the day before, one press right the day after, seven days back and fourteen forward. The feed was already grouped by day inside a week. Now the day is the page, and a Sunday of football is a screen of football rather than the bottom third of one.
+
+**Live games stay on today.** They keep their own section at the top of today's page, as before. Page to tomorrow and they are not there, because tomorrow has not happened.
+
+**A day with nothing on it says so, and says which day.** `No games.` over `THU SEP 17`. It does not skip ahead to the next day that has something, so a press is always a day and you can count them.
+
+**Paging no longer waits for the network.** Every day the chevrons reach is already in the fetch, so turning a page re-reads what the phone has instead of asking ESPN again. The window went from four days back and eleven forward to seven and fifteen to cover it.
+
+**The football week moved to the line under the title.** A page of NFL games reads `WED SEP 16 · WEEK 2` there, since the title itself is now the date. `ALL FINAL` and your teams' record for the day sit in the same line.
+
+**The teams with nothing scheduled ride with today only.** That list is about the whole window rather than one day, and under a single day's heading a run of teams with no scores is what a broken fetch looks like. It reads `NO GAME SCHEDULED` now.
+
 ## BrightSports v2.11 — ESPN stopped answering the date window
 
 **The scores went blank on Monday, and the feed drew a column of team names with nothing under them.** That column is the idle list: the teams you follow with no game in view. It is what the feed shows when a fetch comes back with nothing, and from Monday every fetch came back with nothing.

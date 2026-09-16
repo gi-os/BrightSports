@@ -86,14 +86,16 @@ fun FeedScreen(
 
     // A fetch that came back with nothing still leaves every followed team in `idle`, so
     // the empty state has to be allowed through on `offline` too — otherwise a dead
-    // scoreboard renders as "NO GAME THIS WEEK" over a bare list of team names, which
+    // scoreboard renders as "NO GAME SCHEDULED" over a bare list of team names, which
     // reads as a fixture list rather than a failure. ponytail: only fires when every
     // league and race came back empty; a half-dead follow set still shows the list.
     if (state.sections.isEmpty() && (state.idle.isEmpty() || state.offline)) {
         EmptyState(
             if (state.loading) "Loading…"
             else if (state.offline) "Couldn't reach the scores.\nPull down to try again."
-            else "Nothing scheduled.\n\nYour teams are between games.",
+            // The page is one day, so an empty one is a quiet day rather than a quiet
+            // fortnight. It names the day: the chevrons reach thirteen others.
+            else "No games.\n\n${state.page.date}",
         )
         return
     }
@@ -146,7 +148,7 @@ fun FeedScreen(
             }
         }
         if (state.idle.isNotEmpty()) {
-            item(key = "idle-h") { SectionHeader("NO GAME THIS WEEK") }
+            item(key = "idle-h") { SectionHeader("NO GAME SCHEDULED") }
             for (team in state.idle) {
                 item(key = "idle-${team.key}") {
                     // "Kansas City Chiefs" / "BYE · next vs BAL · Sun Sep 20 4:25 PM". Tap

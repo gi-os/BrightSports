@@ -47,19 +47,28 @@ object Feed {
      * repository's fetch window, or a result gets downloaded and then silently dropped —
      * which looks exactly like a team going missing from the feed.
      */
-    private const val RECENT_DAYS = 4L
+    private const val RECENT_DAYS = 7L
 
     /** How far ahead the schedule runs before it stops being "upcoming". */
-    private const val UPCOMING_DAYS = 10L
+    private const val UPCOMING_DAYS = 14L
 
     fun build(
         games: List<Game>,
         races: List<FieldEvent>,
         nowMillis: Long,
         zone: ZoneId,
-        /** How far back and ahead of today a game is kept. Widened when the feed is paged to another week. */
+        /** How far back and ahead of today a game is kept. */
         backDays: Long = RECENT_DAYS,
         aheadDays: Long = UPCOMING_DAYS,
+        /**
+         * Keep one calendar day only, as an epoch day. This is what the feed pages on:
+         * one press of a chevron, one day.
+         *
+         * LIVE is the exception and rides with today, because a running score belongs to
+         * the day it is being played on. Ask for tomorrow and a game in progress is not on
+         * the page, which is the right answer — tomorrow has not happened.
+         */
+        onlyDay: Long? = null,
     ): List<Section> {
         val today = localDate(nowMillis, zone)
         // Keyed by bucket then day, so LIVE is one section and every other bucket is one
@@ -68,6 +77,14 @@ object Feed {
 
         fun add(bucket: Bucket, atMillis: Long, item: Item) {
             val day = if (bucket == Bucket.LIVE) 0L else localDate(atMillis, zone).toEpochDay()
+            if (onlyDay != null) {
+                val keep = if (bucket == Bucket.LIVE) {
+                    onlyDay == today.toEpochDay()
+                } else {
+                    day == onlyDay
+                }
+                if (!keep) return
+            }
             groups.getOrPut(bucket to day) { mutableListOf() } += item
         }
 
@@ -150,26 +167,40 @@ object Feed {
     }
 
     /**
-     * The header for a paged feed: the football week when the games in view carry one,
-     * else the date range. "WEEK 2" over a week of NFL; "SEP 10 – 15" over a week of
-     * baseball. The NFL's week wins when college football, a week ahead in its own count,
-     * is in the same view.
+     * "WEEK 2" for a page whose games carry a football week, else null.
+     *
+     * The page is named by its date now, so this rides in the line under it, where it is
+     * the one thing a date does not say. The NFL's week wins when college football, a week
+     * ahead in its own count, is on the same page, and a page that is mostly baseball with
+     * one football game in it gets no week at all.
      */
-    fun weekTitle(games: List<Game>, fromMillis: Long, toMillis: Long, zone: ZoneId): String {
+    fun weekLabel(games: List<Game>): String? {
         val weeks = games.filter { it.week != null }
-        if (weeks.isNotEmpty() && weeks.size * 2 >= games.size) {
-            val nfl = weeks.filter { it.leagueId == "nfl" }
-            val pick = (nfl.ifEmpty { weeks }).groupingBy { it.week!! }.eachCount()
-                .maxByOrNull { it.value }?.key
-            if (pick != null) return "WEEK $pick"
-        }
-        val from = localDate(fromMillis, zone)
-        val to = localDate(toMillis, zone)
-        val month = DateTimeFormatter.ofPattern("MMM d", Locale.US)
-        return if (from.month == to.month) {
-            "${from.format(month)} – ${to.dayOfMonth}".uppercase()
-        } else {
-            "${from.format(month)} – ${to.format(month)}".uppercase()
+        if (weeks.isEmpty() || weeks.size * 2 < games.size) return null
+        val nfl = weeks.filter { it.leagueId == "nfl" }
+        val pick = (nfl.ifEmpty { weeks }).groupingBy { it.week!! }.eachCount()
+            .maxByOrNull { it.value }?.key ?: return null
+        return "WEEK $pick"
+    }
+
+    /**
+     * The name of one page of the feed: "TODAY", "YESTERDAY", "TOMORROW", and the weekday
+     * with its date past that — "SAT SEP 19".
+     *
+     * The weekday alone is what the section headers use, and it is not enough here: the
+     * chevrons reach a fortnight forward, so two Saturdays are in range and a bare
+     * SATURDAY would name them both.
+     */
+    /** "SAT SEP 19" for any day, including the three [dayTitle] gives a name to. */
+    fun dayLine(day: LocalDate): String = day.format(dayDate).uppercase()
+
+    fun dayTitle(day: LocalDate, nowMillis: Long, zone: ZoneId): String {
+        val today = localDate(nowMillis, zone)
+        return when (day.toEpochDay() - today.toEpochDay()) {
+            0L -> "TODAY"
+            -1L -> "YESTERDAY"
+            1L -> "TOMORROW"
+            else -> day.format(dayDate).uppercase()
         }
     }
 

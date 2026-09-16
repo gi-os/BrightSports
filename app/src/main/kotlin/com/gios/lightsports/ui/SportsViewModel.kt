@@ -30,12 +30,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.time.Instant
 import java.time.ZoneId
 
 class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val SEARCH_DEBOUNCE_MS = 450L
+
+        /**
+         * How far the chevrons reach, in days. Both sit inside the fetched window
+         * (`SportsRepository.BACK_DAYS` / `AHEAD_DAYS`), which is what lets a page turn
+         * skip the network — widen one of these and the matching constant has to go with it.
+         */
+        const val FIRST_DAY = -7
+        const val LAST_DAY = 14
     }
 
     private val repo = SportsRepository(app)
@@ -44,9 +53,25 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     /** A followed team with nothing in the window: its name, and where it is instead. */
     data class IdleTeam(val key: String, val label: String, val note: String? = null)
 
+    /**
+     * The one day the feed is showing. Built from [FeedState.games] without a fetch, so
+     * the chevrons answer immediately.
+     */
+    data class FeedPage(
+        val sections: List<Feed.Section> = emptyList(),
+        /** Followed teams with no fixture anywhere in the window. Today's page only. */
+        val idle: List<IdleTeam> = emptyList(),
+        /** "TODAY", "YESTERDAY", "TOMORROW", or "SAT SEP 19". */
+        val title: String = "SPORTS",
+        /** "SAT SEP 19" whatever the title says, so the empty page still names its day. */
+        val date: String = "",
+        /** The date, plus "ALL FINAL" and "3–1 FOR YOUR TEAMS" on a day gone by. */
+        val subtitle: String? = null,
+    )
+
     data class FeedState(
         val loading: Boolean = false,
-        val sections: List<Feed.Section> = emptyList(),
+        /** Every game in the fetched window, which is more than the page shows. */
         val games: List<Game> = emptyList(),
         /**
          * Race weekends and golf tournaments, kept beside the sections so the screen
@@ -55,15 +80,15 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         val events: List<FieldEvent> = emptyList(),
         val updatedAt: Long = 0L,
         val offline: Boolean = false,
-        /** Followed teams with no fixture in the window, for the feed's last rows. */
-        val idle: List<IdleTeam> = emptyList(),
-        /** Weeks away from this one: 0 is now, -1 last week, 1 next week. */
-        val weekOffset: Int = 0,
-        /** "WEEK 2", or "SEP 10 – 15" when the games in view carry no week number. */
-        val title: String = "SPORTS",
-        /** "SEP 10 – 15", plus "ALL FINAL" and "3–1 FOR YOUR TEAMS" on a week gone by. */
-        val subtitle: String? = null,
-    )
+        /** Days away from today: 0 is today, -1 yesterday, 1 tomorrow. */
+        val dayOffset: Int = 0,
+        val page: FeedPage = FeedPage(),
+    ) {
+        val sections: List<Feed.Section> get() = page.sections
+        val idle: List<IdleTeam> get() = page.idle
+        val title: String get() = page.title
+        val subtitle: String? get() = page.subtitle
+    }
 
     /** The lookup screen: what was typed, and what it found. */
     data class SearchState(
@@ -188,64 +213,103 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
     private val _recap = MutableStateFlow<Map<String, List<String>>>(emptyMap())
     val recap: StateFlow<Map<String, List<String>>> = _recap.asStateFlow()
 
-    fun refresh() = refresh(_feed.value.weekOffset)
+    fun refresh() = refresh(_feed.value.dayOffset)
 
-    /** Page the feed a week either way. Zero is this week. */
-    fun shiftWeek(delta: Int) {
-        val next = (_feed.value.weekOffset + delta).coerceIn(-4, 4)
-        if (next != _feed.value.weekOffset) refresh(next)
+    /**
+     * Page the feed a day either way. Zero is today.
+     *
+     * One fetch already holds every day the chevrons can reach — [SportsRepository.BACK_DAYS]
+     * and [SportsRepository.AHEAD_DAYS] are what [FIRST_DAY] and [LAST_DAY] are set from — so
+     * a page turn re-buckets what is in hand rather than going back to the network. That is
+     * what makes the chevrons answer at once instead of after a spinner. An empty state is
+     * the one case with nothing to re-bucket, and it fetches.
+     */
+    fun shiftDay(delta: Int) {
+        val next = (_feed.value.dayOffset + delta).coerceIn(FIRST_DAY, LAST_DAY)
+        val current = _feed.value
+        if (next == current.dayOffset) return
+        if (current.games.isEmpty() && current.events.isEmpty()) {
+            refresh(next)
+            return
+        }
+        _feed.value = current.copy(
+            dayOffset = next,
+            page = page(current.games, current.events, System.currentTimeMillis(), ZoneId.systemDefault(), next),
+        )
     }
 
-    private fun refresh(weekOffset: Int) {
+    private fun refresh(dayOffset: Int) {
         if (_feed.value.loading) return
-        _feed.value = _feed.value.copy(loading = true, weekOffset = weekOffset)
+        _feed.value = _feed.value.copy(loading = true, dayOffset = dayOffset)
         viewModelScope.launch {
             val now = System.currentTimeMillis()
             val zone = ZoneId.systemDefault()
-            val shift = weekOffset * 7L
-            val (games, races) = withContext(Dispatchers.IO) { repo.followedGames(now, zone, shift) }
-            // A paged week widens the bucket window in that direction so the whole slate
-            // is kept; the other direction stays at its usual reach.
-            val back = SportsRepository.BACK_DAYS + 7L * maxOf(0, -weekOffset)
-            val ahead = (SportsRepository.AHEAD_DAYS - 1) + 7L * maxOf(0, weekOffset)
-            val sections = Feed.build(games, races, now, zone, backDays = back, aheadDays = ahead)
-            val idleKeys = Feed.idleFollows(prefs.follows, games, races) { key -> key }
-            val idle = idleKeys.mapNotNull { key -> teamLabel(key)?.let { IdleTeam(key, it) } }
-            val dayMillis = 24L * 60 * 60 * 1000
-            val fromMillis = now - SportsRepository.BACK_DAYS * dayMillis + shift * dayMillis
-            val toMillis = now + (SportsRepository.AHEAD_DAYS - 1) * dayMillis + shift * dayMillis
-            val range = Feed.weekTitle(emptyList(), fromMillis, toMillis, zone)
-            val title = if (games.isEmpty()) range else Feed.weekTitle(games, fromMillis, toMillis, zone)
-            val allFinal = games.isNotEmpty() && games.all { it.state == GameState.FINAL }
-            val subtitle = listOfNotNull(
-                range.takeIf { it != title },
-                "ALL FINAL".takeIf { allFinal },
-                Feed.recordLine(games, prefs.follows).takeIf { weekOffset != 0 || allFinal },
-            ).joinToString(" · ").takeIf { it.isNotEmpty() }
+            // No shift: the window is fetched around today and every page comes out of it.
+            val (games, races) = withContext(Dispatchers.IO) { repo.followedGames(now, zone) }
             _feed.value = FeedState(
                 loading = false,
-                sections = sections,
                 games = games,
                 events = races,
-                idle = idle,
                 updatedAt = now,
                 // Followed teams but nothing came back: almost always the network,
                 // and worth saying so rather than showing a bare "no games".
                 offline = prefs.follows.isNotEmpty() && games.isEmpty() && races.isEmpty(),
-                weekOffset = weekOffset,
-                title = title,
-                subtitle = subtitle,
+                dayOffset = dayOffset,
+                page = page(games, races, now, zone, dayOffset),
             )
-            if (weekOffset == 0) {
-                syncTicker(games)
-                // The relay socket follows the feed too, so opening the app during a game
-                // connects it even before the ticker's next poll does.
-                runCatching { LiveRelay.sync(getApplication(), games.filter { it.involves(prefs.notifyKeys) }, now) }
-            }
+            syncTicker(games)
+            // The relay socket follows the feed too, so opening the app during a game
+            // connects it even before the ticker's next poll does.
+            runCatching { LiveRelay.sync(getApplication(), games.filter { it.involves(prefs.notifyKeys) }, now) }
             // A followed football team with no game this week is on its bye, or between
             // a Monday night and the next Sunday. Its schedule says which, and what's next.
-            noteIdle(idle, now, zone)
+            noteIdle(_feed.value.idle, now, zone)
         }
+    }
+
+    /**
+     * One day of the window, worked out from games already in hand. Pure but for the team
+     * labels, so a page turn costs nothing.
+     *
+     * The idle list is about the whole window rather than this day, so it rides with today
+     * only. Under a single day's heading a run of teams with no game is the thing the feed
+     * shows when a fetch has failed, and it should not be what every quiet Tuesday looks
+     * like.
+     */
+    private fun page(
+        games: List<Game>,
+        races: List<FieldEvent>,
+        nowMillis: Long,
+        zone: ZoneId,
+        dayOffset: Int,
+    ): FeedPage {
+        val day = Instant.ofEpochMilli(nowMillis).atZone(zone).toLocalDate().plusDays(dayOffset.toLong())
+        val sections = Feed.build(
+            games, races, nowMillis, zone,
+            backDays = -FIRST_DAY.toLong(),
+            aheadDays = LAST_DAY.toLong(),
+            onlyDay = day.toEpochDay(),
+        )
+        val shown = sections.flatMap { it.items }.mapNotNull { (it as? Feed.Item.GameItem)?.game }
+        val allFinal = shown.isNotEmpty() && shown.all { it.state == GameState.FINAL }
+        val idle = if (dayOffset != 0) emptyList() else {
+            Feed.idleFollows(prefs.follows, games, races) { key -> key }
+                .mapNotNull { key -> teamLabel(key)?.let { IdleTeam(key, it) } }
+        }
+        val title = Feed.dayTitle(day, nowMillis, zone)
+        val date = Feed.dayLine(day)
+        return FeedPage(
+            sections = sections,
+            idle = idle,
+            title = title,
+            date = date,
+            subtitle = listOfNotNull(
+                date.takeIf { it != title },
+                Feed.weekLabel(shown),
+                "ALL FINAL".takeIf { allFinal },
+                Feed.recordLine(shown, prefs.follows).takeIf { dayOffset != 0 || allFinal },
+            ).joinToString(" · ").takeIf { it.isNotEmpty() },
+        )
     }
 
     /** Fill in "BYE · next vs BAL · Sun 9/20 4:25" for idle teams whose league has a schedule. */
