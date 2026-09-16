@@ -6,7 +6,7 @@
 
 A scores app for the **Light Phone III**. Follow your teams, see one column of scores,
 get notified when something happens. Launcher label: **Sports**, package
-`com.gios.lightsports`. Current released version: **v1.19**.
+`com.gios.lightsports`. Current released version: **v2.11**.
 
 ## Install via BrightMarket
 
@@ -463,6 +463,9 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.11 | **ESPN stopped answering `dates=start-end`** with a 400 on 15 September, which emptied every league fetch and dropped every followed team into the feed's idle list; `SportsRepository.espnScoreboard` now falls from the range to the calendar months the window touches (`EspnParser.monthsIn` / `mergeScoreboards`, filtered back to the window) and only then to no window at all, so results, fixtures and week paging all come back. A refused range is parked for six hours rather than retried every poll |
+| v2.10 | **Golf.** The PGA Tour as a followable league with the leaderboard behind the card, ties read as `T4`, and players followable individually; the race card opens on a session classification; constructor points have numbers in them; the scoring summary and the soccer timeline read oldest-first |
+| v2.9 | **The recap and baseball's runs.** The game screen prints the wire recap in full with the full story one tap further; baseball's scoring summary is rebuilt from the flagged plays in `plays`, since its summary carries no `scoringPlays` list, and each run reads as its half-inning |
 | v2.8 | **A quiet socket no longer slows the poll.** The ticker dropped to a five-minute safety pace whenever the relay socket was merely *open*, so a silent stream froze the card for five minutes; pacing now keys on `LiveRelay.delivering` (a heartbeat or message inside 150 s), the safety net is three minutes, and the health line separates **down** from **connected but quiet** — and prints an age rather than a raw timestamp |
 | v2.7 | **The app shows its work.** The game screen's update line flashes white on every update (`flashOnUpdate`) and names the cadence it is actually running at; a white band sweeps the rule under the top bar while a refresh is in flight (`ProgressRule`); and the 90-second alert hold on a card now steps aside for a score it has not seen, so a two-point conversion reaches the lock screen at once |
 | v2.6 | The spoiler hold now **holds** the live card's score by the same minutes it holds an alert, instead of suppressing it for the whole game (`notify/ScoreHold.kt`); the first score seen for a game shows at once, a flurry is walked through in order, and the situation line waits for the score it belongs to |

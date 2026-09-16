@@ -10,6 +10,7 @@ import com.gios.lightsports.model.Side
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.notify.AlertText
 import com.gios.lightsports.model.SportKind
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -340,6 +341,61 @@ class ParserTest {
         val grouped = EspnParser.scoreboardUrl(Leagues.CFB, "20260911", "20260926", windowed = false)
         assertTrue(!grouped.contains("dates"))
         assertTrue(grouped.endsWith("&groups=80"))
+    }
+
+    @Test
+    fun `a month window covers the days the feed asks for`() {
+        // The fallback ESPN left standing. A month either side of the window is what
+        // keeps last weekend's results reachable; the bare query does not.
+        assertEquals(listOf("202609"), EspnParser.monthsIn("20260913", "20260919"))
+        assertEquals(listOf("202609", "202610"), EspnParser.monthsIn("20260928", "20261009"))
+        assertEquals(listOf("202612", "202701"), EspnParser.monthsIn("20261228", "20270104"))
+        // Three months is the cap, and a window that runs backwards must still terminate.
+        assertEquals(listOf("202601"), EspnParser.monthsIn("20260115", "20260101"))
+        assertEquals(emptyList<String>(), EspnParser.monthsIn("not-a-date", "20260919"))
+    }
+
+    @Test
+    fun `the month url keeps the groups filter and the limit`() {
+        val url = EspnParser.monthScoreboardUrl("football/college-football", "202609", "80")
+        assertEquals(
+            "https://site.api.espn.com/apis/site/v2/sports/football/college-football" +
+                "/scoreboard?limit=1000&dates=202609&groups=80",
+            url,
+        )
+        assertTrue(!EspnParser.monthScoreboardUrl("baseball/mlb", "202609").contains("groups="))
+    }
+
+    @Test
+    fun `merging months keeps the window and drops everything outside it`() {
+        val september = """{"events":[
+          {"id":"1","date":"2026-09-05T17:00Z"},
+          {"id":"2","date":"2026-09-14T00:20Z"},
+          {"id":"3","date":"2026-09-30T23:00Z"}]}"""
+        val october = """{"events":[
+          {"id":"3","date":"2026-09-30T23:00Z"},
+          {"id":"4","date":"2026-10-01T18:00Z"},
+          {"id":"5","date":"2026-10-20T18:00Z"}]}"""
+
+        val merged = EspnParser.mergeScoreboards(listOf(september, october), "20260913", "20261002")
+        val ids = JSONObject(merged!!).getJSONArray("events").let { events ->
+            (0 until events.length()).map { events.getJSONObject(it).getString("id") }
+        }
+        // 1 is a week behind the window and 5 a fortnight past it. 3 appears in both
+        // months and must be carried once.
+        assertEquals(listOf("2", "3", "4"), ids)
+    }
+
+    @Test
+    fun `a month that misses the window entirely merges to nothing`() {
+        // College football answers a month with whichever week ESPN thinks is current,
+        // so its months can miss the window completely. Returning null there is what
+        // sends the fetch on to the windowless query rather than drawing a stale week.
+        val stale = """{"events":[{"id":"9","date":"2026-09-05T16:00Z"}]}"""
+        assertNull(EspnParser.mergeScoreboards(listOf(stale), "20260913", "20260919"))
+        assertNull(EspnParser.mergeScoreboards(emptyList(), "20260913", "20260919"))
+        // A body that is not JSON at all is skipped rather than thrown.
+        assertNull(EspnParser.mergeScoreboards(listOf("<html>502</html>"), "20260913", "20260919"))
     }
 
     @Test

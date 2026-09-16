@@ -110,26 +110,51 @@ class SportsRepository(context: Context) {
     // ---------------------------------------------------------------- games
 
     /**
-     * ESPN's scoreboard for a date window, with a fallback for the range query.
+     * ESPN's scoreboard for a date window, asked three ways.
      *
      * As of 2026-09-15 ESPN answers *every* `dates=start-end` scoreboard request with
-     * HTTP 400 `{"code":400,"message":"Failed to get events endpoint."}` — the same
-     * endpoint serves a single day, a year, or no window at all. Since the feed and the
-     * live poll both ask per league per poll, that one 400 blanked every score in the
-     * app: nothing came back, so every followed team fell into the feed's idle list.
+     * HTTP 400 `{"code":400,"message":"Failed to get events endpoint."}`. A single day, a
+     * calendar month, a year and no window at all all still answer, so it is the range
+     * form alone that broke. Since the feed and the live poll both ask per league per
+     * poll, that one 400 blanked every score in the app: nothing came back, so every
+     * followed team fell into the feed's idle list, which is what a run of teams with no
+     * scores under them is.
      *
-     * So a window that answers with nothing is asked again with no window. ESPN's default
-     * is its own notion of "now" (today plus the last few days), which is enough to keep
-     * today's slate, the scores, and the ticker alive.
+     * 1. The range, which is the right question and starts working again on its own.
+     * 2. Failing that, the calendar months the window touches, folded back down to the
+     *    window. This is what keeps the results behind today and the week paging, both of
+     *    which a bare query loses: ESPN's own default window for the NFL this morning
+     *    began on the Friday, with Sunday's twelve games already out of reach behind it.
+     * 3. Failing that, no window at all, which is ESPN's notion of now. College football
+     *    ends up here, because it answers a month with one week of it.
      *
-     * ponytail: the fallback drops the days either side of today and the week paging.
-     * Remove it once ESPN's range query answers again.
+     * The background watcher polls through this same path, so step 1 is not paid over and
+     * over once it is known to fail: a refusal parks the range query for six hours, which
+     * is short enough that the app picks ESPN's repair up the same day and long enough
+     * that a followed league costs one request rather than three while it is broken.
      */
     private fun espnScoreboard(path: String, group: String?, fromYmd: String, toYmd: String): String? {
-        val windowed = Http.get(EspnParser.pathScoreboardUrl(path, fromYmd, toYmd, group))
-        if (windowed != null && windowed.contains("\"events\"")) return windowed
+        if (System.currentTimeMillis() >= rangeQueryParkedUntil) {
+            val ranged = Http.get(EspnParser.pathScoreboardUrl(path, fromYmd, toYmd, group))
+            if (ranged != null && ranged.contains("\"events\"")) {
+                rangeQueryParkedUntil = 0L
+                return ranged
+            }
+            rangeQueryParkedUntil = System.currentTimeMillis() + RANGE_PARK_MILLIS
+        }
+        val months = EspnParser.monthsIn(fromYmd, toYmd)
+            .mapNotNull { Http.get(EspnParser.monthScoreboardUrl(path, it, group)) }
+        EspnParser.mergeScoreboards(months, fromYmd, toYmd)?.let { return it }
         return Http.get(EspnParser.pathScoreboardUrl(path, fromYmd, toYmd, group, windowed = false))
     }
+
+    /**
+     * When the range query may be tried again. Process-lifetime only on purpose — a cold
+     * start should always ask ESPN once, so nothing has to be cleared by hand when the
+     * endpoint comes back.
+     */
+    @Volatile
+    private var rangeQueryParkedUntil = 0L
 
     /**
      * Games for one league across a date window. Not cached — a scoreboard is stale
@@ -478,6 +503,9 @@ class SportsRepository(context: Context) {
         private const val LEADERBOARD_CACHE_MILLIS = 5L * 60 * 1000
 
         /** Enough history for "RECENT", enough future for a week of schedule. */
+        /** How long a refused `dates=start-end` query is left alone. See `espnScoreboard`. */
+        private const val RANGE_PARK_MILLIS = 6L * 60 * 60 * 1000
+
         const val BACK_DAYS = 4L
         const val AHEAD_DAYS = 11L
 

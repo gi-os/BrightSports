@@ -17,6 +17,9 @@ import com.gios.lightsports.model.StandingsRow
 import com.gios.lightsports.model.TeamRef
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 
 /**
  * ESPN's site API. Undocumented but stable for a decade, keyless, and identical in
@@ -61,6 +64,78 @@ object EspnParser {
         if (windowed) append("&dates=$startYmd-$endYmd")
         group?.let { append("&groups=$it") }
     }
+
+    /**
+     * The same scoreboard asked for a whole calendar month, `dates=YYYYMM`.
+     *
+     * ESPN rejects `dates=start-end` but still answers a month, a single day and a year,
+     * so a month is the widest window left that keeps both directions of the feed: the
+     * results behind today and the fixtures in front of it. Two of these cover any window
+     * this app asks for. See [monthsIn] and [mergeScoreboards].
+     */
+    fun monthScoreboardUrl(path: String, yyyymm: String, group: String? = null): String =
+        buildString {
+            append("$SITE/$path/scoreboard?limit=1000&dates=$yyyymm")
+            group?.let { append("&groups=$it") }
+        }
+
+    /**
+     * Every calendar month a window touches, as `YYYYMM`, oldest first.
+     *
+     * Capped at three. The widest window the feed asks for is a fortnight either side of
+     * a paged week, which cannot straddle more than three months, and an uncapped loop on
+     * an end date that parses but precedes the start would never finish.
+     */
+    fun monthsIn(startYmd: String, endYmd: String): List<String> {
+        val start = runCatching { LocalDate.parse(startYmd, YMD) }.getOrNull() ?: return emptyList()
+        val end = runCatching { LocalDate.parse(endYmd, YMD) }.getOrNull() ?: return emptyList()
+        var month = YearMonth.from(start)
+        val last = YearMonth.from(maxOf(start, end))
+        val out = mutableListOf<String>()
+        while (!month.isAfter(last) && out.size < 3) {
+            out += month.format(YM)
+            month = month.plusMonths(1)
+        }
+        return out
+    }
+
+    /**
+     * Fold month scoreboards back into one body holding only the window that was asked
+     * for, in the shape [parseScoreboard] reads.
+     *
+     * The filter is what makes the month query safe to send to every league. College
+     * football answers a month with a single week of it — whichever week ESPN considers
+     * current — so there the months land wholly outside the window, nothing survives the
+     * filter, and the caller falls through to the windowless query instead of drawing
+     * three-week-old games as this week's slate. A day of slack either side covers a
+     * night game whose UTC stamp has already rolled over; the feed buckets to the exact
+     * window afterwards.
+     *
+     * Returns null when nothing falls inside, which is the signal to fall through.
+     */
+    fun mergeScoreboards(bodies: List<String>, startYmd: String, endYmd: String): String? {
+        val start = runCatching { LocalDate.parse(startYmd, YMD) }.getOrNull() ?: return null
+        val end = runCatching { LocalDate.parse(endYmd, YMD) }.getOrNull() ?: return null
+        val low = start.minusDays(1).format(YMD)
+        val high = end.plusDays(1).format(YMD)
+        val seen = mutableSetOf<String>()
+        val kept = JSONArray()
+        for (body in bodies) {
+            val events = runCatching { JSONObject(body).optJSONArray("events") }.getOrNull() ?: continue
+            for (event in events.objects()) {
+                val day = event.optString("date").take(10).replace("-", "")
+                if (day.length != 8 || day < low || day > high) continue
+                val id = event.optString("id")
+                if (id.isNotEmpty() && !seen.add(id)) continue
+                kept.put(event)
+            }
+        }
+        if (kept.length() == 0) return null
+        return JSONObject().put("events", kept).toString()
+    }
+
+    private val YMD: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMMdd")
+    private val YM: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyyMM")
 
     fun teamsUrl(league: League): String = "$SITE/${league.espnPath}/teams?limit=400"
 

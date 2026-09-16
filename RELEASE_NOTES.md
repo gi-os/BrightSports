@@ -1,3 +1,19 @@
+## BrightSports v2.11 — ESPN stopped answering the date window
+
+**The scores went blank on Monday, and the feed drew a column of team names with nothing under them.** That column is the idle list: the teams you follow with no game in view. It is what the feed shows when a fetch comes back with nothing, and from Monday every fetch came back with nothing.
+
+One query broke. Every scoreboard request this app sends carries a start and an end, `dates=20260913-20260919`, and since 15 September that form answers `400 Failed to get events endpoint` for every sport ESPN serves. A single day still answers. A calendar month still answers. A year still answers. No window at all still answers. The range on its own stopped, and the range is the only form the app used. So every league came back empty on every poll, every followed team fell through to the idle list, and the live ticker had nothing to tick.
+
+**The app now asks for the months the window touches and keeps the part it asked for.** A month is the widest window ESPN still honours, and two of them cover any week the feed can page to. The games outside the window are dropped on the way in, so the feed reads exactly as it did before: last weekend's results behind today, next weekend's fixtures in front of it, and the week chevrons moving a week at a time again.
+
+**The first patch, at four this morning, dropped the window instead, and that was not enough.** Without a window ESPN answers with its own idea of now, which for the NFL this morning began on the Friday. Sunday's twelve games were already behind it. The scores came back but the results did not, and paging a week did nothing at all, because every page asked the same unwindowed question.
+
+**The range query is still tried first**, since it is the right question and will start working again on its own. A refusal parks it for six hours rather than paying for it on every poll, and a cold start always asks once. Nothing needs clearing when ESPN repairs it.
+
+**College football takes the third path.** It answers a month with one week of it, whichever week ESPN considers current, so its months land outside the window entirely and nothing survives the filter. That is the signal to fall through to the unwindowed query, which for that league is right: an FBS Saturday is one day, and ESPN's default reaches it.
+
+Fixes the report from Discord on 15 September — no current scores, and the teams condensed together instead of showing their next game.
+
 ## BrightSports v2.10 — the PGA Tour, and a screen behind the race card
 
 **Golf is in.** Follow the PGA Tour in My Teams. Every tournament then lands in the feed, Thursday through Sunday, with the top three and their scores on the card. Open it for the whole leaderboard. Position, player, total to par, the rounds played, and how far through today each group is. Ties read the way a leaderboard reads them, T4 rather than fourth, fifth and sixth. A player who missed the cut says so.
