@@ -137,6 +137,62 @@ class TickerPlanTest {
         assertFalse(TickerPlan.expired(0L, now))
     }
 
+    // ------------------------------------------------------------ the open screen
+
+    @Test
+    fun `the open screen steps up for a finish and not before`() {
+        // Sixth inning, and nobody is going to miss anything at fifteen seconds.
+        assertEquals(
+            TickerPlan.SCREEN_INTERVAL,
+            TickerPlan.screenIntervalMillis(
+                game(GameState.LIVE, -90, period = 6, home = 1, away = 0),
+                SportKind.BASEBALL,
+            ),
+        )
+        // Ninth, one run in it.
+        assertEquals(
+            TickerPlan.SCREEN_FAST_INTERVAL,
+            TickerPlan.screenIntervalMillis(
+                game(GameState.LIVE, -150, period = 9, home = 3, away = 2),
+                SportKind.BASEBALL,
+            ),
+        )
+        // Ninth, and over. A blowout is not a finish whatever inning it is in.
+        assertEquals(
+            TickerPlan.SCREEN_INTERVAL,
+            TickerPlan.screenIntervalMillis(
+                game(GameState.LIVE, -150, period = 9, home = 11, away = 1),
+                SportKind.BASEBALL,
+            ),
+        )
+    }
+
+    @Test
+    fun `a game nobody is playing yet is never a crunch game`() {
+        assertEquals(
+            TickerPlan.SCREEN_INTERVAL,
+            TickerPlan.screenIntervalMillis(game(GameState.PRE, 5), SportKind.BASEBALL),
+        )
+        assertEquals(
+            TickerPlan.SCREEN_INTERVAL,
+            TickerPlan.screenIntervalMillis(
+                game(GameState.FINAL, -300, period = 9, home = 4, away = 3),
+                SportKind.BASEBALL,
+            ),
+        )
+    }
+
+    @Test
+    fun `the screen never polls faster than the provider rebuilds`() {
+        // Ten seconds is the floor on purpose: under it the same bytes come back twice and
+        // the radio pays for both. If this ever wants lowering, measure the scoreboard first.
+        assertTrue(TickerPlan.SCREEN_FAST_INTERVAL >= 10_000L)
+        assertTrue(TickerPlan.SCREEN_FAST_INTERVAL < TickerPlan.SCREEN_INTERVAL)
+        // The feed does not get to be hungrier than the screen the user chose to open.
+        assertTrue(TickerPlan.FEED_INTERVAL >= TickerPlan.SCREEN_INTERVAL)
+        assertTrue(TickerPlan.FEED_IDLE_INTERVAL > TickerPlan.FEED_INTERVAL)
+    }
+
     // ---------------------------------------------------------------- the card
 
     @Test

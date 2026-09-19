@@ -203,6 +203,13 @@ private fun App(openGameId: String?) {
         if (standings[league.id] == null) vm.loadStandings(league)
     }
 
+    /**
+     * Whether the list of scores is what the user is actually looking at, rather than a
+     * screen stacked on top of it. What the feed's refresh loop below is gated on.
+     */
+    val feedShowing = tab == TAB_SCORES && openGame == null && openEventId == null &&
+        openLeague == null && openTeam == null && openStanding == null && !teamsOpen
+
     LaunchedEffect(Unit) {
         vm.refresh()
         // The picker needs at least the abbreviations to render the "following" chips.
@@ -246,7 +253,12 @@ private fun App(openGameId: String?) {
                 when {
                     !polling -> TickerPlan.SCREEN_IDLE_INTERVAL
                     LiveRelay.delivering -> LiveRelay.SCREEN_INTERVAL
-                    else -> TickerPlan.SCREEN_INTERVAL
+                    // Re-read every round rather than once at the top: a game becomes a
+                    // crunch game while this loop is already running, which is the whole
+                    // point of it.
+                    else -> TickerPlan.screenIntervalMillis(
+                        current, Leagues.byId(current.leagueId)?.kind,
+                    )
                 },
             )
             if (openGame?.id != id) break
@@ -256,6 +268,34 @@ private fun App(openGameId: String?) {
                     gameStamp = System.currentTimeMillis()
                 }
             }
+        }
+    }
+
+    /**
+     * The feed's own clock: while a game on the open day is in progress, re-fetch those
+     * games every fifteen seconds.
+     *
+     * Only while the feed is the screen in front of the user. A page nobody is looking at
+     * has the relay and the background ticker keeping it honest already, and the radio on
+     * this phone is not free.
+     *
+     * Stood down while the relay is delivering, for the same reason the game screen stands
+     * down: the socket is pushing each change as it happens and a fetch underneath it would
+     * be asking for news that has already arrived. A socket that goes quiet does not count
+     * as delivering, so this speeds straight back up when it drops.
+     */
+    LaunchedEffect(feedShowing, feed.dayOffset) {
+        if (!feedShowing) return@LaunchedEffect
+        while (true) {
+            val live = vm.feed.value.page.liveGames.isNotEmpty()
+            delay(
+                when {
+                    !live -> TickerPlan.FEED_IDLE_INTERVAL
+                    LiveRelay.delivering -> LiveRelay.SCREEN_INTERVAL
+                    else -> TickerPlan.FEED_INTERVAL
+                },
+            )
+            if (vm.feed.value.page.liveGames.isNotEmpty()) vm.trackFeed()
         }
     }
 
@@ -350,7 +390,7 @@ private fun App(openGameId: String?) {
                     // fifteen seconds while the relay has it checking once a minute.
                     everySeconds = (
                         if (LiveRelay.delivering) LiveRelay.SCREEN_INTERVAL
-                        else TickerPlan.SCREEN_INTERVAL
+                        else TickerPlan.screenIntervalMillis(game, Leagues.byId(game.leagueId)?.kind)
                         ).let { (it / 1000).toInt() },
                     logos = logos,
                     plays = plays[game.id].orEmpty(),

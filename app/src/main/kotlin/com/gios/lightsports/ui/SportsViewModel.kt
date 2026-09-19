@@ -22,6 +22,7 @@ import com.gios.lightsports.model.StandingsGroup
 import com.gios.lightsports.model.TeamRef
 import com.gios.lightsports.notify.LiveRelay
 import com.gios.lightsports.notify.LiveTicker
+import com.gios.lightsports.notify.Notifier
 import com.gios.lightsports.notify.ScoreWatcher
 import com.gios.lightsports.notify.TickerPlan
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +78,18 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
                 })
             },
         )
+
+        /**
+         * The games in progress on this page, which is not the same as the games in progress
+         * in [FeedState.games] — that holds three weeks either side of today. The page is what
+         * the user can see, and what the user can see is the only thing worth a fetch.
+         */
+        val liveGames: List<Game>
+            get() = sections
+                .flatMap { it.items }
+                .filterIsInstance<Feed.Item.GameItem>()
+                .map { it.game }
+                .filter { it.state == GameState.LIVE }
     }
 
     data class FeedState(
@@ -178,6 +191,10 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         if (updated.state == GameState.LIVE && _plays.value.containsKey(updated.id)) {
             Leagues.byId(updated.leagueId)?.let { loadPlays(it, updated.id) }
         }
+        // The ticker redraws the card off the same socket, but only while it is up, and it
+        // is not up when the platform refused it a foreground service. With the app open,
+        // this view model is the one thing certain to be listening.
+        pushCards(listOf(updated))
     }
 
     init {
@@ -397,11 +414,89 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         // The play-by-play rides along with every live refresh; it is what the field and
         // the LAST PLAYS list are drawn from.
         if (updated.state == GameState.LIVE) loadPlays(league, updated.id)
+        // Done whether or not the game moved: the card in the shade may be older than the
+        // copy this screen was already holding, and a fetch that changed nothing here can
+        // still be news there.
+        pushCards(listOf(updated))
         if (updated == game) return updated
         val state = _feed.value
         _feed.value = state.withGame(updated).copy(updatedAt = now)
         if (updated.state != game.state) refresh()
         return updated
+    }
+
+    /**
+     * Re-fetch the games in progress on the open page and fold them in where they sit.
+     *
+     * Deliberately not [refresh]: that fetches every followed league, rebuilds the sections
+     * and re-sorts them, which is the right thing on the way in and the wrong thing every
+     * fifteen seconds under a thumb halfway down the list. This fetches only the leagues
+     * with something live on the page and swaps those rows in place, so the list does not
+     * move and there is no spinner.
+     *
+     * A game changing state is the one case that does need the full rebuild — a final
+     * belongs in a different section now — so it hands over to [refresh] and stops.
+     *
+     * @return how many rows actually changed, for the caller that wants to flash the header.
+     */
+    suspend fun trackFeed(): Int {
+        val live = _feed.value.page.liveGames
+        if (live.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        val zone = ZoneId.systemDefault()
+        val leagues = live.mapNotNull { Leagues.byId(it.leagueId) }.distinctBy { it.id }
+        val fresh = withContext(Dispatchers.IO) {
+            leagues.flatMap { league ->
+                runCatching { repo.games(league, now, zone) }.getOrDefault(emptyList())
+            }
+        }
+        if (fresh.isEmpty()) return 0
+        val byId = fresh.associateBy { it.id }
+        var state = _feed.value
+        var changed = 0
+        var settled = false
+        for (game in live) {
+            val updated = byId[game.id] ?: continue
+            if (updated == game) continue
+            state = state.withGame(updated)
+            changed++
+            if (updated.state != game.state) settled = true
+        }
+        if (changed > 0) _feed.value = state.copy(updatedAt = now)
+        pushCards(live.mapNotNull { byId[it.id] })
+        if (settled) refresh()
+        return changed
+    }
+
+    /**
+     * Put what the app just fetched into whatever cards are already in the shade.
+     *
+     * The screen and the notification are two views of one score and they were fed by two
+     * different clocks — the screen by its own fifteen seconds, the card by the ticker's
+     * minute. Watching a game with the app open therefore meant watching the lock screen fall
+     * a minute behind the panel above it.
+     *
+     * Nothing here decides *whether* a game is notified about: [Notifier.refreshShowing]
+     * redraws cards that exist and posts none that do not, and a silenced or unfollowed team
+     * has no card to redraw. [ScoreWatcher.liveCards] applies the spoiler hold, so a screen
+     * the user chose to look at still cannot walk a delayed score onto their lock screen.
+     */
+    private fun pushCards(games: List<Game>) {
+        if (!prefs.notificationsEnabled) return
+        val notify = prefs.notifyKeys
+        val live = games.filter { it.state == GameState.LIVE && it.involves(notify) }
+        if (live.isEmpty()) return
+        val app = getApplication<Application>()
+        viewModelScope.launch(Dispatchers.IO) {
+            // The hold writes a file and the cards are built off it; neither belongs on the
+            // frame the score just landed on.
+            runCatching {
+                Notifier.refreshShowing(
+                    app,
+                    ScoreWatcher.liveCards(app, live, System.currentTimeMillis()),
+                )
+            }
+        }
     }
 
     /** Fetch the last plays of one game and publish them. Cheap enough to call every poll. */

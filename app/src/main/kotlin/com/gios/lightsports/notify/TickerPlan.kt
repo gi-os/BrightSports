@@ -38,8 +38,44 @@ object TickerPlan {
      */
     const val SCREEN_INTERVAL = 15_000L
 
+    /**
+     * The same screen, in a finish. Ten seconds, and no faster, because the limit stopped
+     * being the phone a while ago: ESPN's scoreboard is rebuilt on its own schedule, and
+     * polling under that schedule returns the same bytes twice. The gain over fifteen is
+     * real but small — it is the difference between hearing about a walk-off on the first
+     * refresh after it and on the second.
+     */
+    const val SCREEN_FAST_INTERVAL = 10_000L
+
     /** How long the screen waits before checking again whether a game has gone live. */
     const val SCREEN_IDLE_INTERVAL = 60_000L
+
+    /**
+     * How often the feed re-fetches the live games on the open day.
+     *
+     * The feed had no clock of its own at all. It loaded on the way in and then sat there,
+     * and every number on it moved only when the relay socket said so or when the refresh
+     * icon was tapped. With the relay up that is invisible; with it down — a dead BasilNet,
+     * a phone in a tunnel, the setting simply off — the scores page was the one screen in
+     * the app that did not update, which is close to the opposite of what a scores page is
+     * for.
+     *
+     * Fifteen seconds matches the game screen because the work is the same size: only the
+     * leagues with something live on the page are fetched, not the whole follow list.
+     */
+    const val FEED_INTERVAL = 15_000L
+
+    /** How long the feed waits before looking again for something starting. */
+    const val FEED_IDLE_INTERVAL = 60_000L
+
+    /**
+     * How fast an open game screen should be re-fetching. [SCREEN_INTERVAL] normally,
+     * [SCREEN_FAST_INTERVAL] once [isCrunch] says the result is in reach and still in
+     * doubt — the same predicate the background ticker steps up on, so the two can never
+     * disagree about which games are the tense ones.
+     */
+    fun screenIntervalMillis(game: Game, kind: SportKind?): Long =
+        if (isCrunch(game, kind)) SCREEN_FAST_INTERVAL else SCREEN_INTERVAL
 
     /**
      * Whether an open game screen should be re-fetching. Live, or close enough to the

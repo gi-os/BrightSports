@@ -215,6 +215,44 @@ object Notifier {
     }
 
     /**
+     * Redraw the cards for games that already have one in the shade, and only those.
+     *
+     * The app fetches a score for the screen the user is looking at, and that score used to
+     * stop at the screen. The card in the shade still said whatever the last poll said, so on
+     * a phone where the lock face *is* the card, the number under the user's thumb and the
+     * number on their lock screen could disagree for a full minute. They were both ours, and
+     * one of them was wrong. This closes that.
+     *
+     * **It never creates a card.** Who gets one is the watcher's decision, made against the
+     * follow list, the silence list and the loudness rules, and a screen has no business
+     * overruling it — a game you opened out of curiosity is not a game you asked to be
+     * notified about. So this looks up what is already posted and redraws that, or does
+     * nothing.
+     *
+     * The flags come back off the live notification rather than from the caller for the same
+     * reason. `ongoing` and the lock-face extra were set by whoever posted the card; a redraw
+     * from a screen that guessed them would quietly strip the ticker's card off the lock face
+     * or make a finished game unswipeable.
+     */
+    fun refreshShowing(context: Context, cards: List<TickerPlan.Card>) {
+        if (cards.isEmpty()) return
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val showing = runCatching { manager.activeNotifications }.getOrNull() ?: return
+        for (card in cards) {
+            val posted = showing.firstOrNull { it.id == cardId(card.gameId) } ?: continue
+            updateGameCard(
+                context,
+                gameId = card.gameId,
+                leagueId = card.leagueId,
+                text = card.text,
+                ongoing = posted.notification.flags and Notification.FLAG_ONGOING_EVENT != 0,
+                lockKeep = posted.notification.extras.getBoolean(EXTRA_LOCK_KEEP, false),
+                score = card.score,
+            )
+        }
+    }
+
+    /**
      * Take the ongoing flag off the cards a stopped ticker leaves behind.
      *
      * An ongoing card cannot be swiped away and the platform refuses to cancel it, so a game
