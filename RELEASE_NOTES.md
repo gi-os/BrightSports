@@ -1,3 +1,23 @@
+## BrightSports v2.15 — the screen celebrates
+
+**When a team you follow scores and you are looking at the game, something happens on the screen.** Four styles, one of them at a time, off until you turn it on.
+
+**Mortar.** Three shells up from the bottom edge, staggered a third of a second apart, each opening into forty to fifty sparks that fall under gravity and stipple out. Two shells read as a pair and a mistake. Three read as a display.
+
+**Grid.** The Light SDK's own 27 by 31 layout grid lights up in a wave out from the score, holds for a beat, then drops out cell by cell on a shuffle. No curves and no particles: 837 rectangles and a dither pattern. The cheapest of the four and the one that looks most like the app doing something rather than something happening to the app.
+
+**Score burst.** The old number is the firework. It is sampled into points in the app's own condensed face and thrown outward while the new figure lands in the slot behind it.
+
+**Halftone.** Three rings of dots out from the figure that moved, thinning as they widen because each dot keeps its size while there is more ring to go around. On a screen with two numbers on it, this one says which of them is the news.
+
+**The settings rows are the demonstration.** Tap a style and it runs there, over the settings screen. Four names with a sentence each is four guesses, and the only way to pick one is to watch it.
+
+**None of this lights the whole panel.** The Light Phone III is an AMOLED behind matte glass, so a white pixel is a lit pixel and a full-screen flash is the most expensive thing the app can do. The grid peaks at a little over half its cells and a test holds it there. Brightness is a dither rather than a fade for the second reason the panel gives: the diffuser turns soft edges into gray mush, so everything is drawn as small solid blocks at full white, on in a fixed pattern.
+
+**It fires for a followed team that is not silenced, and only on a screen you are already looking at.** It never wakes the phone, never draws over another app, and takes no taps — there is nothing to dismiss. Silencing a team stops it, even though nothing here buzzes: muting is the user saying they do not want a fuss made, and three shells going up the screen is a fuss.
+
+Once more at the final whistle if they won. A final that arrives in the same pass as the winning score is one celebration, not two stacked on each other, and a provider correcting a score downward is not a goal.
+
 ## BrightSports v2.14 — the scores page has a clock now
 
 **The feed refreshes itself every fifteen seconds while a game on the open day is in progress.** It never did. It loaded on the way in and then sat there, and the numbers moved only when the relay socket said so or when the refresh icon was tapped. With the relay up that is invisible. With it down, on a train or with the setting off, the scores page was the one screen in the app that did not update.
