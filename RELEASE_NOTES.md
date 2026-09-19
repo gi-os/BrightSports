@@ -1,3 +1,17 @@
+## BrightSports v2.14 — the scores page has a clock now
+
+**The feed refreshes itself every fifteen seconds while a game on the open day is in progress.** It never did. It loaded on the way in and then sat there, and the numbers moved only when the relay socket said so or when the refresh icon was tapped. With the relay up that is invisible. With it down, on a train or with the setting off, the scores page was the one screen in the app that did not update.
+
+Only the leagues with something live on the page are fetched, and the rows are swapped in where they already sit, so the list does not re-sort under a thumb and there is no spinner. The loop runs only while the scores page is the screen in front of you, and it stands down to a minute while the relay is delivering, because the socket is already pushing each change as it happens.
+
+**An open game screen steps up to ten seconds in a finish.** Fifteen otherwise. "A finish" is the same test the background ticker uses to speed up: late enough that the result is in reach, close enough that it is still in doubt. The ninth inning within two runs, the fourth quarter within eight points, any overtime at all. Ten seconds is the floor, and a test holds it there. ESPN rebuilds its scoreboard on its own schedule, and polling under that schedule returns the same bytes twice.
+
+**A score the app fetched now reaches the card in the shade.** The screen and the notification are two views of one number, and they were fed by two different clocks — the screen by its own fifteen seconds, the card by the ticker's minute. Watching a game with the app open meant watching the lock screen fall behind the panel above it. Every fetch the screen makes now redraws that game's card, and so does every relay message, which matters most on the phones where the platform refused the app a foreground service and the ticker is not running at all.
+
+It never posts a card. Which games get one is the watcher's decision, made against the follow list, the silence list and the loudness rules, and a screen you opened out of curiosity is not a game you asked to be notified about. This looks up what is already in the shade and redraws that, or does nothing. The ongoing flag and the lock-face extra are read back off the live notification rather than guessed, so a redraw cannot strip the ticker's card off the lock screen.
+
+The spoiler hold still applies. These cards go through the same `ScoreHold` the poll uses, so a screen you chose to look at cannot walk a held score onto your lock screen.
+
 ## BrightSports v2.13 — a third of a college football Saturday was missing
 
 **The app was asking ESPN for every college football game and being handed 25 of them.** Not this week — for as long as the scoreboard has carried `limit=1000`.

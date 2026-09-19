@@ -342,6 +342,12 @@ baseball), and up to **5 min** while waiting on a first pitch that hasn't happen
 stops itself at the final whistle and hands the chain back, so an evening with nothing on
 costs exactly what it did before.
 
+The app in the foreground runs faster than that, on the same arithmetic. An open game
+screen fetches every **15s**, or **10s** once `TickerPlan.isCrunch` says the same thing
+about it that makes the ticker step up; the scores page fetches its live rows every
+**15s** while it is the screen in front of you. Both stand down to a minute whenever
+`LiveRelay.delivering` is true, since the socket is already pushing each change.
+
 Three things keep that from being a battery leak. It only runs for games that are allowed
 to alert, so a silenced team never raises it. It caps itself at six hours
 (`TickerPlan.MAX_RUNTIME`) — a provider that leaves a game stuck in `LIVE` is not
@@ -463,6 +469,7 @@ Issues and PRs welcome.
 
 | Version | Change |
 | --- | --- |
+| v2.14 | **The scores page has a clock.** The feed had none — it loaded once and then moved only on a relay message or a tap, so with the socket down it was the one screen that did not update. `SportsViewModel.trackFeed` re-fetches just the leagues with something live on the open page and swaps those rows in place (no re-sort, no spinner), on `TickerPlan.FEED_INTERVAL` while the feed is the screen in front of you. An open game screen steps from 15 s to `SCREEN_FAST_INTERVAL` (10 s) once `isCrunch` is true, the same predicate the ticker speeds up on. And a score the app fetched now reaches the card in the shade: `Notifier.refreshShowing` redraws cards that already exist — never posts one — reading `ongoing` and `LOCK_KEEP` back off the live notification rather than guessing them, and building the text through `ScoreWatcher.liveCards` so the spoiler hold still applies |
 | v2.13 | **The feed drops the trailing "no game scheduled" list** (`Feed.idleFollows` and the `IdleTeam` plumbing deleted) — a failed fetch drew the same list, so it read as a fixture list at the one moment it mattered; an empty day names itself instead. Also: **ESPN's college football scoreboard answers any `limit` above 500 with its default 25 events**, so the app had been receiving 25 of a 71-game FBS Saturday with no error to show for it; `EspnParser.LIMIT` drops 1000 → 500, which still clears MLB's ~400-game month, and a test pins it to 400..500. Also corrects v2.11's note that college football answers a month with one week — that was this truncation, and the month comes back whole at 500 |
 | v2.12 | **The feed pages by day.** The chevrons step one calendar day rather than seven (`SportsViewModel.shiftDay`, `FIRST_DAY`/`LAST_DAY` at -7/+14) and `Feed.build` takes an `onlyDay`; LIVE rides with today, an empty day names itself, and the football week moves to the subtitle as `Feed.weekLabel`. The fetch window widened to 7/15 so a page turn re-buckets what is in hand instead of refetching |
 | v2.11 | **ESPN stopped answering `dates=start-end`** with a 400 on 15 September, which emptied every league fetch and dropped every followed team into the feed's idle list; `SportsRepository.espnScoreboard` now falls from the range to the calendar months the window touches (`EspnParser.monthsIn` / `mergeScoreboards`, filtered back to the window) and only then to no window at all, so results, fixtures and week paging all come back. A refused range is parked for six hours rather than retried every poll |
