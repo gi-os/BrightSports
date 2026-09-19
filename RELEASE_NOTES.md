@@ -1,3 +1,25 @@
+## BrightSports v2.16 — the celebration is in your hand too
+
+**Each style has its own waveform, cut to its own beats.** Not a buzz beside the picture, the same event told twice. A shell that opens at 260 ms cracks at 260 ms.
+
+**Mortar cracks three times and then stops.** The launch is a small thump, the burst is the crack, and the motor goes quiet for a second and a half while the sparks fall. A motor running under a picture is a phone malfunctioning. A motor that stops is a firework.
+
+**Grid swells and snaps.** Four rising steps as the field fills, a low beat under it while it stands, then a sharp release on the frame it starts to drop.
+
+**Score burst is two events with a gap.** The figure letting go, then the new one landing, at the two moments the animation has.
+
+**Halftone taps once per ring, fading.** The quietest picture gets the quietest hand.
+
+You should be able to tell which one ran without looking, which is a higher bar than "it vibrates" and the only one worth aiming at on a phone whose argument is that you are not looking at it.
+
+**One motor, one owner.** The alert's double tick and a celebration can arrive within a second of each other, and fired independently they overlap into a mush that is neither. Both go through `Buzzer` now, which keeps one clock. A pattern in flight owns the motor for its own length and anything underneath it is dropped rather than queued, because a celebration that buzzes two seconds after the goal is worse than one that does not buzz. A celebration outranks the tick and takes the motor off it. The tick never takes it off a celebration.
+
+**Nothing holds the motor on for long.** The longest total is under four tenths of a second, most of it silence between beats, and a test pins it. Sustained vibration is the thing people go into settings to turn off.
+
+**Silent means silent.** Vibrate mode does not, since that is the mode asking for exactly this. A phone with no amplitude control gets the same rhythm at one strength rather than nothing: the waveform alternates silence and motor by construction, so the beats still land in the right places and only the shape is lost.
+
+`Buzz with it` is its own row under the styles, on by default. The picture is silent in a meeting and the motor is not.
+
 ## BrightSports v2.15 — the screen celebrates
 
 **When a team you follow scores and you are looking at the game, something happens on the screen.** Four styles, one of them at a time, off until you turn it on.
