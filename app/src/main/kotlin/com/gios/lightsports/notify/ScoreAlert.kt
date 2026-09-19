@@ -4,9 +4,6 @@ import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.os.PowerManager
-import android.os.SystemClock
-import android.os.VibrationEffect
-import android.os.VibratorManager
 import android.provider.Settings
 import android.util.Log
 import com.gios.lightsports.data.Prefs
@@ -42,15 +39,6 @@ import com.gios.lightsports.data.Prefs
 object ScoreAlert {
 
     private const val TAG = "ScoreAlert"
-
-    /**
-     * One buzz per burst. Two goals inside a minute of each other, or a score and the
-     * final whistle together, shouldn't feel like two separate events.
-     */
-    private const val BUZZ_RATE_LIMIT_MS = 1_500L
-
-    @Volatile
-    private var lastBuzz = 0L
 
     fun show(context: Context, entry: PendingQueue.Entry) {
         buzz(context)
@@ -103,23 +91,26 @@ object ScoreAlert {
     }
 
     /**
-     * A double tick. Both notification channels have vibration disabled, so this is the
-     * only buzz — one place to tune, and it still fires when the box can't be shown.
+     * A double tick. The notification channel has vibration disabled, so this is the buzz
+     * for a score the user is not watching, and it still fires when the box can't be shown.
+     *
+     * Not the only one any more: a celebration on an open game screen has its own waveform,
+     * cut to the picture it belongs to. See [Buzzer] for which of them wins when both want
+     * the motor at once.
      */
     fun buzz(context: Context) {
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastBuzz < BUZZ_RATE_LIMIT_MS) return
-        lastBuzz = now
-        val vibrator = context.getSystemService(VibratorManager::class.java)
-            ?.defaultVibrator ?: return
-        if (!vibrator.hasVibrator()) return
-        // tick, gap, tick. Short enough to read as one event.
-        val effect = VibrationEffect.createWaveform(
-            longArrayOf(0, 30, 80, 30),
-            intArrayOf(0, 180, 0, 180),
-            -1,
+        // The rate limit and the motor both live in [Buzzer] now, because this is no
+        // longer the only thing that buzzes: a celebration on the open screen can arrive
+        // within a second of this, and the two firing independently overlap into a mush
+        // that is neither. A celebration outranks this tick and takes the motor off it.
+        Buzzer.play(
+            context,
+            // tick, gap, tick. Short enough to read as one event.
+            timings = longArrayOf(0, 30, 80, 30),
+            amplitudes = intArrayOf(0, 180, 0, 180),
+            priority = Buzzer.PRIORITY_TICK,
+            holdMillis = 0L,
         )
-        runCatching { vibrator.vibrate(effect) }
     }
 
     const val EXTRA_TITLE = "alertTitle"

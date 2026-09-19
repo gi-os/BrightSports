@@ -413,6 +413,7 @@ private fun App(openGameId: String?) {
                         val key = "${game.leagueId}:${side.teamId}"
                         key in follows && key !in muted
                     },
+                    celebrationBuzz = vm.prefs.celebrationBuzz,
                 )
                 team != null -> TeamScreen(
                     league = team.league,

@@ -22,11 +22,13 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.res.ResourcesCompat
 import com.gios.lightsports.R
+import com.gios.lightsports.anim.Buzz
 import com.gios.lightsports.anim.Fireworks
 import com.gios.lightsports.anim.Grid
 import com.gios.lightsports.anim.Halftone
 import com.gios.lightsports.anim.Mortar
 import com.gios.lightsports.model.Celebration
+import com.gios.lightsports.notify.Buzzer
 import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.random.Random
@@ -52,6 +54,8 @@ import kotlin.random.Random
  *   the middle of the layer — which is what a preview in settings gets.
  * @param figure the number that has just been replaced, for [Celebration.BURST]. Null skips
  *   the particles and keeps the rest.
+ * @param buzz whether to run the matching waveform ([Buzz]) alongside the picture. It is
+ *   the same event told twice, so it starts on the same frame, not before it.
  */
 @Composable
 fun CelebrationOverlay(
@@ -59,6 +63,7 @@ fun CelebrationOverlay(
     trigger: Long,
     anchor: Offset?,
     figure: String?,
+    buzz: Boolean = true,
     modifier: Modifier = Modifier,
     onDone: () -> Unit = {},
 ) {
@@ -87,6 +92,10 @@ fun CelebrationOverlay(
         if (trigger == 0L) return@LaunchedEffect
         val span = Fireworks.durationMillis(style)
         val start = withFrameMillis { it }
+        // Started on the first frame rather than before it, so the motor and the picture
+        // begin together. A buzz that leads the animation by a frame reads as a phone
+        // event with a picture after it, which is the wrong way round.
+        if (buzz) runCatching { Buzzer.play(context, Buzz.pattern(style), span) }
         var now = start
         while (now - start <= span) {
             elapsed.longValue = now - start

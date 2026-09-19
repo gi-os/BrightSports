@@ -68,6 +68,7 @@ fun SettingsScreen(
     var relay by remember { mutableStateOf(prefs.relayEnabled) }
     var celebrate by remember { mutableStateOf(prefs.celebrationEnabled) }
     var celebrationStyle by remember { mutableStateOf(prefs.celebration) }
+    var celebrationBuzz by remember { mutableStateOf(prefs.celebrationBuzz) }
     /** The moment a style row was last tapped. Any new value runs it over this screen. */
     var preview by remember { mutableLongStateOf(0L) }
     val context = LocalContext.current
@@ -258,6 +259,20 @@ fun SettingsScreen(
                 )
             }
             Rule()
+            MenuRow(
+                label = "Buzz with it",
+                detail = if (celebrationBuzz) "[ ON ]" else "OFF",
+                sub = "The same event in the hand. Each style has its own waveform cut to "
+                    + "its own beats — three cracks for Mortar, a swell and a snap for "
+                    + "Grid — so you can tell which one ran without looking",
+                dim = !celebrate,
+                onClick = {
+                    celebrationBuzz = !celebrationBuzz
+                    vm.setCelebrationBuzz(celebrationBuzz)
+                    if (celebrationBuzz) preview = System.currentTimeMillis()
+                },
+            )
+            Rule()
 
             SectionHeader("DELIVERY")
             MenuRow(
@@ -379,6 +394,7 @@ fun SettingsScreen(
             // if nobody had told it: the middle.
             anchor = null,
             figure = "7",
+            buzz = celebrationBuzz,
         )
     }
 }

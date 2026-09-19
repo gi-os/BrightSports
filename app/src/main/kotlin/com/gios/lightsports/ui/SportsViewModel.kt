@@ -620,4 +620,8 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
         prefs.celebration = style
         prefs.celebrationEnabled = true
     }
+
+    fun setCelebrationBuzz(enabled: Boolean) {
+        prefs.celebrationBuzz = enabled
+    }
 }

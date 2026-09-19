@@ -1,5 +1,6 @@
 package com.gios.lightsports
 
+import com.gios.lightsports.anim.Buzz
 import com.gios.lightsports.anim.Fireworks
 import com.gios.lightsports.anim.Grid
 import com.gios.lightsports.anim.Halftone
@@ -170,6 +171,114 @@ class FireworksTest {
         val over = Fireworks.durationMillis(Celebration.GRID).toFloat()
         for (col in 0 until Grid.COLS) {
             assertEquals("col=$col", 0f, Grid.brightness(col, over, 0f), 0.001f)
+        }
+    }
+
+    // ----------------------------------------------------------------- the buzz
+
+    @Test
+    fun `every style buzzes, inside its own picture`() {
+        for (style in Celebration.entries) {
+            val beats = Buzz.beats(style)
+            assertTrue("$style has no beats", beats.isNotEmpty())
+            val span = Fireworks.durationMillis(style)
+            for (beat in beats) {
+                assertTrue("$style starts before the picture", beat.atMillis >= 0L)
+                assertTrue("$style runs past the picture", beat.endsAtMillis <= span)
+                assertTrue("$style amplitude", beat.amplitude in 1..Buzz.PEAK)
+                // A beat under ten milliseconds is below what most motors can render, so
+                // it costs power and is felt as nothing.
+                assertTrue("$style beat too short", beat.durationMillis >= 10L)
+            }
+        }
+    }
+
+    @Test
+    fun `beats are in order and never overlap`() {
+        // An overlap would be swallowed by the fold rather than thrown, so a missing crack
+        // would reach the phone with a green build behind it.
+        for (style in Celebration.entries) {
+            var previousEnd = -1L
+            for (beat in Buzz.beats(style)) {
+                assertTrue("$style out of order at ${beat.atMillis}", beat.atMillis >= previousEnd)
+                previousEnd = beat.endsAtMillis
+            }
+        }
+    }
+
+    @Test
+    fun `the waveform alternates silence and motor, starting with silence`() {
+        // Which is the whole reason it degrades correctly on a phone with no amplitude
+        // control: createWaveform(timings, -1) alternates off and on starting with off.
+        for (style in Celebration.entries) {
+            val p = Buzz.pattern(style)
+            assertEquals("$style", p.timings.size, p.amplitudes.size)
+            for (i in p.amplitudes.indices) {
+                if (i % 2 == 0) {
+                    assertEquals("$style index $i should be silence", 0, p.amplitudes[i])
+                } else {
+                    assertTrue("$style index $i should be motor", p.amplitudes[i] > 0)
+                }
+                assertTrue("$style negative timing at $i", p.timings[i] >= 0L)
+            }
+            assertEquals("$style beat count", Buzz.beats(style).size, p.beats)
+        }
+    }
+
+    @Test
+    fun `the pattern lands each beat where the picture does`() {
+        // Folding to gaps and durations must not move anything. Walk the array back into
+        // absolute times and check them against the beats they came from.
+        for (style in Celebration.entries) {
+            val p = Buzz.pattern(style)
+            val beats = Buzz.beats(style)
+            var clock = 0L
+            var seen = 0
+            for (i in p.timings.indices) {
+                if (i % 2 == 1) {
+                    assertEquals("$style beat $seen", beats[seen].atMillis, clock)
+                    assertEquals("$style beat $seen length", beats[seen].durationMillis, p.timings[i])
+                    seen++
+                }
+                clock += p.timings[i]
+            }
+            assertEquals(beats.size, seen)
+        }
+    }
+
+    @Test
+    fun `mortar cracks three times and then goes quiet`() {
+        val beats = Buzz.beats(Celebration.MORTAR)
+        val cracks = beats.filter { it.amplitude == Buzz.PEAK }
+        assertEquals(3, cracks.size)
+        // Each crack lands on a shell's burst: the launch plus the climb.
+        val bursts = Mortar.SHELLS.map { it.fireAtMillis + Mortar.RISE_MILLIS }
+        assertEquals(bursts, cracks.map { it.atMillis })
+        // And the motor stops well before the sparks do. A motor running under a picture
+        // is a phone malfunctioning; a motor that stops is a firework.
+        val last = beats.maxOf { it.endsAtMillis }
+        assertTrue("motor ran to $last", last < Fireworks.durationMillis(Celebration.MORTAR) / 2)
+    }
+
+    @Test
+    fun `halftone taps once per ring, fading`() {
+        val beats = Buzz.beats(Celebration.HALFTONE)
+        assertEquals(Halftone.RINGS, beats.size)
+        for (ring in beats.indices) {
+            assertEquals(ring * Halftone.STAGGER_MILLIS, beats[ring].atMillis.toFloat(), 0.001f)
+            if (ring > 0) assertTrue(beats[ring].amplitude < beats[ring - 1].amplitude)
+        }
+    }
+
+    @Test
+    fun `no style holds the motor on for long`() {
+        // Sustained vibration is the thing people go into settings to turn off.
+        for (style in Celebration.entries) {
+            val running = Buzz.beats(style).sumOf { it.durationMillis }
+            assertTrue("$style runs the motor for $running ms", running <= 500L)
+            for (beat in Buzz.beats(style)) {
+                assertTrue("$style has a ${beat.durationMillis} ms beat", beat.durationMillis <= 200L)
+            }
         }
     }
 

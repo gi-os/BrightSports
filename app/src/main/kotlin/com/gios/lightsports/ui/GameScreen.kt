@@ -103,6 +103,8 @@ fun GameScreen(
      * screen is a fuss.
      */
     isCelebrated: (Side) -> Boolean = { false },
+    /** Whether the celebration buzzes as well as draws. */
+    celebrationBuzz: Boolean = true,
 ) {
     val zone = ZoneId.systemDefault()
     val league = Leagues.byId(game.leagueId)
@@ -402,6 +404,7 @@ fun GameScreen(
                 trigger = celebrateAt,
                 anchor = celebrateAnchor,
                 figure = celebrateFigure,
+                buzz = celebrationBuzz,
             )
         }
     }

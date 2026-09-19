@@ -151,6 +151,17 @@ class Prefs(context: Context) {
         get() = Celebration.byName(sp.getString(KEY_CELEBRATION, null))
         set(v) = sp.edit().putString(KEY_CELEBRATION, v.name).apply()
 
+    /**
+     * Whether the celebration buzzes as well as draws.
+     *
+     * On by default, because the waveform is cut to the picture rather than bolted beside
+     * it and the two together are the thing. Its own row all the same: the picture is
+     * silent in a meeting and the motor is not.
+     */
+    var celebrationBuzz: Boolean
+        get() = sp.getBoolean(KEY_CELEBRATION_BUZZ, true)
+        set(v) = sp.edit().putBoolean(KEY_CELEBRATION_BUZZ, v).apply()
+
     // ------------------------------------------------------------ football
 
     /**
@@ -223,6 +234,7 @@ class Prefs(context: Context) {
         private const val KEY_BREAKS = "alert_breaks"
         private const val KEY_CELEBRATE = "celebrate"
         private const val KEY_CELEBRATION = "celebration"
+        private const val KEY_CELEBRATION_BUZZ = "celebration_buzz"
         private const val KEY_RELAY = "relay_enabled"
         private const val KEY_RELAY_URL = "relay_url"
         const val DEFAULT_RELAY_URL = "https://sports.gzl.dev"
