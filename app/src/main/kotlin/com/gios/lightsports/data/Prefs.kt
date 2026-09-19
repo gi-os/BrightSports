@@ -2,6 +2,7 @@ package com.gios.lightsports.data
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.gios.lightsports.model.Celebration
 import com.gios.lightsports.model.League
 import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.model.SportKind
@@ -128,6 +129,28 @@ class Prefs(context: Context) {
     val effectiveDelayMillis: Long
         get() = if (delayEnabled) delayMinutes * 60_000L else 0L
 
+    // -------------------------------------------------------- celebrations
+
+    /**
+     * Whether a score by a team you follow gets an animation on the screen you are looking
+     * at. Off is every release before this one.
+     *
+     * Deliberately separate from [alertBoxEnabled]: that one draws over whatever the phone
+     * was doing and can wake you at one in the morning. This one only ever runs on a screen
+     * already in front of you, so the two are different decisions and get different rows.
+     */
+    var celebrationEnabled: Boolean
+        get() = sp.getBoolean(KEY_CELEBRATE, false)
+        set(v) = sp.edit().putBoolean(KEY_CELEBRATE, v).apply()
+
+    /**
+     * Which one. Stored by name so a renamed constant reads as the default rather than
+     * crashing the screen that draws it.
+     */
+    var celebration: Celebration
+        get() = Celebration.byName(sp.getString(KEY_CELEBRATION, null))
+        set(v) = sp.edit().putString(KEY_CELEBRATION, v.name).apply()
+
     // ------------------------------------------------------------ football
 
     /**
@@ -198,6 +221,8 @@ class Prefs(context: Context) {
         private const val KEY_RED_ZONE = "alert_red_zone"
         private const val KEY_CLOSE = "alert_close"
         private const val KEY_BREAKS = "alert_breaks"
+        private const val KEY_CELEBRATE = "celebrate"
+        private const val KEY_CELEBRATION = "celebration"
         private const val KEY_RELAY = "relay_enabled"
         private const val KEY_RELAY_URL = "relay_url"
         const val DEFAULT_RELAY_URL = "https://sports.gzl.dev"

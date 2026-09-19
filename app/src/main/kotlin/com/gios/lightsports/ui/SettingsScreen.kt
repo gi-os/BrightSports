@@ -1,6 +1,7 @@
 package com.gios.lightsports.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,6 +16,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +31,7 @@ import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.hw.WheelScroll
 import com.gios.lightsports.notify.AlertOwner
 import com.gios.lightsports.notify.Health
+import com.gios.lightsports.model.Celebration
 import com.gios.lightsports.model.Loudness
 import com.gios.lightsports.ui.theme.Dim
 import com.gios.lightsports.ui.theme.Faint
@@ -63,6 +66,10 @@ fun SettingsScreen(
     var close by remember { mutableStateOf(prefs.alertClose) }
     var breaks by remember { mutableStateOf(prefs.alertBreaks) }
     var relay by remember { mutableStateOf(prefs.relayEnabled) }
+    var celebrate by remember { mutableStateOf(prefs.celebrationEnabled) }
+    var celebrationStyle by remember { mutableStateOf(prefs.celebration) }
+    /** The moment a style row was last tapped. Any new value runs it over this screen. */
+    var preview by remember { mutableLongStateOf(0L) }
     val context = LocalContext.current
     // Re-read on every visit rather than remembered for the life of the screen: the
     // battery-optimisation row sends the user out to a system dialog and back, and a
@@ -80,252 +87,298 @@ fun SettingsScreen(
     val scroll = rememberScrollState()
     WheelScroll(scroll)
 
-    Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
-        SectionHeader("TEAMS")
-        MenuRow(
-            label = "My teams",
-            detail = if (followCount > 0) "$followCount" else "none",
-            sub = if (mutedCount > 0) "$mutedCount silenced — in the feed, no alerts"
-            else "Add or drop the teams in your feed",
-            onClick = onOpenTeams,
-        )
-        Rule()
+    // The preview layer sits over the list, so tapping a style row plays it here
+    // rather than describing it. A settings screen is exactly where somebody is
+    // deciding whether they want this, and the only honest way to answer that is
+    // to show them.
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+            SectionHeader("TEAMS")
+            MenuRow(
+                label = "My teams",
+                detail = if (followCount > 0) "$followCount" else "none",
+                sub = if (mutedCount > 0) "$mutedCount silenced — in the feed, no alerts"
+                else "Add or drop the teams in your feed",
+                onClick = onOpenTeams,
+            )
+            Rule()
 
-        SectionHeader("NOTIFICATIONS")
-        MenuRow(
-            label = "Score alerts",
-            detail = if (notify) "[ ON ]" else "OFF",
-            sub = "Goals, runs and touchdowns, plus halftime, quarters and periods. " +
-                "Basketball only at the quarter, baseball never by the inning",
-            onClick = {
-                notify = !notify
-                vm.setNotificationsEnabled(notify)
-            },
-        )
-        Rule()
-        MenuRow(
-            label = "Game starting",
-            detail = if (starts) "[ ON ]" else "OFF",
-            sub = "A nudge when a followed team takes the field",
-            onClick = {
-                starts = !starts
-                vm.setNotifyStarts(starts)
-            },
-        )
-        Rule()
-        MenuRow(
-            label = "On-screen alert",
-            // A third state, and it is not this app's to set. Saying ON while nothing appeared
-            // would be a toggle that lies — and the setting really is still on, which is why this
-            // is said out loud rather than quietly flipped.
-            detail = when {
-                alertsOwned -> "CONTROL"
-                alertBox -> "[ ON ]"
-                else -> "OFF"
-            },
-            sub = if (alertsOwned) {
-                "BrightControl puts the box up for every app now, so this one stands aside. " +
-                    "Turn banners off there to bring this one back. The buzz and the " +
-                    "notification are unchanged either way"
-            } else {
-                "The box over the screen when a score lands. Off keeps the buzz " +
-                    "and the notification, but nothing appears over what you're doing"
-            },
-            onClick = {
-                alertBox = !alertBox
-                vm.setAlertBoxEnabled(alertBox)
-            },
-        )
-        Rule()
-        MenuRow(
-            label = "Live updates",
-            detail = if (live) "[ ON ]" else "OFF",
-            sub = "While a followed team is playing, check every 30–60 seconds instead " +
-                "of every nine minutes. A quiet card sits in the shade for as long as " +
-                "the game does, and goes when it ends",
-            onClick = {
-                live = !live
-                vm.setLiveUpdatesEnabled(live)
-            },
-        )
-        Rule()
+            SectionHeader("NOTIFICATIONS")
+            MenuRow(
+                label = "Score alerts",
+                detail = if (notify) "[ ON ]" else "OFF",
+                sub = "Goals, runs and touchdowns, plus halftime, quarters and periods. " +
+                    "Basketball only at the quarter, baseball never by the inning",
+                onClick = {
+                    notify = !notify
+                    vm.setNotificationsEnabled(notify)
+                },
+            )
+            Rule()
+            MenuRow(
+                label = "Game starting",
+                detail = if (starts) "[ ON ]" else "OFF",
+                sub = "A nudge when a followed team takes the field",
+                onClick = {
+                    starts = !starts
+                    vm.setNotifyStarts(starts)
+                },
+            )
+            Rule()
+            MenuRow(
+                label = "On-screen alert",
+                // A third state, and it is not this app's to set. Saying ON while nothing appeared
+                // would be a toggle that lies — and the setting really is still on, which is why this
+                // is said out loud rather than quietly flipped.
+                detail = when {
+                    alertsOwned -> "CONTROL"
+                    alertBox -> "[ ON ]"
+                    else -> "OFF"
+                },
+                sub = if (alertsOwned) {
+                    "BrightControl puts the box up for every app now, so this one stands aside. " +
+                        "Turn banners off there to bring this one back. The buzz and the " +
+                        "notification are unchanged either way"
+                } else {
+                    "The box over the screen when a score lands. Off keeps the buzz " +
+                        "and the notification, but nothing appears over what you're doing"
+                },
+                onClick = {
+                    alertBox = !alertBox
+                    vm.setAlertBoxEnabled(alertBox)
+                },
+            )
+            Rule()
+            MenuRow(
+                label = "Live updates",
+                detail = if (live) "[ ON ]" else "OFF",
+                sub = "While a followed team is playing, check every 30–60 seconds instead " +
+                    "of every nine minutes. A quiet card sits in the shade for as long as " +
+                    "the game does, and goes when it ends",
+                onClick = {
+                    live = !live
+                    vm.setLiveUpdatesEnabled(live)
+                },
+            )
+            Rule()
 
-        SectionHeader("FOOTBALL ALERTS")
-        Text(
-            "LOUDNESS",
-            style = MaterialTheme.typography.labelSmall,
-            color = Faint,
-            modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp),
-        )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            for ((choice, label) in FOOTBALL_LOUDNESS) {
-                Chip(label = label, selected = choice == fbLoudness) {
-                    fbLoudness = choice
-                    vm.setFootballLoudness(choice)
-                }
-            }
-        }
-        Text(
-            when (fbLoudness) {
-                Loudness.EVERY_SCORE -> "Every touchdown, field goal and safety, as it lands."
-                Loudness.TOUCHDOWNS -> "Touchdowns only. A TD and its PAT arrive as one buzz; " +
-                    "field goals and safeties are folded into the quarter mark."
-                Loudness.PERIOD_ONLY -> "The score at the end of each quarter, and the final."
-                Loudness.FINAL_ONLY -> "The final score only."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-            color = Dim,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        Text(
-            "MOMENTS",
-            style = MaterialTheme.typography.labelSmall,
-            color = Faint,
-            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
-        )
-        MenuRow(
-            label = "Red zone",
-            detail = if (redZone) "[ ON ]" else "OFF",
-            sub = "When a team you follow crosses the 20",
-            onClick = {
-                redZone = !redZone
-                vm.setAlertRedZone(redZone)
-            },
-        )
-        MenuRow(
-            label = "One-score game",
-            detail = if (close) "[ ON ]" else "OFF",
-            sub = "Once, when Q4 hits 5:00 and it's within 8",
-            onClick = {
-                close = !close
-                vm.setAlertClose(close)
-            },
-        )
-        MenuRow(
-            label = "Halftime and final",
-            detail = if (breaks) "[ ON ]" else "OFF",
-            sub = "Score at the break and at the whistle. Applies to every sport",
-            onClick = {
-                breaks = !breaks
-                vm.setAlertBreaks(breaks)
-            },
-        )
-        Rule()
-
-        SectionHeader("DELIVERY")
-        MenuRow(
-            label = "Live relay",
-            detail = if (relay) "[ ON ]" else "OFF",
-            sub = relayLine,
-            onClick = {
-                relay = !relay
-                vm.setRelayEnabled(relay)
-                relayLine = Health.relayLine(context)
-            },
-        )
-        Text(
-            "One connection to sports.gzl.dev, a relay on BasilNet that watches ESPN's own " +
-                "live feed and pushes each change the moment it happens. No polling while it is " +
-                "up; the poll stays underneath as a safety net every five minutes. The relay " +
-                "never learns which teams you follow: the phone subscribes to its own games.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Dim,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        Rule()
-        MenuRow(
-            label = "How scores arrive",
-            sub = "$health\n$holdback",
-            onClick = {
-                health = Health.summary(context)
-                holdback = Health.advice(context)
-                dozeExempt = Health.dozeExempt(context)
-                relayLine = Health.relayLine(context)
-            },
-        )
-        Rule()
-        MenuRow(
-            label = "Battery optimisation",
-            detail = if (dozeExempt) "EXEMPT" else "ON",
-            sub = if (dozeExempt) {
-                "The phone is not holding this app in Doze, so checks land on time " +
-                    "whether or not the live card is up"
-            } else {
-                "Tap to ask the phone to stop putting this app to sleep. If nothing " +
-                    "opens, LightOS has no screen for it — grant it over adb with " +
-                    "dumpsys deviceidle whitelist +com.gios.lightsports"
-            },
-            onClick = {
-                // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS first: it is the one that
-                // grants in a single tap. LightOS ships no Settings app on some builds,
-                // so neither may resolve, and the row already says what to do then.
-                val direct = Intent(
-                    Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                    Uri.parse("package:${context.packageName}"),
-                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                runCatching { context.startActivity(direct) }
-                    .recoverCatching { context.startActivity(list) }
-            },
-        )
-        Rule()
-
-        SectionHeader("SPOILER DELAY")
-        MenuRow(
-            label = "Hold scores",
-            detail = if (delayOn) "[ ON ]" else "OFF",
-            sub = "Streams run a minute or two behind live",
-            onClick = {
-                delayOn = !delayOn
-                vm.setDelayEnabled(delayOn)
-            },
-        )
-        if (delayOn) {
+            SectionHeader("FOOTBALL ALERTS")
+            Text(
+                "LOUDNESS",
+                style = MaterialTheme.typography.labelSmall,
+                color = Faint,
+                modifier = Modifier.padding(start = 16.dp, top = 4.dp, bottom = 8.dp),
+            )
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                for (minutes in DELAY_CHOICES) {
-                    Chip(
-                        label = if (minutes == 0) "NONE" else "${minutes}M",
-                        selected = minutes == delay,
-                    ) {
-                        delay = minutes
-                        vm.setDelayMinutes(minutes)
+                for ((choice, label) in FOOTBALL_LOUDNESS) {
+                    Chip(label = label, selected = choice == fbLoudness) {
+                        fbLoudness = choice
+                        vm.setFootballLoudness(choice)
                     }
                 }
             }
             Text(
-                "Alerts and the live card both run $delay min behind. Several scores in one " +
-                    "window collapse into a single alert; the card walks through them in order.",
+                when (fbLoudness) {
+                    Loudness.EVERY_SCORE -> "Every touchdown, field goal and safety, as it lands."
+                    Loudness.TOUCHDOWNS -> "Touchdowns only. A TD and its PAT arrive as one buzz; " +
+                        "field goals and safeties are folded into the quarter mark."
+                    Loudness.PERIOD_ONLY -> "The score at the end of each quarter, and the final."
+                    Loudness.FINAL_ONLY -> "The final score only."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = Dim,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            Text(
+                "MOMENTS",
+                style = MaterialTheme.typography.labelSmall,
+                color = Faint,
+                modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+            )
+            MenuRow(
+                label = "Red zone",
+                detail = if (redZone) "[ ON ]" else "OFF",
+                sub = "When a team you follow crosses the 20",
+                onClick = {
+                    redZone = !redZone
+                    vm.setAlertRedZone(redZone)
+                },
+            )
+            MenuRow(
+                label = "One-score game",
+                detail = if (close) "[ ON ]" else "OFF",
+                sub = "Once, when Q4 hits 5:00 and it's within 8",
+                onClick = {
+                    close = !close
+                    vm.setAlertClose(close)
+                },
+            )
+            MenuRow(
+                label = "Halftime and final",
+                detail = if (breaks) "[ ON ]" else "OFF",
+                sub = "Score at the break and at the whistle. Applies to every sport",
+                onClick = {
+                    breaks = !breaks
+                    vm.setAlertBreaks(breaks)
+                },
+            )
+            Rule()
+
+            SectionHeader("CELEBRATIONS")
+            MenuRow(
+                label = "Celebrate a score",
+                detail = if (celebrate) "[ ON ]" else "OFF",
+                sub = "Something on the screen when a team you follow scores, and once more " +
+                    "if they win. Only ever on a screen you are already looking at — it never " +
+                    "wakes the phone and never draws over another app",
+                onClick = {
+                    celebrate = !celebrate
+                    vm.setCelebrationEnabled(celebrate)
+                    if (celebrate) preview = System.currentTimeMillis()
+                },
+            )
+            for (option in Celebration.entries) {
+                Rule()
+                MenuRow(
+                    label = option.label,
+                    detail = if (celebrate && option == celebrationStyle) "[ ON ]" else null,
+                    // The row is the demonstration. A list of four names with one sentence each
+                    // is four guesses; tapping one and watching it is the only way to pick.
+                    sub = "${option.blurb}. Tap to watch it",
+                    dim = !celebrate,
+                    onClick = {
+                        celebrationStyle = option
+                        celebrate = true
+                        vm.setCelebration(option)
+                        preview = System.currentTimeMillis()
+                    },
+                )
+            }
+            Rule()
+
+            SectionHeader("DELIVERY")
+            MenuRow(
+                label = "Live relay",
+                detail = if (relay) "[ ON ]" else "OFF",
+                sub = relayLine,
+                onClick = {
+                    relay = !relay
+                    vm.setRelayEnabled(relay)
+                    relayLine = Health.relayLine(context)
+                },
+            )
+            Text(
+                "One connection to sports.gzl.dev, a relay on BasilNet that watches ESPN's own " +
+                    "live feed and pushes each change the moment it happens. No polling while it is " +
+                    "up; the poll stays underneath as a safety net every five minutes. The relay " +
+                    "never learns which teams you follow: the phone subscribes to its own games.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Dim,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
-        }
-        Rule()
+            Rule()
+            MenuRow(
+                label = "How scores arrive",
+                sub = "$health\n$holdback",
+                onClick = {
+                    health = Health.summary(context)
+                    holdback = Health.advice(context)
+                    dozeExempt = Health.dozeExempt(context)
+                    relayLine = Health.relayLine(context)
+                },
+            )
+            Rule()
+            MenuRow(
+                label = "Battery optimisation",
+                detail = if (dozeExempt) "EXEMPT" else "ON",
+                sub = if (dozeExempt) {
+                    "The phone is not holding this app in Doze, so checks land on time " +
+                        "whether or not the live card is up"
+                } else {
+                    "Tap to ask the phone to stop putting this app to sleep. If nothing " +
+                        "opens, LightOS has no screen for it — grant it over adb with " +
+                        "dumpsys deviceidle whitelist +com.gios.lightsports"
+                },
+                onClick = {
+                    // ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS first: it is the one that
+                    // grants in a single tap. LightOS ships no Settings app on some builds,
+                    // so neither may resolve, and the row already says what to do then.
+                    val direct = Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:${context.packageName}"),
+                    ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    val list = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    runCatching { context.startActivity(direct) }
+                        .recoverCatching { context.startActivity(list) }
+                },
+            )
+            Rule()
 
-        SectionHeader("ABOUT")
-        MenuRow("Version", detail = version)
-        MenuRow(
-            label = "Data",
-            sub = "ESPN for the majors and F1, MLB StatsAPI for the minors, " +
-                "HockeyTech for the PWHL",
+            SectionHeader("SPOILER DELAY")
+            MenuRow(
+                label = "Hold scores",
+                detail = if (delayOn) "[ ON ]" else "OFF",
+                sub = "Streams run a minute or two behind live",
+                onClick = {
+                    delayOn = !delayOn
+                    vm.setDelayEnabled(delayOn)
+                },
+            )
+            if (delayOn) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    for (minutes in DELAY_CHOICES) {
+                        Chip(
+                            label = if (minutes == 0) "NONE" else "${minutes}M",
+                            selected = minutes == delay,
+                        ) {
+                            delay = minutes
+                            vm.setDelayMinutes(minutes)
+                        }
+                    }
+                }
+                Text(
+                    "Alerts and the live card both run $delay min behind. Several scores in one " +
+                        "window collapse into a single alert; the card walks through them in order.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Dim,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            Rule()
+
+            SectionHeader("ABOUT")
+            MenuRow("Version", detail = version)
+            MenuRow(
+                label = "Data",
+                sub = "ESPN for the majors and F1, MLB StatsAPI for the minors, " +
+                    "HockeyTech for the PWHL",
+            )
+            Text(
+                "Between games the app runs on an alarm, the only thing that fires while " +
+                    "the phone is asleep, and the system holds those to roughly a nine " +
+                    "minute floor. Live updates step around that for the couple of hours a " +
+                    "game lasts; with it off, the nine minutes apply all the time. Taking " +
+                    "the app out of battery optimisation removes the floor itself.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = Dim,
+                modifier = Modifier.padding(16.dp),
+            )
+            Spacer(Modifier.height(32.dp))
+        }
+        CelebrationOverlay(
+            style = celebrationStyle,
+            trigger = preview,
+            // Nothing on this screen is a score, so each effect opens where it would
+            // if nobody had told it: the middle.
+            anchor = null,
+            figure = "7",
         )
-        Text(
-            "Between games the app runs on an alarm, the only thing that fires while " +
-                "the phone is asleep, and the system holds those to roughly a nine " +
-                "minute floor. Live updates step around that for the couple of hours a " +
-                "game lasts; with it off, the nine minutes apply all the time. Taking " +
-                "the app out of battery optimisation removes the floor itself.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = Dim,
-            modifier = Modifier.padding(16.dp),
-        )
-        Spacer(Modifier.height(32.dp))
     }
 }

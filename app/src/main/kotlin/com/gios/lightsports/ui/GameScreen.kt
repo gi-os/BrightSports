@@ -23,6 +23,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -34,12 +35,16 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.hw.WheelScroll
+import com.gios.lightsports.model.Celebration
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
 import com.gios.lightsports.model.Play
@@ -88,6 +93,16 @@ fun GameScreen(
     onLoadRecap: () -> Unit = {},
     onLoadPlays: () -> Unit = {},
     onTeam: (Side) -> Unit = {},
+    /** Which celebration to run when a side worth celebrating scores, or null when it is off. */
+    celebration: Celebration? = null,
+    /**
+     * Whether this side is one to celebrate: followed, and not silenced.
+     *
+     * Silenced counts, even though nothing here buzzes or wakes the phone. Muting a team is
+     * the user saying they do not want a fuss made about it, and three shells going up the
+     * screen is a fuss.
+     */
+    isCelebrated: (Side) -> Boolean = { false },
 ) {
     val zone = ZoneId.systemDefault()
     val league = Leagues.byId(game.leagueId)
@@ -116,213 +131,279 @@ fun GameScreen(
     val homeWon = final && (game.home.score ?: 0) > (game.away.score ?: 0)
     val awayWon = final && (game.away.score ?: 0) > (game.home.score ?: 0)
 
-    Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
-        // ---- the status line: where the game is, and how fresh this screen is
-        Row(
-            Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (live) {
-                    LiveDot()
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(
-                    statusLabel(game, league?.short, kind, zone),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (live) Color.White else Dim,
-                    maxLines = 1,
-                )
-            }
-            Text(
-                when {
-                    // Says so once rather than counting down: a ticking "12s ago" on a
-                    // matte panel is a distraction from the score it sits next to. It goes
-                    // white for a moment each time an update lands, which is the part that
-                    // makes the sentence believable.
-                    tracking -> "UPDATING EVERY $everySeconds S"
-                    game.state == GameState.PRE ->
-                        Fmt.until(game.startMillis, System.currentTimeMillis()).uppercase()
-                            .let { if (it == "NOW") "STARTING" else (if (football) "KICKOFF " else "STARTS ") + it }
-                    else -> listOfNotNull(
-                        Fmt.dayDate(game.startMillis, zone).uppercase(),
-                        game.venue?.uppercase(),
-                    ).joinToString(" · ")
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = if (tracking) flashOnUpdate(stamp, Faint) else Faint,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 12.dp).weight(1f, fill = false),
-                textAlign = TextAlign.End,
-            )
+    // ---- the celebration
+    // Everything below is keyed on the game id, so opening another game starts clean and
+    // the score it opens on is never treated as a score that just happened.
+    var celebrateAt by remember(game.id) { mutableLongStateOf(0L) }
+    var celebrateAnchor by remember(game.id) { mutableStateOf<Offset?>(null) }
+    var celebrateFigure by remember(game.id) { mutableStateOf<String?>(null) }
+    var lastAway by remember(game.id) { mutableStateOf(game.away.score) }
+    var lastHome by remember(game.id) { mutableStateOf(game.home.score) }
+    var finalCelebrated by remember(game.id) { mutableStateOf(false) }
+    // Where the two figures sit, in window coordinates, and where this layer starts. The
+    // difference is the anchor: an effect that opens on "the number that moved" has to
+    // know which pixel that is, and only the layout knows.
+    var boxOrigin by remember { mutableStateOf(Offset.Zero) }
+    var awayMark by remember { mutableStateOf<Offset?>(null) }
+    var homeMark by remember { mutableStateOf<Offset?>(null) }
+
+    LaunchedEffect(game.away.score, game.home.score, game.state, celebration) {
+        if (celebration == null) return@LaunchedEffect
+        val away = game.away.score
+        val home = game.home.score
+        val was = lastAway to lastHome
+        lastAway = away
+        lastHome = home
+
+        fun fire(mark: Offset?, figure: Int?) {
+            celebrateAnchor = mark?.let { it - boxOrigin }
+            celebrateFigure = figure?.toString()
+            celebrateAt = System.currentTimeMillis()
         }
 
-        // ---- the two marks and the score
-        Spacer(Modifier.height(14.dp))
-        ScoreHeader(
-            game = game,
-            kind = kind,
-            logos = logos,
-            dimAway = final && !awayWon,
-            dimHome = final && !homeWon,
-            onTeam = onTeam,
-        )
+        // The whistle first, and only once: a final that arrives in the same pass as the
+        // winning score should be one celebration, not two on top of each other.
+        if (final && !finalCelebrated) {
+            finalCelebrated = true
+            when {
+                homeWon && isCelebrated(game.home) -> fire(homeMark, was.second)
+                awayWon && isCelebrated(game.away) -> fire(awayMark, was.first)
+            }
+            return@LaunchedEffect
+        }
+        if (game.state != GameState.LIVE) return@LaunchedEffect
+        // Strictly greater: a provider correcting a score downward is not a goal, and the
+        // one thing worse than missing a celebration is firing one for a scoring decision
+        // being taken back.
+        when {
+            away != null && was.first != null && away > was.first!! && isCelebrated(game.away) ->
+                fire(awayMark, was.first)
+            home != null && was.second != null && home > was.second!! && isCelebrated(game.home) ->
+                fire(homeMark, was.second)
+        }
+    }
 
-        // ---- live football: the ball, the field, the drive
-        val situation = game.situation
-        if (live && football && situation != null) {
-            val offense = game.offense
-            Spacer(Modifier.height(18.dp))
+    // The celebration is a layer over the whole screen, not something inside the
+    // scrolling column: it has to reach the edges, and it must not move when the
+    // reader scrolls down to the plays while it is still running.
+    Box(Modifier.fillMaxSize().onGloballyPositioned { boxOrigin = it.positionInWindow() }) {
+        Column(Modifier.fillMaxSize().verticalScroll(scroll)) {
+            // ---- the status line: where the game is, and how fresh this screen is
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (live) {
+                        LiveDot()
+                        Spacer(Modifier.width(8.dp))
+                    }
+                    Text(
+                        statusLabel(game, league?.short, kind, zone),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (live) Color.White else Dim,
+                        maxLines = 1,
+                    )
+                }
                 Text(
-                    listOfNotNull(offense?.let { "${it.abbrev} ball" }, situation.downDistance)
-                        .joinToString(" · ").ifEmpty { game.statusDetail },
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White,
+                    when {
+                        // Says so once rather than counting down: a ticking "12s ago" on a
+                        // matte panel is a distraction from the score it sits next to. It goes
+                        // white for a moment each time an update lands, which is the part that
+                        // makes the sentence believable.
+                        tracking -> "UPDATING EVERY $everySeconds S"
+                        game.state == GameState.PRE ->
+                            Fmt.until(game.startMillis, System.currentTimeMillis()).uppercase()
+                                .let { if (it == "NOW") "STARTING" else (if (football) "KICKOFF " else "STARTS ") + it }
+                        else -> listOfNotNull(
+                            Fmt.dayDate(game.startMillis, zone).uppercase(),
+                            game.venue?.uppercase(),
+                        ).joinToString(" · ")
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (tracking) flashOnUpdate(stamp, Faint) else Faint,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
-                )
-                if (situation.isRedZone) {
-                    Spacer(Modifier.width(10.dp))
-                    Tag("RED ZONE")
-                }
-            }
-            if (offense != null) {
-                Spacer(Modifier.height(8.dp))
-                FootballField(
-                    offense = offense,
-                    defense = game.defense ?: offense,
-                    yardsToGoal = situation.yardsToGoal(offense.abbrev),
-                    distance = situation.distance,
+                    modifier = Modifier.padding(start = 12.dp).weight(1f, fill = false),
+                    textAlign = TextAlign.End,
                 )
             }
-            val drive = situation.drive?.let { "DRIVE · ${it.uppercase()}" }
-            val lastType = plays.firstOrNull()?.type?.uppercase()
-            if (drive != null || lastType != null) {
-                Spacer(Modifier.height(8.dp))
+
+            // ---- the two marks and the score
+            Spacer(Modifier.height(14.dp))
+            ScoreHeader(
+                game = game,
+                kind = kind,
+                logos = logos,
+                dimAway = final && !awayWon,
+                dimHome = final && !homeWon,
+                onTeam = onTeam,
+                onScoreMark = { home, at -> if (home) homeMark = at else awayMark = at },
+            )
+
+            // ---- live football: the ball, the field, the drive
+            val situation = game.situation
+            if (live && football && situation != null) {
+                val offense = game.offense
+                Spacer(Modifier.height(18.dp))
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        drive ?: "",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = Faint,
+                        listOfNotNull(offense?.let { "${it.abbrev} ball" }, situation.downDistance)
+                            .joinToString(" · ").ifEmpty { game.statusDetail },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = Color.White,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (lastType != null) {
+                    if (situation.isRedZone) {
+                        Spacer(Modifier.width(10.dp))
+                        Tag("RED ZONE")
+                    }
+                }
+                if (offense != null) {
+                    Spacer(Modifier.height(8.dp))
+                    FootballField(
+                        offense = offense,
+                        defense = game.defense ?: offense,
+                        yardsToGoal = situation.yardsToGoal(offense.abbrev),
+                        distance = situation.distance,
+                    )
+                }
+                val drive = situation.drive?.let { "DRIVE · ${it.uppercase()}" }
+                val lastType = plays.firstOrNull()?.type?.uppercase()
+                if (drive != null || lastType != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Text(
-                            lastType,
+                            drive ?: "",
                             style = MaterialTheme.typography.labelSmall,
                             color = Faint,
                             maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
                         )
+                        if (lastType != null) {
+                            Text(
+                                lastType,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Faint,
+                                maxLines = 1,
+                            )
+                        }
                     }
                 }
+            } else if (!football && game.state != GameState.PRE) {
+                // The other sports' strips: the diamond and the count, shots and possession,
+                // leaders and shooting, shots on goal. Each draws only what the feed sent.
+                Spacer(Modifier.height(16.dp))
+                SportStrip(game, kind)
             }
-        } else if (!football && game.state != GameState.PRE) {
-            // The other sports' strips: the diamond and the count, shots and possession,
-            // leaders and shooting, shots on goal. Each draws only what the feed sent.
-            Spacer(Modifier.height(16.dp))
-            SportStrip(game, kind)
-        }
-        Spacer(Modifier.height(18.dp))
-        Rule()
+            Spacer(Modifier.height(18.dp))
+            Rule()
 
-        // ---- the recap
-        // The feed prints one clipped line of this and there is nowhere on that screen to
-        // put the rest of it. Here there is room, and for a final game the whole story is
-        // one tap further in.
-        val recapLead = game.recap
-        if (recapLead != null) {
-            SectionHeader("RECAP")
-            Recap(
-                lead = recapLead,
-                story = recapStory,
-                canExpand = final,
-                onExpand = onLoadRecap,
+            // ---- the recap
+            // The feed prints one clipped line of this and there is nowhere on that screen to
+            // put the rest of it. Here there is room, and for a final game the whole story is
+            // one tap further in.
+            val recapLead = game.recap
+            if (recapLead != null) {
+                SectionHeader("RECAP")
+                Recap(
+                    lead = recapLead,
+                    story = recapStory,
+                    canExpand = final,
+                    onExpand = onLoadRecap,
+                )
+                Spacer(Modifier.height(12.dp))
+                Rule()
+            }
+
+            // ---- the last plays, live only
+            if (live && plays.isNotEmpty()) {
+                SectionHeader("LAST PLAYS")
+                for ((i, play) in plays.take(6).withIndex()) {
+                    PlayRow(play, kind, first = i == 0)
+                }
+                Spacer(Modifier.height(10.dp))
+                Rule()
+            }
+
+            // ---- line score / scoring summary
+            val hasLine = game.away.lineScore.isNotEmpty() || game.home.lineScore.isNotEmpty()
+            val soccer = kind == SportKind.SOCCER
+            // Soccer's story is on the scoreboard itself (goals and cards under `details`);
+            // basketball's summary has no scoring list worth the half-megabyte. The rest ask
+            // the game summary for their scoring plays.
+            val canScore = league?.provider == com.gios.lightsports.model.Provider.ESPN &&
+                kind != SportKind.TENNIS && kind != SportKind.RACING && kind != SportKind.BASKETBALL &&
+                game.state != GameState.PRE
+            if (hasLine || canScore) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    if (hasLine) {
+                        Chip(lineScoreTitle(kind), selected = !showScoring) { showScoring = false }
+                    }
+                    if (canScore) {
+                        Chip(if (soccer) "TIMELINE" else "SCORING", selected = showScoring || !hasLine) {
+                            showScoring = true
+                        }
+                    }
+                }
+                when {
+                    (showScoring || !hasLine) && soccer -> TimelineList(game, game.timeline)
+                    showScoring || !hasLine -> ScoringList(game, scoring)
+                    else -> LineScoreTable(game, kind)
+                }
+                Rule()
+            }
+
+            // ---- details
+            SectionHeader("DETAILS")
+            game.note?.let {
+                MenuRow(if (kind == SportKind.TENNIS) "Round" else "Series", detail = null, sub = it)
+            }
+            MenuRow(
+                when (kind) {
+                    SportKind.BASEBALL -> "First pitch"
+                    SportKind.FOOTBALL -> "Kickoff"
+                    SportKind.BASKETBALL -> "Tip-off"
+                    else -> "Start"
+                },
+                detail = Fmt.time(game.startMillis, zone),
+                sub = Fmt.dayDate(game.startMillis, zone),
             )
-            Spacer(Modifier.height(12.dp))
-            Rule()
-        }
-
-        // ---- the last plays, live only
-        if (live && plays.isNotEmpty()) {
-            SectionHeader("LAST PLAYS")
-            for ((i, play) in plays.take(6).withIndex()) {
-                PlayRow(play, kind, first = i == 0)
+            game.venue?.let { MenuRow(if (kind == SportKind.TENNIS) "Court" else "Venue", sub = it) }
+            game.broadcast?.let { MenuRow("TV", detail = it) }
+            if (game.state == GameState.PRE) {
+                game.odds?.let { MenuRow("Line", detail = it) }
+                game.overUnder?.let { MenuRow("Over / under", detail = it) }
             }
-            Spacer(Modifier.height(10.dp))
-            Rule()
-        }
-
-        // ---- line score / scoring summary
-        val hasLine = game.away.lineScore.isNotEmpty() || game.home.lineScore.isNotEmpty()
-        val soccer = kind == SportKind.SOCCER
-        // Soccer's story is on the scoreboard itself (goals and cards under `details`);
-        // basketball's summary has no scoring list worth the half-megabyte. The rest ask
-        // the game summary for their scoring plays.
-        val canScore = league?.provider == com.gios.lightsports.model.Provider.ESPN &&
-            kind != SportKind.TENNIS && kind != SportKind.RACING && kind != SportKind.BASKETBALL &&
-            game.state != GameState.PRE
-        if (hasLine || canScore) {
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                if (hasLine) {
-                    Chip(lineScoreTitle(kind), selected = !showScoring) { showScoring = false }
-                }
-                if (canScore) {
-                    Chip(if (soccer) "TIMELINE" else "SCORING", selected = showScoring || !hasLine) {
-                        showScoring = true
-                    }
-                }
+            game.weather?.let { MenuRow("Weather", detail = it) }
+            if (game.state == GameState.PRE) {
+                game.away.record?.let { MenuRow(game.away.short, detail = it) }
+                game.home.record?.let { MenuRow(game.home.short, detail = it) }
             }
-            when {
-                (showScoring || !hasLine) && soccer -> TimelineList(game, game.timeline)
-                showScoring || !hasLine -> ScoringList(game, scoring)
-                else -> LineScoreTable(game, kind)
-            }
-            Rule()
+            Spacer(Modifier.height(32.dp))
         }
-
-        // ---- details
-        SectionHeader("DETAILS")
-        game.note?.let {
-            MenuRow(if (kind == SportKind.TENNIS) "Round" else "Series", detail = null, sub = it)
+        if (celebration != null) {
+            CelebrationOverlay(
+                style = celebration,
+                trigger = celebrateAt,
+                anchor = celebrateAnchor,
+                figure = celebrateFigure,
+            )
         }
-        MenuRow(
-            when (kind) {
-                SportKind.BASEBALL -> "First pitch"
-                SportKind.FOOTBALL -> "Kickoff"
-                SportKind.BASKETBALL -> "Tip-off"
-                else -> "Start"
-            },
-            detail = Fmt.time(game.startMillis, zone),
-            sub = Fmt.dayDate(game.startMillis, zone),
-        )
-        game.venue?.let { MenuRow(if (kind == SportKind.TENNIS) "Court" else "Venue", sub = it) }
-        game.broadcast?.let { MenuRow("TV", detail = it) }
-        if (game.state == GameState.PRE) {
-            game.odds?.let { MenuRow("Line", detail = it) }
-            game.overUnder?.let { MenuRow("Over / under", detail = it) }
-        }
-        game.weather?.let { MenuRow("Weather", detail = it) }
-        if (game.state == GameState.PRE) {
-            game.away.record?.let { MenuRow(game.away.short, detail = it) }
-            game.home.record?.let { MenuRow(game.home.short, detail = it) }
-        }
-        Spacer(Modifier.height(32.dp))
     }
 }
 
@@ -364,6 +445,8 @@ private fun ScoreHeader(
     dimAway: Boolean,
     dimHome: Boolean,
     onTeam: (Side) -> Unit,
+    /** Where a figure sits, in window coordinates. True for the home side. */
+    onScoreMark: (Boolean, Offset) -> Unit = { _, _ -> },
 ) {
     val live = game.state == GameState.LIVE
     val showTimeouts = live && kind == SportKind.FOOTBALL && game.situation?.homeTimeouts != null
@@ -391,6 +474,12 @@ private fun ScoreHeader(
                     game.away.score?.toString() ?: "-",
                     style = Marks.big,
                     color = if (dimAway) Dim else Color.White,
+                    // Reported in window coordinates, which is the one frame both this
+                    // figure and the celebration layer can agree on. The layer subtracts
+                    // its own origin; neither has to know where the other sits.
+                    modifier = Modifier.onGloballyPositioned {
+                        onScoreMark(false, it.boundsInWindow().center)
+                    },
                 )
                 Text(
                     "–",
@@ -402,6 +491,9 @@ private fun ScoreHeader(
                     game.home.score?.toString() ?: "-",
                     style = Marks.big,
                     color = if (dimHome) Dim else Color.White,
+                    modifier = Modifier.onGloballyPositioned {
+                        onScoreMark(true, it.boundsInWindow().center)
+                    },
                 )
             }
         }

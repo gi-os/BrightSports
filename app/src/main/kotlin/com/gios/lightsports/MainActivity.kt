@@ -406,6 +406,13 @@ private fun App(openGameId: String?) {
                             showTeam(l, side.teamId, side.displayName, side.abbrev)
                         }
                     },
+                    // Read out of prefs rather than held in a flow: this is a screen the
+                    // settings screen is two taps away from, and coming back recomposes.
+                    celebration = vm.prefs.celebration.takeIf { vm.prefs.celebrationEnabled },
+                    isCelebrated = { side ->
+                        val key = "${game.leagueId}:${side.teamId}"
+                        key in follows && key !in muted
+                    },
                 )
                 team != null -> TeamScreen(
                     league = team.league,

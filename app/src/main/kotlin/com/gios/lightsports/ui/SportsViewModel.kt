@@ -8,6 +8,7 @@ import com.gios.lightsports.data.Leagues
 import com.gios.lightsports.data.Prefs
 import com.gios.lightsports.data.SpecialEvents
 import com.gios.lightsports.data.SportsRepository
+import com.gios.lightsports.model.Celebration
 import com.gios.lightsports.model.FieldEvent
 import com.gios.lightsports.model.Game
 import com.gios.lightsports.model.GameState
@@ -608,5 +609,15 @@ class SportsViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setAlertBreaks(enabled: Boolean) {
         prefs.alertBreaks = enabled
+    }
+
+    fun setCelebrationEnabled(enabled: Boolean) {
+        prefs.celebrationEnabled = enabled
+    }
+
+    /** Picking a style turns the whole thing on: choosing one is how you ask for it. */
+    fun setCelebration(style: Celebration) {
+        prefs.celebration = style
+        prefs.celebrationEnabled = true
     }
 }
