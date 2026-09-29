@@ -1,0 +1,3 @@
+*.p8
+tape-data/
+__pycache__/

@@ -28,6 +28,14 @@ services:
       NTFY_URL: http://ntfy:80
       NTFY_TOKEN: ${NTFY_TOKEN}
       CORRECTION_SECONDS: "300"
+      # Tape Delay: APNs token key at tape-data/apns.p8 (not committed), ids from .env.
+      TAPE_DB: /data/tape.db
+      APNS_KEY_FILE: /data/apns.p8
+      APNS_KEY_ID: ${APNS_KEY_ID:-}
+      APNS_TEAM_ID: ${APNS_TEAM_ID:-}
+      APNS_TOPIC: com.gios.tapedelay
+    volumes:
+      - ./tape-data:/data
 
   cloudflared:
     image: cloudflare/cloudflared:latest

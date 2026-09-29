@@ -11,6 +11,7 @@ zone, spoiler hold) and runs its own diff, so the relay never decides what is wo
 import asyncio, json, logging, os, time
 import aiohttp
 from fastcast import FastCast
+import tape
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("relay")
@@ -108,6 +109,8 @@ class Relay:
         self.published = 0
         self.http = None
         self.fc = FastCast(TOPICS, self.on_document, self.on_event)
+        # Tape Delay (iPhone): per-device held pushes. Off with TAPE=0.
+        self.tape = tape.Tape() if os.environ.get("TAPE", "1") != "0" else None
 
     async def on_document(self, topic, doc):
         # A checkpoint is the truth; publish anything that differs from what we last said,
@@ -133,6 +136,11 @@ class Relay:
         if prev == snap:
             return
         self.last[eid] = snap
+        if self.tape:
+            try:
+                await self.tape.on_snapshot(ev, prev, snap)
+            except Exception:
+                log.exception("tape")
         await self.publish(f"bs-{eid}", dict(snap, ts=int(time.time() * 1000), src=source))
 
     async def publish(self, topic, payload):
@@ -176,8 +184,10 @@ class Relay:
         await asyncio.sleep(5)
         while True:
             for path in CORRECTION_PATHS:
-                sep = "&" if "?" in path else "?"
-                url = f"{SITE}/{path}{sep}limit=300"
+                # `football/college-football?groups=80` -> `.../college-football/scoreboard?groups=80&limit=300`.
+                # (Before 2026-09-28 the `/scoreboard` was missing and every correction 404'd.)
+                base, _, query = path.partition("?")
+                url = f"{SITE}/{base}/scoreboard?" + (f"{query}&" if query else "") + "limit=300"
                 try:
                     async with self.http.get(url, headers=headers,
                                              timeout=aiohttp.ClientTimeout(total=20)) as r:
@@ -198,7 +208,10 @@ class Relay:
     async def run(self):
         async with aiohttp.ClientSession() as http:
             self.http = http
-            await asyncio.gather(self.fc.run_forever(), self.heartbeat(), self.corrections())
+            jobs = [self.fc.run_forever(), self.heartbeat(), self.corrections()]
+            if self.tape:
+                jobs.append(tape.serve(self.tape))
+            await asyncio.gather(*jobs)
 
 
 if __name__ == "__main__":

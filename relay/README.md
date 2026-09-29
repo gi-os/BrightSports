@@ -58,3 +58,22 @@ a list of JSON-patch operations whose paths start with the event uid
 `st` is `pre`/`in`/`post`; `done` is ESPN's `completed`. Baseball carries `b`, `s`, `o`,
 `on1..on3`, `bat`, `pit`, `bats`, `pits` under `sit`. The phone applies this onto the game
 it already holds (`data/RelaySnapshot.kt`) and runs its own diff.
+
+## Tape Delay (iPhone)
+
+`tape.py` runs inside `bs-relay`. iOS can't poll in the background, so for the iPhone app
+the relay also does the diff and sends the pushes itself, each one held for that device's
+own delay:
+
+- `POST /tape/v1/device` `{token, env, delay, follows:[team uid], prefs, startToken}` registers or updates a device
+- `POST /tape/v1/activity` `{device, game, token}` registers a Live Activity's update token
+- `GET /tape/v1/delayed?ids=a,b&delay=45` returns each game's snapshot as of 45 seconds ago
+- `GET /tape/v1/health`
+
+Follows are ESPN team uids (`s:20~l:28~t:26`), so team ids can't collide across leagues.
+Routed by `cloudflared`: `sports.gzl.dev/tape/*` → `relay:8094`, everything else → ntfy.
+
+APNs: put the `.p8` key at `tape-data/apns.p8` and set `APNS_KEY_ID` and `APNS_TEAM_ID` in
+`.env`. Without them the pusher runs dry and logs what it would have sent.
+
+Tests: `python3 -m unittest test_tape` (needs aiohttp and websockets installed).
