@@ -393,7 +393,10 @@ class Tape:
         self.meta = {}           # game -> {"teams", "sport", "attrs"}
         self.marked = {}         # game -> last period an end was announced for
         self.swept = 0.0
-        self.late_sent = set()   # (device, game) already told "past start, not under way"
+        self.late_sent = set()
+        self.la_seq = 0
+        self.la_latest = {}      # (device, game) -> newest queued update's sequence number
+        self.la_sent_at = {}     # (device, game) -> when the card was last pushed   # (device, game) already told "past start, not under way"
         self.wake = asyncio.Event()
 
     async def on_snapshot(self, ev, prev, snap, now=None):
@@ -432,7 +435,7 @@ class Tape:
                 la = self.store.activities.get(eid, {}).get(d["token"])
                 if la:
                     on_card = True
-                    self.schedule(due, self._la_update, d["token"], eid, la, snap, bool(events))
+                    self._queue_la(due, d["token"], eid, la, snap, bool(events))
                 elif (d["token"], eid) in self.store.started:
                     on_card = True   # started, its update token not reported yet
                 elif snap.get("st") == "in" and d.get("start"):
@@ -451,7 +454,7 @@ class Tape:
         # An activity started by hand for a team this device does not follow still updates.
         for dev, la in list(self.store.activities.get(eid, {}).items()):
             if dev not in seen and dev in self.store.devices:
-                self.schedule(now + self.store.devices[dev]["delay"], self._la_update, dev, eid, la,
+                self._queue_la(now + self.store.devices[dev]["delay"], dev, eid, la,
                               snap, bool(events))
         if snap.get("st") == "post":
             self.marked.pop(eid, None)
@@ -552,18 +555,32 @@ class Tape:
         await self.apns.send(d["start"], payload, env=d["env"], push_type="liveactivity",
                              topic=TOPIC + ".push-type.liveactivity", priority=10)
 
-    async def _la_update(self, dev, eid, la, snap, important):
+    def _queue_la(self, due, dev, eid, la, snap, important):
+        """Queue a Live Activity update. Each carries a sequence number; when it comes due, only
+        the newest one for that card is sent, so a burst (a pitch, a foul, a ball) collapses
+        into the latest state instead of spending Apple's update budget on stale ones."""
+        self.la_seq += 1
+        self.la_latest[(dev, eid)] = self.la_seq
+        self.schedule(due, self._la_update, dev, eid, la, snap, important, self.la_seq)
+
+    async def _la_update(self, dev, eid, la, snap, important, seq=None):
         d = self.store.devices.get(dev)
         if not d:
             return
         final = snap.get("st") == "post"
+        if seq is not None and not final and self.la_latest.get((dev, eid)) != seq:
+            # A newer update is queued; it will go when due. Only let this one through if the
+            # card would otherwise sit unchanged for more than two seconds.
+            if time.time() - self.la_sent_at.get((dev, eid), 0) < 2:
+                return
+        self.la_sent_at[(dev, eid)] = time.time()
         aps = {"timestamp": int(time.time()), "event": "end" if final else "update",
                "content-state": content_state(snap)}
         if final:
             aps["dismissal-date"] = int(time.time()) + 3600
         st = await self.apns.send(la, {"aps": aps}, env=d["env"], push_type="liveactivity",
                                   topic=TOPIC + ".push-type.liveactivity",
-                                  priority=10 if important or final else 5)
+                                  priority=10)   # 5 lets iOS sit on it for minutes; the card is the point
         if st == 410 or final:
             self.store.set_activity(dev, eid, None)
 
