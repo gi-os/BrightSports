@@ -370,6 +370,11 @@ class APNs:
             return 0
         if r.status_code == 200:
             self.sent += 1
+            if push_type == "liveactivity":
+                aps = payload.get("aps", {})
+                cs = aps.get("content-state", {})
+                log.info("la %s %s… %s %s-%s %s", aps.get("event"), device_token[:8], cs.get("state"),
+                         cs.get("away"), cs.get("home"), cs.get("detail"))
             return 200
         self.failed += 1
         log.warning("apns %s %s… -> %s %s", push_type, device_token[:8], r.status_code, r.text[:200])
@@ -575,7 +580,24 @@ class Tape:
                 best = snap
             else:
                 break
-        return best if best is not None else {"id": eid, "st": "pre", "held": True}
+        if best is not None:
+            return best
+        # Nothing old enough. If the relay saw the game before it started, the honest answer is
+        # "not started yet on your stream". If its first sighting was already live (a relay
+        # restart mid-game), there is no older copy: give the earliest one rather than pretend
+        # the game hasn't started.
+        first_ts, first = h[0]
+        if first_ts == 0.0 or first.get("st") == "pre":
+            return {"id": eid, "st": "pre", "held": True}
+        return first
+
+    def latest(self, eid):
+        """The newest snapshot and when the relay got it, for syncing a delay to a stream."""
+        h = self.history.get(eid)
+        if not h:
+            return None
+        ts, snap = h[-1]
+        return {"ts": ts, "snap": snap}
 
 
 # ---------------------------------------------------------------- HTTP
@@ -623,6 +645,12 @@ def routes(tape):
         return web.json_response({k: v for k, v in out.items() if v is not None},
                                  headers={"Cache-Control": "no-store"})
 
+    async def latest(req):
+        eid = req.query.get("id", "")
+        got = tape.latest(eid)
+        body = {"now": time.time(), **(got or {})}
+        return web.json_response(body, headers={"Cache-Control": "no-store"})
+
     async def health(req):
         return web.json_response({"ok": True, "apns": tape.apns.enabled, "devices": len(tape.store.devices),
                                   "queued": len(tape.queue), "games": len(tape.history),
@@ -630,7 +658,8 @@ def routes(tape):
 
     app = web.Application(client_max_size=64 * 1024)
     app.add_routes([web.post("/tape/v1/device", register), web.post("/tape/v1/activity", activity),
-                    web.get("/tape/v1/delayed", delayed), web.get("/tape/v1/health", health)])
+                    web.get("/tape/v1/delayed", delayed), web.get("/tape/v1/latest", latest),
+                    web.get("/tape/v1/health", health)])
     return app
 
 

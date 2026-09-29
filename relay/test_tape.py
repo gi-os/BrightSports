@@ -183,6 +183,13 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(self.t.delayed("401", 600, now=1070)["st"], "pre")
         self.assertIsNone(self.t.delayed("nope", 0))
 
+    def test_first_sighting_live_is_not_reported_as_pregame(self):
+        # A relay restart mid-game: no pre-game copy exists, so don't claim it hasn't started.
+        asyncio.run(self.t.on_snapshot(ev(home=3), None, snapshot(ev(home=3)), now=5000))
+        got = self.t.delayed("401", 30, now=5010)
+        self.assertEqual(got["st"], "in")
+        self.assertEqual(self.t.latest("401")["ts"], 5000)
+
     def test_store_survives_restart(self):
         self.t.store.upsert(DEV, "dev", 99999, ["x"], {"score": False}, START)
         s2 = tape.Store(os.path.join(self.dir, "t.db"))
