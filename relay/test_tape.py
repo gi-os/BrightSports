@@ -125,6 +125,18 @@ class EngineTest(unittest.TestCase):
         asyncio.run(self.t.drain(now=2000))
         self.assertEqual(len([1 for tok, _, _ in self.apns.log if tok == START]), 1)
 
+    def test_scorebug_fields_reach_the_live_activity(self):
+        e = ev(home=7)
+        e["competitions"][0]["situation"] = {"possession": "26", "shortDownDistanceText": "2nd & 7",
+                                             "possessionText": "NE 16", "isRedZone": True,
+                                             "homeTimeouts": 3, "awayTimeouts": 2}
+        e["competitions"][0]["competitors"][0]["records"] = [{"summary": "3-1"}]
+        st = tape.content_state(snapshot(e))
+        self.assertEqual((st["spot"], st["redZone"], st["homeTimeouts"], st["awayTimeouts"], st["possession"]),
+                         ("NE 16", True, 3, 2, "home"))
+        a = tape.attributes("401", e, tape.teams_of(e))
+        self.assertEqual((a["homeUid"], a["homeRecord"]), ("s:20~l:28~t:26", "3-1"))
+
     def test_delayed_view(self):
         self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)
         self.feed(ev(), ev(home=7), now=1060)

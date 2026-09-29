@@ -52,6 +52,7 @@ def teams_of(ev):
             "abbr": t.get("abbreviation") or "",
             "name": t.get("shortDisplayName") or t.get("name") or t.get("displayName") or "",
             "color": t.get("color") or "888888",
+            "record": ((c.get("records") or [{}])[0] or {}).get("summary") or "",
         }
     return out
 
@@ -180,6 +181,24 @@ def content_state(snap):
         st["bases"] = [bool(sit.get("on1")), bool(sit.get("on2")), bool(sit.get("on3"))]
     if sit.get("lp"):
         st["lastPlay"] = sit["lp"][:140]
+    # Scorebug extras (keys match GameAttributes.ContentState; all optional there).
+    if snap.get("ck"):
+        st["clock"] = snap["ck"]
+    if sit.get("spot"):
+        st["spot"] = sit["spot"]
+    if sit.get("rz"):
+        st["redZone"] = True
+    for k, key in (("hto", "homeTimeouts"), ("ato", "awayTimeouts")):
+        if isinstance(sit.get(k), int):
+            st[key] = sit[k]
+    for k, key in (("pit", "pitcher"), ("pits", "pitcherLine"), ("bat", "batter"), ("bats", "batterLine")):
+        if sit.get(k):
+            st[key] = str(sit[k])[:40]
+    for side, pre in ((h, "home"), (a, "away")):
+        if isinstance(side.get("h"), int):
+            st[pre + "Hits"] = side["h"]
+        if isinstance(side.get("e"), int):
+            st[pre + "Errors"] = side["e"]
     return st
 
 
@@ -191,6 +210,8 @@ def attributes(eid, ev, teams):
         "homeAbbr": h.get("abbr", ""), "awayAbbr": a.get("abbr", ""),
         "homeName": h.get("name", ""), "awayName": a.get("name", ""),
         "homeColor": h.get("color", "888888"), "awayColor": a.get("color", "888888"),
+        "homeUid": h.get("uid") or "", "awayUid": a.get("uid") or "",
+        "homeRecord": h.get("record", ""), "awayRecord": a.get("record", ""),
     }
 
 
