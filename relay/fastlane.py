@@ -157,3 +157,174 @@ class FastLane:
                 except Exception as e:
                     log.warning("feed %s: %s", pk, e)
             await asyncio.sleep(1)
+
+
+# ---------------------------------------------------------------- basketball
+
+HOOPS = {
+    # ESPN league uid prefix -> (CDN host, league id, site origin)
+    "s:40~l:59~": ("cdn.wnba.com", "10", "https://www.wnba.com"),   # WNBA
+    "s:40~l:46~": ("cdn.nba.com", "00", "https://www.nba.com"),     # NBA
+}
+
+
+def hoops_headers(origin):
+    # The league CDNs answer 403 or an HTML page unless the request looks like their own site.
+    return {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+                          "Version/17.0 Safari/605.1.15",
+            "Accept": "application/json, text/plain, */*", "Accept-Language": "en-US,en;q=0.9",
+            "Origin": origin, "Referer": origin + "/",
+            "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "cors", "Sec-Fetch-Dest": "empty"}
+
+
+def clock(iso):
+    """"PT05M12.00S" -> "5:12"; under a minute, "17.4"."""
+    import re
+    m = re.match(r"PT(\d+)M([\d.]+)S", iso or "")
+    if not m:
+        return ""
+    mins, secs = int(m.group(1)), float(m.group(2))
+    return f"{mins}:{int(secs):02d}" if mins else (f"{secs:.1f}" if secs < 10 else f"{int(secs)}")
+
+
+def ordinal(n):
+    return {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}.get(n, "OT" if n == 5 else f"{n - 4}OT")
+
+
+def hoops_overlay(ev, box, last_action=None):
+    """ESPN event with the league CDN's boxscore (and newest play) laid over it."""
+    ev = copy.deepcopy(ev)
+    g = box.get("game") or {}
+    comp = (ev.get("competitions") or [{}])[0]
+    st = comp.setdefault("status", {})
+    t = st.setdefault("type", {})
+    status, text, period = g.get("gameStatus"), g.get("gameStatusText") or "", g.get("period") or 0
+    clk = clock(g.get("gameClock"))
+    if status == 3:
+        t.update(state="post", name="STATUS_FINAL", completed=True, shortDetail="Final" + ("/OT" if period > 4 else ""))
+    elif status == 2:
+        if text.lower().startswith("half"):
+            t.update(state="in", name="STATUS_HALFTIME", completed=False, shortDetail="Halftime")
+        elif clk in ("0:00", "0.0", "") and text.lower().startswith("end"):
+            t.update(state="in", name="STATUS_END_PERIOD", completed=False, shortDetail=f"End of {ordinal(period)}")
+        else:
+            t.update(state="in", name="STATUS_IN_PROGRESS", completed=False, shortDetail=f"{clk} - {ordinal(period)}")
+    st["period"] = period
+    st["displayClock"] = clk
+    sides = {"home": g.get("homeTeam") or {}, "away": g.get("awayTeam") or {}}
+    league_team = {}
+    for c in comp.get("competitors") or []:
+        s = sides.get(c.get("homeAway")) or {}
+        league_team[s.get("teamId")] = (c.get("team") or {}).get("id")
+        if "score" in s:
+            c["score"] = str(s["score"])
+    sit = comp.setdefault("situation", {})
+    for side, s in sides.items():
+        if isinstance(s.get("timeoutsRemaining"), int):
+            sit[f"{side}Timeouts"] = s["timeoutsRemaining"]
+        sit[f"{side}Bonus"] = bool(s.get("inBonus") in (True, 1, "1"))
+        fouls = (s.get("statistics") or {}).get("foulsTeam")
+        if isinstance(fouls, int):
+            sit[f"{side}Fouls"] = fouls
+    if last_action:
+        if last_action.get("description"):
+            sit.setdefault("lastPlay", {})["text"] = last_action["description"]
+        poss = league_team.get(last_action.get("possession"))
+        if poss:
+            sit["possession"] = poss
+    return ev
+
+
+class HoopsLane:
+    """NBA/WNBA from the leagues' own live CDN: the boxscore every second (state, clock, score,
+    timeouts, bonus, fouls) and the play-by-play every three (last play, possession, and each
+    play's real timestamp, so delays count from the play)."""
+
+    def __init__(self, relay):
+        self.relay = relay
+        self.ids = {}         # ESPN event id -> league game id
+        self.fresh = {}
+        self.boards = {}      # league prefix -> (fetched at, games)
+        self.last = {}        # ESPN event id -> (fetched at, newest action)
+        self.polls = 0
+
+    def healthy(self, eid):
+        return time.time() - self.fresh.get(eid, 0) < FRESH
+
+    async def board(self, prefix):
+        host, lid, origin = HOOPS[prefix]
+        at, games = self.boards.get(prefix, (0, []))
+        if time.time() - at < 60:
+            return games
+        url = f"https://{host}/static/json/liveData/scoreboard/todaysScoreboard_{lid}.json"
+        async with self.relay.http.get(url, headers=hoops_headers(origin)) as r:
+            doc = await r.json(content_type=None)
+        games = (doc.get("scoreboard") or {}).get("games") or []
+        self.boards[prefix] = (time.time(), games)
+        return games
+
+    async def match(self, prefix, ev):
+        names = {c.get("homeAway"): (c.get("team") or {}).get("displayName") for c in
+                 ((ev.get("competitions") or [{}])[0]).get("competitors") or []}
+        for g in await self.board(prefix):
+            h, a = g.get("homeTeam") or {}, g.get("awayTeam") or {}
+            if f"{h.get('teamCity')} {h.get('teamName')}" == names.get("home") and \
+               f"{a.get('teamCity')} {a.get('teamName')}" == names.get("away"):
+                return g.get("gameId")
+        return None
+
+    def near_tip(self, ev, eid):
+        """Pre-game, from 5 minutes before the listed start: watch the league feed so tip-off
+        lands the moment it happens instead of when ESPN gets round to flipping the state."""
+        import tape
+        if self.relay.last.get(eid, {}).get("st") != "pre":
+            return False
+        t = tape.start_time(ev)
+        return bool(t) and t - 300 <= time.time() <= t + 3 * 3600
+
+    async def run(self):
+        await asyncio.sleep(20)
+        tick = 0
+        while True:
+            tick += 1
+            live = [(p, ev) for eid, ev in list(self.relay.events.items()) for p in HOOPS
+                    if (ev.get("uid") or "").startswith(p) and self.relay.fast.followed(ev)
+                    and (self.relay.last.get(eid, {}).get("st") == "in" or self.near_tip(ev, eid))]
+            if not live:
+                await asyncio.sleep(10)
+                continue
+            for prefix, ev in live:
+                eid = ev["id"]
+                host, _, origin = HOOPS[prefix]
+                try:
+                    gid = self.ids.get(eid) or await self.match(prefix, ev)
+                    if not gid:
+                        continue
+                    self.ids[eid] = gid
+                    hdr = hoops_headers(origin)
+                    async with self.relay.http.get(f"https://{host}/static/json/liveData/boxscore/boxscore_{gid}.json",
+                                                   headers=hdr) as r:
+                        box = await r.json(content_type=None)
+                    at, action = self.last.get(eid, (0, None))
+                    if tick % 3 == 0 or action is None:
+                        async with self.relay.http.get(
+                                f"https://{host}/static/json/liveData/playbyplay/playbyplay_{gid}.json", headers=hdr) as r:
+                            if r.status == 200:
+                                acts = ((await r.json(content_type=None)).get("game") or {}).get("actions") or []
+                                if acts:
+                                    action = acts[-1]
+                                    self.last[eid] = (time.time(), action)
+                    self.polls += 1
+                    self.fresh[eid] = time.time()
+                    lag = None
+                    if action and action.get("timeActual"):
+                        from datetime import datetime
+                        try:
+                            pt = datetime.fromisoformat(action["timeActual"].replace("Z", "+00:00")).timestamp()
+                            lag = min(60.0, max(0.0, time.time() - pt))
+                        except ValueError:
+                            pass
+                    await self.relay.consider(hoops_overlay(ev, box, action), source="statsapi", lag=lag)
+                except Exception as e:
+                    log.warning("hoops %s: %s", eid, e)
+            await asyncio.sleep(1)

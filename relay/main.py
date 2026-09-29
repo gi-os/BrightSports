@@ -108,6 +108,8 @@ def snapshot(ev):
             "pit": ((sit.get("pitcher") or {}).get("athlete") or {}).get("shortName"),
             "bats": (sit.get("batter") or {}).get("summary"),
             "pits": (sit.get("pitcher") or {}).get("summary"),
+            "hb": sit.get("homeBonus"), "ab": sit.get("awayBonus"),
+            "hf": sit.get("homeFouls"), "af": sit.get("awayFouls"),
         }
         # Drop empties, but keep 0: `0 in (None, False, "")` is True in Python (0 == False), which
         # silently threw away every 0 ball, 0 strike and 0 out, so the count never showed.
@@ -123,6 +125,7 @@ class Relay:
         self.fc = FastCast(TOPICS, self.on_document, self.on_event)
         self.events = {}        # event id -> newest raw ESPN event (the fast lane's base)
         self.fast = fastlane.FastLane(self)
+        self.hoops = fastlane.HoopsLane(self)
         # Tape Delay (iPhone): per-device held pushes. Off with TAPE=0.
         self.tape = tape.Tape() if os.environ.get("TAPE", "1") != "0" else None
 
@@ -143,7 +146,7 @@ class Relay:
         if source != "statsapi":
             self.events[eid] = ev
             # The MLB fast lane is ahead of ESPN; while it's healthy, ESPN's copy is old news.
-            if self.fast.healthy(eid) and snap.get("st") == "in":
+            if (self.fast.healthy(eid) or self.hoops.healthy(eid)) and snap.get("st") == "in":
                 return
         # How far behind real time this source runs, so held pushes count from the play itself.
         if lag is None:
@@ -193,7 +196,7 @@ class Relay:
             live = sum(1 for s in self.last.values() if s.get("st") == "in")
             await self.publish(HEARTBEAT_TOPIC, {
                 "v": 1, "ts": int(time.time() * 1000), "fastcast": self.fc.connected,
-                "live": live, "published": self.published, "patches": self.fc.patches, "fastlane": self.fast.polls,
+                "live": live, "published": self.published, "patches": self.fc.patches, "fastlane": self.fast.polls, "hoops": self.hoops.polls,
                 "silence_s": int(time.time() - self.fc.last_message) if self.fc.last_message else None,
             })
 
@@ -240,6 +243,7 @@ class Relay:
                 jobs.append(tape.serve(self.tape))
                 jobs.append(milb.poll_forever(self))
                 jobs.append(self.fast.run())
+                jobs.append(self.hoops.run())
             await asyncio.gather(*jobs)
 
 

@@ -236,6 +236,12 @@ def content_state(snap):
     for k, key in (("pit", "pitcher"), ("pits", "pitcherLine"), ("bat", "batter"), ("bats", "batterLine")):
         if sit.get(k):
             st[key] = str(sit[k])[:40]
+    for k, key in (("hb", "homeBonus"), ("ab", "awayBonus")):
+        if sit.get(k):
+            st[key] = True
+    for k, key in (("hf", "homeFouls"), ("af", "awayFouls")):
+        if isinstance(sit.get(k), int):
+            st[key] = sit[k]
     for side, pre in ((h, "home"), (a, "away")):
         if isinstance(side.get("h"), int):
             st[pre + "Hits"] = side["h"]
