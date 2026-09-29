@@ -216,8 +216,17 @@ def hoops_overlay(ev, box, last_action=None):
     for c in comp.get("competitors") or []:
         s = sides.get(c.get("homeAway")) or {}
         league_team[s.get("teamId")] = (c.get("team") or {}).get("id")
-        if "score" in s:
-            c["score"] = str(s["score"])
+        score = s.get("score")
+        # The play-by-play often has a basket (or free throw) a second or two before the
+        # boxscore does; scores only go up, so take whichever is ahead.
+        if last_action:
+            try:
+                pbp = int(last_action.get("scoreHome" if c.get("homeAway") == "home" else "scoreAway") or 0)
+                score = max(int(score or 0), pbp)
+            except (TypeError, ValueError):
+                pass
+        if score is not None:
+            c["score"] = str(score)
     sit = comp.setdefault("situation", {})
     for side, s in sides.items():
         if isinstance(s.get("timeoutsRemaining"), int):
@@ -246,6 +255,7 @@ class HoopsLane:
         self.fresh = {}
         self.boards = {}      # league prefix -> (fetched at, games)
         self.last = {}        # ESPN event id -> (fetched at, newest action)
+        self.sent = {}        # ESPN event id -> (what was last sent, when)
         self.polls = 0
 
     def healthy(self, eid):
@@ -306,7 +316,7 @@ class HoopsLane:
                                                    headers=hdr) as r:
                         box = await r.json(content_type=None)
                     at, action = self.last.get(eid, (0, None))
-                    if tick % 3 == 0 or action is None:
+                    if tick % 2 == 0 or action is None:
                         async with self.relay.http.get(
                                 f"https://{host}/static/json/liveData/playbyplay/playbyplay_{gid}.json", headers=hdr) as r:
                             if r.status == 200:
@@ -316,11 +326,27 @@ class HoopsLane:
                                     self.last[eid] = (time.time(), action)
                     self.polls += 1
                     self.fresh[eid] = time.time()
-                    lag = None
-                    if action and action.get("timeActual"):
+                    # The clock moves every second; don't spend a push on every tick. Send when
+                    # something real changed (score, period, a new play, timeouts, fouls), or
+                    # every 10 s so the clock on the card keeps roughly up.
+                    gm = box.get("game") or {}
+                    txt = (gm.get("gameStatusText") or "").lower()
+                    key = (gm.get("gameStatus"), txt if txt.startswith(("half", "end", "final")) else "", gm.get("period"),
+                           (gm.get("homeTeam") or {}).get("score"), (gm.get("awayTeam") or {}).get("score"),
+                           (gm.get("homeTeam") or {}).get("timeoutsRemaining"), (gm.get("awayTeam") or {}).get("timeoutsRemaining"),
+                           (gm.get("homeTeam") or {}).get("inBonus"), (gm.get("awayTeam") or {}).get("inBonus"),
+                           action.get("actionNumber") if action else None)
+                    prev_key, sent_at = self.sent.get(eid, (None, 0))
+                    if key == prev_key and time.time() - sent_at < 10:
+                        continue
+                    new_play = not prev_key or (action and action.get("actionNumber") != prev_key[-1])
+                    self.sent[eid] = (key, time.time())
+                    lag = 3.0   # the boxscore itself runs a second or three behind
+                    if new_play and action and action.get("timeActual"):
                         from datetime import datetime
                         try:
-                            pt = datetime.fromisoformat(action["timeActual"].replace("Z", "+00:00")).timestamp()
+                            import re as _re
+                            pt = datetime.fromisoformat(_re.sub(r"\.\d+", "", action["timeActual"]).replace("Z", "+00:00")).timestamp()
                             lag = min(60.0, max(0.0, time.time() - pt))
                         except ValueError:
                             pass
