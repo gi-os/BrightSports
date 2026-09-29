@@ -12,6 +12,7 @@ import asyncio, json, logging, os, time
 import aiohttp
 from fastcast import FastCast
 import tape
+import milb
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("relay")
@@ -211,6 +212,7 @@ class Relay:
             jobs = [self.fc.run_forever(), self.heartbeat(), self.corrections()]
             if self.tape:
                 jobs.append(tape.serve(self.tape))
+                jobs.append(milb.poll_forever(self))
             await asyncio.gather(*jobs)
 
 

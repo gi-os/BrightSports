@@ -140,5 +140,34 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(s2.devices[DEV]["env"], "dev")
 
 
+class MilbTest(unittest.TestCase):
+    def game(self, pk=821809, abstract="Preview", detailed="Scheduled", inning=None):
+        g = {"gamePk": pk, "gameDate": "2026-08-01T23:05:00Z",
+             "status": {"abstractGameState": abstract, "detailedState": detailed},
+             "teams": {"home": {"score": 2, "team": {"id": 453, "abbreviation": "BKC", "teamName": "Cyclones"}},
+                       "away": {"score": 1, "team": {"id": 1, "abbreviation": "HV", "teamName": "Renegades"}}}}
+        if inning:
+            g["linescore"] = {"currentInning": inning, "currentInningOrdinal": "5th", "inningState": "Top",
+                              "balls": 1, "strikes": 2, "outs": 1, "offense": {"first": {"id": 9}}}
+        return g
+
+    def test_postponed_duplicate_keeps_the_postponement(self):
+        import milb
+        doc = {"dates": [{"games": [self.game(abstract="Final", detailed="Postponed")]},
+                         {"games": [self.game()]}]}
+        evs = milb.events_from(doc)
+        self.assertEqual(len(evs), 1)
+        self.assertEqual(evs[0]["competitions"][0]["status"]["type"]["name"], "STATUS_POSTPONED")
+
+    def test_live_game_reads_like_espn(self):
+        import milb
+        ev = milb.events_from({"dates": [{"games": [self.game(abstract="Live", detailed="In Progress", inning=5)]}]})[0]
+        s = snapshot(ev)
+        self.assertEqual((s["id"], s["st"], s["dt"]), ("milb-821809", "in", "Top 5th"))
+        self.assertTrue(s["sit"]["on1"])
+        self.assertEqual(tape.teams_of(ev)["home"]["uid"], "milb:453")
+        self.assertEqual(tape.sport_of(ev["uid"]), "baseball")
+
+
 if __name__ == "__main__":
     unittest.main()
