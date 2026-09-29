@@ -29,6 +29,7 @@ class FastCast:
         self.index = {}     # topic -> {event uid: event dict}
         self.connected = False
         self.last_message = 0.0
+        self.patches = 0
 
     async def run_forever(self):
         delay = 2
@@ -86,7 +87,11 @@ class FastCast:
             log.info("checkpoint %s: %d events", tc, len(self.index[tc]))
             await self.on_document(tc, doc)
             return
-        if op == "R":
+        # "R" was the only update op until late September 2026; FastCast now also sends patches
+        # as "P" (same framing: {"ts","~c","pl":[json-patch]}). MLB arrives almost entirely as "P",
+        # so ignoring it left baseball on the five-minute correction fetch.
+        if op in ("R", "P"):
+            self.patches += 1
             ops = self._ops(msg.get("pl"))
             if not ops or tc not in self.index:
                 return

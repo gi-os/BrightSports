@@ -172,7 +172,7 @@ class Relay:
             live = sum(1 for s in self.last.values() if s.get("st") == "in")
             await self.publish(HEARTBEAT_TOPIC, {
                 "v": 1, "ts": int(time.time() * 1000), "fastcast": self.fc.connected,
-                "live": live, "published": self.published,
+                "live": live, "published": self.published, "patches": self.fc.patches,
                 "silence_s": int(time.time() - self.fc.last_message) if self.fc.last_message else None,
             })
 

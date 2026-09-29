@@ -27,7 +27,7 @@ services:
     environment:
       NTFY_URL: http://ntfy:80
       NTFY_TOKEN: ${NTFY_TOKEN}
-      CORRECTION_SECONDS: "300"
+      CORRECTION_SECONDS: "90"
       # Tape Delay: APNs token key at tape-data/apns.p8 (not committed), ids from .env.
       TAPE_DB: /data/tape.db
       APNS_KEY_FILE: /data/apns.p8
