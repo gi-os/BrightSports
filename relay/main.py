@@ -100,7 +100,9 @@ def snapshot(ev):
             "bats": (sit.get("batter") or {}).get("summary"),
             "pits": (sit.get("pitcher") or {}).get("summary"),
         }
-        s["sit"] = {k: v for k, v in s["sit"].items() if v not in (None, False, "")}
+        # Drop empties, but keep 0: `0 in (None, False, "")` is True in Python (0 == False), which
+        # silently threw away every 0 ball, 0 strike and 0 out, so the count never showed.
+        s["sit"] = {k: v for k, v in s["sit"].items() if v is not None and v is not False and v != ""}
     return s
 
 

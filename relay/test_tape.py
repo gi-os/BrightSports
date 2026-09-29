@@ -190,6 +190,12 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(got["st"], "in")
         self.assertEqual(self.t.latest("401")["ts"], 5000)
 
+    def test_zero_balls_strikes_outs_survive(self):
+        e = ev(sport="1", league="10")
+        e["competitions"][0]["situation"] = {"balls": 0, "strikes": 2, "outs": 0, "onFirst": False}
+        st = tape.content_state(snapshot(e))
+        self.assertEqual((st.get("balls"), st.get("strikes"), st.get("outs")), (0, 2, 0))
+
     def test_store_survives_restart(self):
         self.t.store.upsert(DEV, "dev", 99999, ["x"], {"score": False}, START)
         s2 = tape.Store(os.path.join(self.dir, "t.db"))
