@@ -399,9 +399,11 @@ class Tape:
         self.la_sent_at = {}     # (device, game) -> when the card was last pushed   # (device, game) already told "past start, not under way"
         self.wake = asyncio.Event()
 
-    async def on_snapshot(self, ev, prev, snap, now=None):
-        """Called by the relay for every snapshot that changed, live or the final."""
-        now = time.time() if now is None else now
+    async def on_snapshot(self, ev, prev, snap, now=None, lag=0.0):
+        """Called by the relay for every snapshot that changed, live or the final. `lag` is how
+        far this source trails the play; the delay counts from the play, not from arrival."""
+        arrived = time.time() if now is None else now
+        now = arrived - lag
         eid = snap["id"]
         teams = teams_of(ev)
         sport = sport_of(ev.get("uid"))
@@ -429,7 +431,7 @@ class Tape:
         seen = set()
         for d in followers:
             seen.add(d["token"])
-            due = now + d["delay"]
+            due = max(arrived, now + d["delay"])
             on_card = False
             if d["prefs"].get("liveActivities", True):
                 la = self.store.activities.get(eid, {}).get(d["token"])
@@ -454,7 +456,7 @@ class Tape:
         # An activity started by hand for a team this device does not follow still updates.
         for dev, la in list(self.store.activities.get(eid, {}).items()):
             if dev not in seen and dev in self.store.devices:
-                self._queue_la(now + self.store.devices[dev]["delay"], dev, eid, la,
+                self._queue_la(max(arrived, now + self.store.devices[dev]["delay"]), dev, eid, la,
                               snap, bool(events))
         if snap.get("st") == "post":
             self.marked.pop(eid, None)

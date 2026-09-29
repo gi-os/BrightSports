@@ -13,6 +13,7 @@ import aiohttp
 from fastcast import FastCast
 import tape
 import milb
+import fastlane
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("relay")
@@ -40,6 +41,11 @@ CORRECTION_PATHS = [
 ]
 CORRECTION_EVERY = int(os.environ.get("CORRECTION_SECONDS", "120"))
 HEARTBEAT_EVERY = 60
+# Seconds each source trails the actual play (measured 2026-09-29: ESPN FastCast ran 20-40 s
+# behind MLB StatsAPI). Delays are counted from the play, so a 30 s delay means 30 s after it
+# happened whichever feed it came from.
+ESPN_LAG = float(os.environ.get("ESPN_LAG", "20"))
+FAST_LAG = float(os.environ.get("FAST_LAG", "2"))
 
 
 def snapshot(ev):
@@ -112,6 +118,8 @@ class Relay:
         self.published = 0
         self.http = None
         self.fc = FastCast(TOPICS, self.on_document, self.on_event)
+        self.events = {}        # event id -> newest raw ESPN event (the fast lane's base)
+        self.fast = fastlane.FastLane(self)
         # Tape Delay (iPhone): per-device held pushes. Off with TAPE=0.
         self.tape = tape.Tape() if os.environ.get("TAPE", "1") != "0" else None
 
@@ -129,6 +137,13 @@ class Relay:
         eid = snap.get("id")
         if not eid or not snap.get("home") or not snap.get("away"):
             return
+        if source != "statsapi":
+            self.events[eid] = ev
+            # The MLB fast lane is ahead of ESPN; while it's healthy, ESPN's copy is old news.
+            if self.fast.healthy(eid) and snap.get("st") == "in":
+                return
+        # How far behind real time this source runs, so held pushes count from the play itself.
+        lag = FAST_LAG if source == "statsapi" else ESPN_LAG
         prev = self.last.get(eid)
         live_now = snap["st"] == "in"
         was_live = prev is not None and prev.get("st") == "in"
@@ -146,10 +161,10 @@ class Relay:
         self.last[eid] = snap
         if self.tape:
             try:
-                await self.tape.on_snapshot(ev, prev, snap)
+                await self.tape.on_snapshot(ev, prev, snap, lag=lag)
             except Exception:
                 log.exception("tape")
-        await self.publish(f"bs-{eid}", dict(snap, ts=int(time.time() * 1000), src=source))
+        await self.publish(f"bs-{eid}", dict(snap, ts=int(time.time() * 1000), src=source, lag=lag))
 
     async def publish(self, topic, payload):
         body = json.dumps(payload, separators=(",", ":"))
@@ -174,7 +189,7 @@ class Relay:
             live = sum(1 for s in self.last.values() if s.get("st") == "in")
             await self.publish(HEARTBEAT_TOPIC, {
                 "v": 1, "ts": int(time.time() * 1000), "fastcast": self.fc.connected,
-                "live": live, "published": self.published, "patches": self.fc.patches,
+                "live": live, "published": self.published, "patches": self.fc.patches, "fastlane": self.fast.polls,
                 "silence_s": int(time.time() - self.fc.last_message) if self.fc.last_message else None,
             })
 
@@ -220,6 +235,7 @@ class Relay:
             if self.tape:
                 jobs.append(tape.serve(self.tape))
                 jobs.append(milb.poll_forever(self))
+                jobs.append(self.fast.run())
             await asyncio.gather(*jobs)
 
 
