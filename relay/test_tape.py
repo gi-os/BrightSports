@@ -165,6 +165,16 @@ class EngineTest(unittest.TestCase):
         self.assertEqual(len(lates), 1)
         self.assertTrue(lates[0]["aps"]["content-state"]["late"])
 
+    def test_no_notifications_while_the_game_is_on_the_lock_screen(self):
+        self.t.store.upsert(DEV, "prod", 0, ["s:20~l:28~t:26"], {}, START)
+        self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)      # starts the card
+        self.t.store.set_activity(DEV, "401", LA)
+        self.feed(ev(), ev(home=7), now=1100)                          # a score
+        asyncio.run(self.t.drain(now=2000))
+        alerts = [p for tok, p, kw in self.apns.log if tok == DEV]
+        self.assertEqual(alerts, [])
+        self.assertTrue(any(tok == LA for tok, _, _ in self.apns.log))
+
     def test_delayed_view(self):
         self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)
         self.feed(ev(), ev(home=7), now=1060)

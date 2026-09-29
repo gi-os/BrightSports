@@ -422,18 +422,27 @@ class Tape:
         for d in followers:
             seen.add(d["token"])
             due = now + d["delay"]
+            on_card = False
+            if d["prefs"].get("liveActivities", True):
+                la = self.store.activities.get(eid, {}).get(d["token"])
+                if la:
+                    on_card = True
+                    self.schedule(due, self._la_update, d["token"], eid, la, snap, bool(events))
+                elif (d["token"], eid) in self.store.started:
+                    on_card = True   # started, its update token not reported yet
+                elif snap.get("st") == "in" and d.get("start"):
+                    on_card = True
+                    self.store.mark_started(d["token"], eid)
+                    self.schedule(due, self._la_start, d["token"], eid, snap)
+            # With the game on the lock screen, the card is the alert: no notifications on top.
+            # Notifications are the fallback for a device that has no Live Activity for it.
+            if on_card:
+                continue
             for kind, arg in events:
                 if not wanted(kind, sport, d["prefs"]):
                     continue
                 title, body = alert_text(kind, arg if kind == "score" else None, snap, teams, sport)
                 self.schedule(due, self._alert, d["token"], eid, kind, title, body)
-            if d["prefs"].get("liveActivities", True):
-                la = self.store.activities.get(eid, {}).get(d["token"])
-                if la:
-                    self.schedule(due, self._la_update, d["token"], eid, la, snap, bool(events))
-                elif snap.get("st") == "in" and d.get("start") and (d["token"], eid) not in self.store.started:
-                    self.store.mark_started(d["token"], eid)
-                    self.schedule(due, self._la_start, d["token"], eid, snap)
         # An activity started by hand for a team this device does not follow still updates.
         for dev, la in list(self.store.activities.get(eid, {}).items()):
             if dev not in seen and dev in self.store.devices:
