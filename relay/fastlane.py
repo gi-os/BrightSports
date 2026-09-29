@@ -16,7 +16,8 @@ SCHEDULE = "https://statsapi.mlb.com/api/v1/schedule?sportId=1&date={date}&hydra
 FEED = ("https://statsapi.mlb.com/api/v1.1/game/{pk}/feed/live?fields="
         "gameData,status,abstractGameState,detailedState,liveData,linescore,currentInning,"
         "currentInningOrdinal,inningHalf,inningState,balls,strikes,outs,offense,first,second,third,"
-        "teams,home,away,runs,hits,errors,plays,currentPlay,result,description,matchup,batter,pitcher,fullName")
+        "teams,home,away,runs,hits,errors,plays,currentPlay,result,description,matchup,batter,pitcher,fullName,"
+        "playEvents,endTime,startTime,isPitch")
 HEADERS = {"User-Agent": "curl/8.5", "Accept": "application/json"}
 FRESH = 15   # seconds: a fast-lane copy newer than this beats ESPN's
 
@@ -63,6 +64,22 @@ def overlay(ev, feed):
     if desc:
         sit.setdefault("lastPlay", {})["text"] = desc
     return ev
+
+
+def play_time(feed):
+    """When the newest thing in the feed actually happened (the last pitch or event's end time,
+    stamped by MLB's own scorers). Lets the relay count a delay from the pitch itself instead of
+    from when the feed got round to publishing it, which measured 5-22 s later and varies."""
+    from datetime import datetime
+    cur = ((feed.get("liveData") or {}).get("plays") or {}).get("currentPlay") or {}
+    for e in reversed(cur.get("playEvents") or []):
+        t = e.get("endTime") or e.get("startTime")
+        if t:
+            try:
+                return datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                return None
+    return None
 
 
 def short(name):
@@ -134,7 +151,9 @@ class FastLane:
                         feed = await r.json(content_type=None)
                     self.polls += 1
                     self.fresh[eid] = time.time()
-                    await self.relay.consider(overlay(ev, feed), source="statsapi")
+                    pt = play_time(feed)
+                    lag = min(60.0, max(0.0, time.time() - pt)) if pt else None
+                    await self.relay.consider(overlay(ev, feed), source="statsapi", lag=lag)
                 except Exception as e:
                     log.warning("feed %s: %s", pk, e)
-            await asyncio.sleep(2)
+            await asyncio.sleep(1)

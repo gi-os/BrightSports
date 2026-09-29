@@ -44,8 +44,11 @@ HEARTBEAT_EVERY = 60
 # Seconds each source trails the actual play (measured 2026-09-29: ESPN FastCast ran 20-40 s
 # behind MLB StatsAPI). Delays are counted from the play, so a 30 s delay means 30 s after it
 # happened whichever feed it came from.
-ESPN_LAG = float(os.environ.get("ESPN_LAG", "20"))
-FAST_LAG = float(os.environ.get("FAST_LAG", "2"))
+# Measured 2026-09-29 against MLB's pitch timestamps: MLB's feed published 5-22 s after the
+# pitch (the fast lane uses each pitch's own timestamp, so that varies away); ESPN, 25-35 s,
+# and it skips pitches. For ESPN there is no play timestamp, so a typical lag is assumed.
+ESPN_LAG = float(os.environ.get("ESPN_LAG", "28"))
+FAST_LAG = float(os.environ.get("FAST_LAG", "10"))
 
 
 def snapshot(ev):
@@ -132,7 +135,7 @@ class Relay:
     async def on_event(self, topic, ev):
         await self.consider(ev, source="patch")
 
-    async def consider(self, ev, source):
+    async def consider(self, ev, source, lag=None):
         snap = snapshot(ev)
         eid = snap.get("id")
         if not eid or not snap.get("home") or not snap.get("away"):
@@ -143,7 +146,8 @@ class Relay:
             if self.fast.healthy(eid) and snap.get("st") == "in":
                 return
         # How far behind real time this source runs, so held pushes count from the play itself.
-        lag = FAST_LAG if source == "statsapi" else ESPN_LAG
+        if lag is None:
+            lag = FAST_LAG if source == "statsapi" else ESPN_LAG
         prev = self.last.get(eid)
         live_now = snap["st"] == "in"
         was_live = prev is not None and prev.get("st") == "in"
