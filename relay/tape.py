@@ -53,8 +53,50 @@ def teams_of(ev):
             "name": t.get("shortDisplayName") or t.get("name") or t.get("displayName") or "",
             "color": t.get("color") or "888888",
             "record": ((c.get("records") or [{}])[0] or {}).get("summary") or "",
+            "form": c.get("form") or "",
+            **probable(c),
         }
     return out
+
+
+def probable(c):
+    """The listed starter (MLB pitcher, NHL goalie), with a short season line when ESPN has one."""
+    ps = c.get("probables") or []
+    if not ps:
+        return {}
+    p = ps[0]
+    name = ((p.get("athlete") or {}).get("shortName") or (p.get("athlete") or {}).get("displayName") or "")
+    stats = {s.get("abbreviation"): s.get("displayValue") for s in p.get("statistics") or [] if s.get("abbreviation")}
+    line = ""
+    if stats.get("W") is not None and stats.get("L") is not None:
+        line = f"{stats['W']}-{stats['L']}" + (f" · {stats['ERA']}" if stats.get("ERA") else "")
+    elif p.get("record"):
+        line = str(p["record"])
+    return {"probable": name[:24], "probableLine": line[:16]}
+
+
+def watch(ev):
+    """Where to watch: national channels first, then the local ones, deduplicated."""
+    comp = (ev.get("competitions") or [{}])[0]
+    names = []
+    for b in sorted(comp.get("broadcasts") or [], key=lambda b: 0 if b.get("market") == "national" else 1):
+        for n in b.get("names") or []:
+            if n and n not in names:
+                names.append(n)
+    return names
+
+
+def start_time(ev):
+    from datetime import datetime
+    d = ev.get("date") or ((ev.get("competitions") or [{}])[0]).get("date")
+    if not d:
+        return None
+    for fmt in ("%Y-%m-%dT%H:%MZ", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%dT%H:%M:%S.%fZ"):
+        try:
+            return datetime.strptime(d, fmt).replace(tzinfo=__import__("datetime").timezone.utc).timestamp()
+        except ValueError:
+            pass
+    return None
 
 
 # ---------------------------------------------------------------- the diff
@@ -212,6 +254,13 @@ def attributes(eid, ev, teams):
         "homeColor": h.get("color", "888888"), "awayColor": a.get("color", "888888"),
         "homeUid": h.get("uid") or "", "awayUid": a.get("uid") or "",
         "homeRecord": h.get("record", ""), "awayRecord": a.get("record", ""),
+        # Starting-soon card: all optional on the phone.
+        "startTime": start_time(ev) or 0,
+        "venue": (((ev.get("competitions") or [{}])[0]).get("venue") or {}).get("fullName") or "",
+        "watch": " · ".join(watch(ev)[:3]),
+        "homeProbable": h.get("probable", ""), "awayProbable": a.get("probable", ""),
+        "homeProbableLine": h.get("probableLine", ""), "awayProbableLine": a.get("probableLine", ""),
+        "homeForm": h.get("form", ""), "awayForm": a.get("form", ""),
     }
 
 
@@ -339,6 +388,7 @@ class Tape:
         self.meta = {}           # game -> {"teams", "sport", "attrs"}
         self.marked = {}         # game -> last period an end was announced for
         self.swept = 0.0
+        self.late_sent = set()   # (device, game) already told "past start, not under way"
         self.wake = asyncio.Event()
 
     async def on_snapshot(self, ev, prev, snap, now=None):
@@ -392,6 +442,46 @@ class Tape:
         if snap.get("st") == "post":
             self.marked.pop(eid, None)
 
+    PREGAME = 15 * 60
+
+    async def on_pregame(self, ev, snap, now=None):
+        """A game that hasn't started: put a starting-soon card up 15 minutes before it reaches
+        each follower's stream, and mark it late once start time has passed with nothing under
+        way. Called for every pre-game sighting (checkpoints, corrections, MiLB polls)."""
+        now = time.time() if now is None else now
+        start = start_time(ev)
+        if not start or now < start - self.PREGAME - 3600 or now > start + 4 * 3600:
+            return
+        eid = snap["id"]
+        teams = teams_of(ev)
+        self.meta[eid] = {"teams": teams, "sport": sport_of(ev.get("uid")), "attrs": attributes(eid, ev, teams)}
+        uids = {t.get("uid") for t in teams.values() if t.get("uid")}
+        for d in self.store.devices.values():
+            if not (d["follows"] & uids) or not d["prefs"].get("liveActivities", True):
+                continue
+            show_at = start - self.PREGAME + d["delay"]
+            late = now > start + d["delay"] + 60
+            la = self.store.activities.get(eid, {}).get(d["token"])
+            if la:
+                if late and (d["token"], eid) not in self.late_sent:
+                    self.late_sent.add((d["token"], eid))
+                    cs = content_state(snap)
+                    cs["late"] = True
+                    self.schedule(now, self._la_push, d["token"], eid, la, cs)
+            elif d.get("start") and (d["token"], eid) not in self.store.started and now >= show_at - 30:
+                self.store.mark_started(d["token"], eid)
+                self.schedule(max(now, show_at), self._la_start, d["token"], eid, snap, late)
+
+    async def _la_push(self, dev, eid, la, cs):
+        d = self.store.devices.get(dev)
+        if not d:
+            return
+        st = await self.apns.send(la, {"aps": {"timestamp": int(time.time()), "event": "update", "content-state": cs}},
+                                  env=d["env"], push_type="liveactivity",
+                                  topic=TOPIC + ".push-type.liveactivity", priority=10)
+        if st == 410:
+            self.store.set_activity(dev, eid, None)
+
     def schedule(self, due, fn, *args):
         self.seq += 1
         heapq.heappush(self.queue, (due, self.seq, fn, args))
@@ -432,16 +522,19 @@ class Tape:
         if st == 410:
             self.store.drop_device(dev)
 
-    async def _la_start(self, dev, eid, snap):
+    async def _la_start(self, dev, eid, snap, late=False):
         d, m = self.store.devices.get(dev), self.meta.get(eid)
         if not d or not d.get("start") or not m:
             return
-        a = m["attrs"]
+        a = dict(m["attrs"], delay=d["delay"])
+        cs = content_state(snap)
+        if late:
+            cs["late"] = True
         payload = {"aps": {"timestamp": int(time.time()), "event": "start",
-                           "content-state": content_state(snap),
+                           "content-state": cs,
                            "attributes-type": "GameAttributes", "attributes": a,
                            "alert": {"title": f"{a['awayName']} at {a['homeName']}",
-                                     "body": "Live on your lock screen"}}}
+                                     "body": "Starting soon" if snap.get("st") == "pre" else "Live on your lock screen"}}}
         await self.apns.send(d["start"], payload, env=d["env"], push_type="liveactivity",
                              topic=TOPIC + ".push-type.liveactivity", priority=10)
 

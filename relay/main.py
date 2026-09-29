@@ -133,6 +133,11 @@ class Relay:
         # Publish for live games, and for the one transition out of live (the final).
         if not live_now and not was_live:
             self.last[eid] = snap
+            if self.tape and snap.get("st") == "pre":
+                try:
+                    await self.tape.on_pregame(ev, snap)
+                except Exception:
+                    log.exception("tape pregame")
             return
         if prev == snap:
             return

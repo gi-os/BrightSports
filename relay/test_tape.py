@@ -137,6 +137,34 @@ class EngineTest(unittest.TestCase):
         a = tape.attributes("401", e, tape.teams_of(e))
         self.assertEqual((a["homeUid"], a["homeRecord"]), ("s:20~l:28~t:26", "3-1"))
 
+    def test_starting_soon_card_goes_up_15_minutes_before_your_stream(self):
+        self.t.store.upsert(DEV, "prod", 30, ["s:20~l:28~t:26"], {}, START)
+        e = ev("pre", "STATUS_SCHEDULED")
+        e["date"] = "2026-10-04T20:25Z"
+        e["competitions"][0]["broadcasts"] = [{"market": "home", "names": ["KING"]}, {"market": "national", "names": ["CBS"]}]
+        e["competitions"][0]["competitors"][0]["probables"] = [{"athlete": {"shortName": "G. Smith"},
+            "statistics": [{"abbreviation": "W", "displayValue": "3"}, {"abbreviation": "L", "displayValue": "1"},
+                           {"abbreviation": "ERA", "displayValue": "2.10"}]}]
+        start = tape.start_time(e)
+        asyncio.run(self.t.on_pregame(e, snapshot(e), now=start - 20 * 60))
+        self.assertEqual(asyncio.run(self.t.drain(now=start - 20 * 60)), 0)       # too early
+        asyncio.run(self.t.on_pregame(e, snapshot(e), now=start - 15 * 60 + 5))
+        asyncio.run(self.t.drain(now=start - 15 * 60 + 29))
+        self.assertFalse(any(tok == START for tok, _, _ in self.apns.log))        # held by the delay
+        asyncio.run(self.t.drain(now=start - 15 * 60 + 30))
+        push = [p for tok, p, _ in self.apns.log if tok == START][0]["aps"]
+        self.assertEqual(push["content-state"]["state"], "pre")
+        self.assertEqual((push["attributes"]["watch"], push["attributes"]["delay"]), ("CBS · KING", 30))
+        self.assertEqual((push["attributes"]["homeProbable"], push["attributes"]["homeProbableLine"]), ("G. Smith", "3-1 · 2.10"))
+        # Past start with nothing under way: one "late" update to the running card.
+        self.t.store.set_activity(DEV, "401", LA)
+        asyncio.run(self.t.on_pregame(e, snapshot(e), now=start + 200))
+        asyncio.run(self.t.on_pregame(e, snapshot(e), now=start + 300))
+        asyncio.run(self.t.drain(now=start + 400))
+        lates = [p for tok, p, _ in self.apns.log if tok == LA]
+        self.assertEqual(len(lates), 1)
+        self.assertTrue(lates[0]["aps"]["content-state"]["late"])
+
     def test_delayed_view(self):
         self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)
         self.feed(ev(), ev(home=7), now=1060)
