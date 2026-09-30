@@ -95,6 +95,49 @@ class EngineTest(unittest.TestCase):
         self.feed(ev(), ev(home=7), now=1000)
         self.assertEqual(asyncio.run(self.t.drain(now=2000)), 0)
 
+    def test_stale_started_row_does_not_block_push_to_start(self):
+        # Last night: a leftover `started` row with no card silently blocked the start.
+        self.t.store.upsert(DEV, "prod", 0, ["s:20~l:28~t:17"], {}, START)
+        self.t.store.mark_started(DEV, "401")
+        self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)
+        asyncio.run(self.t.drain(now=1001))
+        starts = [p for tok, p, kw in self.apns.log if tok == START]
+        self.assertEqual(len(starts), 1)
+        self.assertEqual(starts[0]["aps"]["input-push-token"], 1)
+
+    def test_push_to_start_retries_once_if_no_card_reports(self):
+        self.t.store.upsert(DEV, "prod", 0, ["s:20~l:28~t:17"], {}, START)
+        self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)
+        asyncio.run(self.t.drain(now=1001))
+        # No activity token within the wait: no alerts meanwhile, then one retry, then give up.
+        self.feed(ev(), ev(home=7), now=1100)
+        asyncio.run(self.t.drain(now=1101))
+        self.assertEqual(len([1 for tok, _, _ in self.apns.log if tok == START]), 1)
+        self.assertFalse(any(tok == DEV for tok, _, _ in self.apns.log))
+        self.feed(ev(home=7), ev(home=14), now=1200)
+        asyncio.run(self.t.drain(now=1201))
+        self.assertEqual(len([1 for tok, _, _ in self.apns.log if tok == START]), 2)
+        self.feed(ev(home=14), ev(home=21), now=1500)
+        asyncio.run(self.t.drain(now=1501))
+        self.assertEqual(len([1 for tok, _, _ in self.apns.log if tok == START]), 2)
+        # Out of tries: back to plain notifications.
+        self.assertTrue(any(tok == DEV for tok, _, _ in self.apns.log))
+
+    def test_swiped_away_card_is_not_put_back(self):
+        self.t.store.upsert(DEV, "prod", 0, ["s:20~l:28~t:17"], {}, START)
+        self.t.store.note_start(DEV, "401", dismissed=True)
+        self.feed(ev("pre", "STATUS_SCHEDULED"), ev(), now=1000)
+        asyncio.run(self.t.drain(now=1300))
+        self.assertFalse(any(tok == START for tok, _, _ in self.apns.log))
+
+    def test_card_that_reported_is_never_restarted(self):
+        self.t.store.upsert(DEV, "prod", 0, ["s:20~l:28~t:17"], {}, START)
+        self.t.store.set_activity(DEV, "401", LA)
+        self.t.store.set_activity(DEV, "401", None)   # 410 later
+        self.feed(ev(), ev(home=7), now=1000)
+        asyncio.run(self.t.drain(now=1300))
+        self.assertFalse(any(tok == START for tok, _, _ in self.apns.log))
+
     def test_same_team_id_other_league_does_not_match(self):
         self.t.store.upsert(DEV, "prod", 0, ["s:40~l:46~t:26"], {}, None)
         self.feed(ev(), ev(home=7), now=1000)

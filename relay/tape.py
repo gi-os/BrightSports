@@ -285,6 +285,9 @@ class Store:
             CREATE TABLE IF NOT EXISTS activities(
               device TEXT, game TEXT, token TEXT, updated REAL, PRIMARY KEY(device, game));
             CREATE TABLE IF NOT EXISTS started(device TEXT, game TEXT, PRIMARY KEY(device, game));
+            CREATE TABLE IF NOT EXISTS starts(
+              device TEXT, game TEXT, tries INTEGER, at REAL, dismissed INTEGER,
+              PRIMARY KEY(device, game));
         """)
         self.db.commit()
         self.devices = {}
@@ -296,6 +299,9 @@ class Store:
         for dev, game, tok, _ in self.db.execute("SELECT * FROM activities"):
             self.activities.setdefault(game, {})[dev] = tok
         self.started = set(self.db.execute("SELECT device, game FROM started"))
+        # Push-to-start bookkeeping: (device, game) -> [tries, last try at, dismissed].
+        self.starts = {(d, g): [t or 0, a or 0, bool(x)] for d, g, t, a, x in
+                       self.db.execute("SELECT * FROM starts")}
 
     def upsert(self, token, env, delay, follows, prefs, start):
         delay = max(0, min(int(delay or 0), MAX_DELAY))
@@ -319,9 +325,25 @@ class Store:
         if token:
             self.db.execute("INSERT OR REPLACE INTO activities VALUES(?,?,?,?)", (device, game, token, time.time()))
             self.activities.setdefault(game, {})[device] = token
+            # The card showed up: no more push-to-starts for this game, even once it's gone.
+            r = self.starts.setdefault((device, game), [0, 0, False])
+            r[0] = max(r[0], START_TRIES)
+            self.db.execute("INSERT OR REPLACE INTO starts VALUES(?,?,?,?,?)", (device, game, r[0], r[1], int(r[2])))
         else:
             self.db.execute("DELETE FROM activities WHERE device=? AND game=?", (device, game))
             self.activities.get(game, {}).pop(device, None)
+        self.db.commit()
+
+    def note_start(self, device, game, *, sent=None, dismissed=None, now=None):
+        """Record a push-to-start try (`sent`=True/False) or the card being swiped away."""
+        r = self.starts.setdefault((device, game), [0, 0, False])
+        if sent is not None:
+            r[0] += 1
+            # A refused push can go again in 30 s; one Apple took gets 3 minutes to show up.
+            r[1] = (time.time() if now is None else now) - (0 if sent else START_WAIT - 30)
+        if dismissed is not None:
+            r[2] = dismissed
+        self.db.execute("INSERT OR REPLACE INTO starts VALUES(?,?,?,?,?)", (device, game, r[0], r[1], int(r[2])))
         self.db.commit()
 
     def mark_started(self, device, game):
@@ -389,12 +411,17 @@ class APNs:
 
 # ---------------------------------------------------------------- the engine
 
+START_WAIT = 180    # seconds a push-started card has to report its update token before a retry
+START_TRIES = 2
+
+
 class Tape:
     def __init__(self, store=None, apns=None):
         self.store = store or Store()
         self.apns = apns or APNs()
         self.queue = []          # heap of (due, seq, fn, args)
         self.seq = 0
+        self.starting = set()    # (device, game) push-to-starts queued, not yet sent
         self.history = {}        # game -> deque[(ts, snap)]
         self.meta = {}           # game -> {"teams", "sport", "attrs"}
         self.marked = {}         # game -> last period an end was announced for
@@ -444,12 +471,13 @@ class Tape:
                 if la:
                     on_card = True
                     self._queue_la(due, d["token"], eid, la, snap, bool(events))
-                elif (d["token"], eid) in self.store.started:
-                    on_card = True   # started, its update token not reported yet
-                elif snap.get("st") == "in" and d.get("start"):
-                    on_card = True
-                    self.store.mark_started(d["token"], eid)
-                    self.schedule(due, self._la_start, d["token"], eid, snap)
+                else:
+                    ok, pending = self.can_start(d, eid, now)
+                    if ok and snap.get("st") in ("in", "pre"):
+                        pending = True
+                        self.starting.add((d["token"], eid))
+                        self.schedule(due, self._la_start, d["token"], eid, snap)
+                    on_card = pending   # a card is on its way: don't alert on top of it
             # With the game on the lock screen, the card is the alert: no notifications on top.
             # Notifications are the fallback for a device that has no Live Activity for it.
             if on_card:
@@ -493,8 +521,8 @@ class Tape:
                     cs = content_state(snap)
                     cs["late"] = True
                     self.schedule(now, self._la_push, d["token"], eid, la, cs)
-            elif d.get("start") and (d["token"], eid) not in self.store.started and now >= show_at - 30:
-                self.store.mark_started(d["token"], eid)
+            elif now >= show_at - 30 and self.can_start(d, eid, now)[0]:
+                self.starting.add((d["token"], eid))
                 self.schedule(max(now, show_at), self._la_start, d["token"], eid, snap, late)
 
     async def _la_push(self, dev, eid, la, cs):
@@ -515,6 +543,7 @@ class Tape:
     async def drain(self, now=None):
         """Send everything due by `now`. The run loop calls this; tests call it directly."""
         now = time.time() if now is None else now
+        self.now = now
         n = 0
         while self.queue and self.queue[0][0] <= now:
             _, _, fn, args = heapq.heappop(self.queue)
@@ -547,10 +576,29 @@ class Tape:
         if st == 410:
             self.store.drop_device(dev)
 
+    def can_start(self, d, eid, now):
+        """(start one now?, is one pending?). No card yet, a push-to-start token, not swiped
+        away, not already queued, and either never tried or the last try never showed up."""
+        key = (d["token"], eid)
+        if key in self.starting:
+            return False, True
+        if not d.get("start") or self.store.activities.get(eid, {}).get(d["token"]):
+            return False, False
+        tries, at, dismissed = self.store.starts.get(key, (0, 0, False))
+        if dismissed:
+            return False, False
+        if tries and now - at < START_WAIT:
+            return False, True
+        return tries < START_TRIES, False
+
     async def _la_start(self, dev, eid, snap, late=False):
+        self.starting.discard((dev, eid))
         d, m = self.store.devices.get(dev), self.meta.get(eid)
         if not d or not d.get("start") or not m:
+            log.warning("la start %s skipped: %s", eid, "no device" if not d else "no start token" if not d.get("start") else "no meta")
             return
+        if self.store.activities.get(eid, {}).get(dev):
+            return   # the app put it up itself in the meantime
         a = dict(m["attrs"], delay=d["delay"])
         cs = content_state(snap)
         if late:
@@ -558,10 +606,15 @@ class Tape:
         payload = {"aps": {"timestamp": int(time.time()), "event": "start",
                            "content-state": cs,
                            "attributes-type": "GameAttributes", "attributes": a,
+                           "input-push-token": 1,
                            "alert": {"title": f"{a['awayName']} at {a['homeName']}",
                                      "body": "Starting soon" if snap.get("st") == "pre" else "Live on your lock screen"}}}
-        await self.apns.send(d["start"], payload, env=d["env"], push_type="liveactivity",
-                             topic=TOPIC + ".push-type.liveactivity", priority=10)
+        st = await self.apns.send(d["start"], payload, env=d["env"], push_type="liveactivity",
+                                  topic=TOPIC + ".push-type.liveactivity", priority=10)
+        self.store.note_start(dev, eid, sent=st == 200, now=getattr(self, "now", None))
+        if st == 410:
+            # The push-to-start token is dead; the app sends a fresh one next time it opens.
+            d["start"] = None
 
     def _queue_la(self, due, dev, eid, la, snap, important):
         """Queue a Live Activity update. Each carries a sequence number; when it comes due, only
@@ -658,6 +711,8 @@ def routes(tape):
             return web.json_response({"error": "unknown device"}, status=404)
         tape.store.set_activity(dev, game, tok)
         tape.store.mark_started(dev, game)
+        if not tok:
+            tape.store.note_start(dev, game, dismissed=True)   # swiped away: don't put it back
         return web.json_response({"ok": True})
 
     async def delayed(req):

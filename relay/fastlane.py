@@ -257,6 +257,20 @@ class HoopsLane:
         self.last = {}        # ESPN event id -> (fetched at, newest action)
         self.sent = {}        # ESPN event id -> (what was last sent, when)
         self.polls = 0
+        self.session = None
+        self.errs = {}
+
+    async def get(self, url, origin):
+        """(status, parsed JSON or None). The league CDNs sit behind Akamai, which fingerprints
+        the TLS handshake: Python's own TLS gets their HTML error page whatever the headers say.
+        curl_cffi does the handshake the way Chrome does."""
+        if self.session is None:
+            from curl_cffi.requests import AsyncSession
+            self.session = AsyncSession(impersonate="chrome", timeout=8)
+        r = await self.session.get(url, headers={"Origin": origin, "Referer": origin + "/"})
+        if r.status_code != 200 or not r.text.lstrip().startswith("{"):
+            return r.status_code, None
+        return 200, r.json()
 
     def healthy(self, eid):
         return time.time() - self.fresh.get(eid, 0) < FRESH
@@ -267,8 +281,9 @@ class HoopsLane:
         if time.time() - at < 60:
             return games
         url = f"https://{host}/static/json/liveData/scoreboard/todaysScoreboard_{lid}.json"
-        async with self.relay.http.get(url, headers=hoops_headers(origin)) as r:
-            doc = await r.json(content_type=None)
+        _, doc = await self.get(url, origin)
+        if doc is None:
+            raise RuntimeError(f"{host} scoreboard: not JSON")
         games = (doc.get("scoreboard") or {}).get("games") or []
         self.boards[prefix] = (time.time(), games)
         return games
@@ -311,19 +326,17 @@ class HoopsLane:
                     if not gid:
                         continue
                     self.ids[eid] = gid
-                    hdr = hoops_headers(origin)
-                    async with self.relay.http.get(f"https://{host}/static/json/liveData/boxscore/boxscore_{gid}.json",
-                                                   headers=hdr) as r:
-                        box = await r.json(content_type=None)
+                    _, box = await self.get(f"https://{host}/static/json/liveData/boxscore/boxscore_{gid}.json", origin)
+                    if box is None:
+                        raise RuntimeError("boxscore not JSON")
                     at, action = self.last.get(eid, (0, None))
                     if tick % 2 == 0 or action is None:
-                        async with self.relay.http.get(
-                                f"https://{host}/static/json/liveData/playbyplay/playbyplay_{gid}.json", headers=hdr) as r:
-                            if r.status == 200:
-                                acts = ((await r.json(content_type=None)).get("game") or {}).get("actions") or []
-                                if acts:
-                                    action = acts[-1]
-                                    self.last[eid] = (time.time(), action)
+                        _, pbp = await self.get(
+                            f"https://{host}/static/json/liveData/playbyplay/playbyplay_{gid}.json", origin)
+                        acts = ((pbp or {}).get("game") or {}).get("actions") or []
+                        if acts:
+                            action = acts[-1]
+                            self.last[eid] = (time.time(), action)
                     self.polls += 1
                     self.fresh[eid] = time.time()
                     # The clock moves every second; don't spend a push on every tick. Send when
@@ -352,5 +365,8 @@ class HoopsLane:
                             pass
                     await self.relay.consider(hoops_overlay(ev, box, action), source="statsapi", lag=lag)
                 except Exception as e:
-                    log.warning("hoops %s: %s", eid, e)
+                    # Once a minute per game, not once a second.
+                    if time.time() - self.errs.get(eid, 0) > 60:
+                        self.errs[eid] = time.time()
+                        log.warning("hoops %s: %s", eid, e)
             await asyncio.sleep(1)
