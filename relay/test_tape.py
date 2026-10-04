@@ -138,6 +138,64 @@ class EngineTest(unittest.TestCase):
         asyncio.run(self.t.drain(now=1300))
         self.assertFalse(any(tok == START for tok, _, _ in self.apns.log))
 
+    # ---- league card
+    def league_setup(self, n=4):
+        """Card for game 401 (NE at SEA) plus n other NFL games the same day."""
+        import copy
+        def game(i, state="pre", home=0, away=0):
+            e = ev(state, "STATUS_IN_PROGRESS" if state == "in" else "STATUS_SCHEDULED", home=home, away=away)
+            e = copy.deepcopy(e)
+            e["id"] = str(i); e["uid"] = f"s:20~l:28~e:{i}"; e["date"] = "2026-10-04T17:00Z"
+            c = e["competitions"][0]["competitors"]
+            c[0]["team"].update(id=f"h{i}", abbreviation=f"H{i}", uid=f"s:20~l:28~t:h{i}")
+            c[1]["team"].update(id=f"a{i}", abbreviation=f"A{i}", uid=f"s:20~l:28~t:a{i}")
+            return e
+        mine = dict(ev(), date="2026-10-04T17:00Z")
+        self.t.events = {"401": mine}
+        for i in range(n):
+            self.t.events[str(500 + i)] = game(500 + i)
+        self.t.snap_of = snapshot
+        self.t.store.upsert(DEV, "prod", 30, ["s:20~l:28~t:17"], {}, None)
+        self.t.store.set_activity(DEV, "401", LA)
+        return game
+
+    def test_pill_counts_the_rest_of_the_league(self):
+        self.league_setup(4)
+        cs = self.t.compose(DEV, "401", snapshot(ev(home=7)))
+        self.assertEqual((cs["leagueName"], cs["leagueMore"]), ("NFL", 4))
+        self.assertNotIn("tiles", cs)
+
+    def test_view_league_pages_three_at_a_time_with_yours_first(self):
+        self.league_setup(4)
+        cs = self.t.set_view(DEV, "401", True)
+        self.assertEqual((cs["view"], cs["page"], cs["pages"]), ("league", 0, 2))
+        self.assertEqual([x["id"] for x in cs["tiles"]], ["401", "500", "501", "502"])
+        self.assertTrue(all("t" in x for x in cs["tiles"][1:]))       # upcoming: a start time
+        cs = self.t.set_view(DEV, "401", True, step=1)
+        self.assertEqual([x["id"] for x in cs["tiles"]], ["401", "503"])
+        cs = self.t.set_view(DEV, "401", True, step=1)                 # wraps
+        self.assertEqual(cs["page"], 0)
+        cs = self.t.set_view(DEV, "401", False)
+        self.assertNotIn("tiles", cs)
+
+    def test_league_tiles_are_held_to_your_delay(self):
+        game = self.league_setup(1)
+        self.t.set_view(DEV, "401", True)
+        # Game 500 kicks off and scores; your card refreshes, but only once your stream has it.
+        g0, g1 = game(500), game(500, "in", home=7)
+        self.t.events["500"] = g1
+        asyncio.run(self.t.on_snapshot(g1, snapshot(g0), snapshot(g1), now=1000))
+        asyncio.run(self.t.drain(now=1020))
+        self.assertFalse(any(tok == LA for tok, _, _ in self.apns.log))
+        self.t.history.setdefault("401", __import__("collections").deque()).append((900.0, snapshot(ev())))
+        import unittest.mock as um
+        with um.patch("time.time", return_value=1031):
+            asyncio.run(self.t.drain(now=1031))
+        sent = [p for tok, p, kw in self.apns.log if tok == LA]
+        self.assertTrue(sent)
+        tiles = sent[-1]["aps"]["content-state"]["tiles"]
+        self.assertEqual((tiles[1]["id"], tiles[1]["st"], tiles[1]["hs"]), ("500", "in", 7))
+
     def test_same_team_id_other_league_does_not_match(self):
         self.t.store.upsert(DEV, "prod", 0, ["s:40~l:46~t:26"], {}, None)
         self.feed(ev(), ev(home=7), now=1000)

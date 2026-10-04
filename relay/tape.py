@@ -270,6 +270,65 @@ def attributes(eid, ev, teams):
     }
 
 
+# ---------------------------------------------------------------- the league card
+
+LEAGUES = {"s:1~l:10": "MLB", "s:20~l:28": "NFL", "s:20~l:23": "NCAAF", "s:40~l:46": "NBA",
+           "s:40~l:59": "WNBA", "s:40~l:41": "NCAAM", "s:70~l:90": "NHL", "s:600~l:770": "MLS",
+           "s:600~l:700": "EPL", "s:600~l:775": "UCL", "s:600~l:740": "LALIGA", "s:600~l:720": "BUNDESLIGA",
+           "s:600~l:730": "SERIE A", "s:600~l:710": "LIGUE 1", "s:600~l:19483": "NWSL"}
+PER_PAGE = 3          # tiles beside yours on each page of the league card
+LEAGUE_GAP = 8        # seconds between league-only pushes to one card (other games' changes)
+ORD = {1: "1ST", 2: "2ND", 3: "3RD", 4: "4TH"}
+
+
+def tile_detail(snap, sport):
+    """The short status in a league tile: "▲5", "3RD 14:48", "Q4 4:12", "72'", "FINAL"."""
+    st = snap.get("st")
+    if st == "post":
+        return "FT" if sport == "soccer" else "FINAL"
+    if st != "in":
+        return ""     # the phone prints the start time
+    dt = (snap.get("dt") or "").strip()
+    p, ck = snap.get("p") or 0, (snap.get("ck") or "").strip()
+    if dt.lower() == "halftime" or (snap.get("nm") or "") == "STATUS_HALFTIME":
+        return "HALF"
+    if sport == "baseball":
+        d = dt.lower()
+        return ("▲" if d.startswith("top") else "▼" if d.startswith("bot") else
+                "MID " if d.startswith("mid") else "END " if d.startswith("end") else "") + str(p)
+    if _period_end(snap):
+        return dt.upper()[:10]
+    if sport == "soccer":
+        return dt or ck
+    if sport == "basketball":
+        return (f"Q{p}" if p <= 4 else "OT") + (f" {ck}" if ck else "")
+    return f"{ORD.get(p, 'OT')} {ck}".strip()
+
+
+def series_note(ev):
+    comp = (ev.get("competitions") or [{}])[0]
+    ser = comp.get("series") or {}
+    if ser.get("summary"):
+        return ser["summary"].replace(" leads series ", " ").replace(" leads ", " ").replace("Series tied ", "Tied ")[:14]
+    return ""
+
+
+def league_title(ev):
+    comp = (ev.get("competitions") or [{}])[0]
+    notes = comp.get("notes") or ev.get("notes") or []
+    head = (notes[0].get("headline") if notes else "") or ""
+    if head:
+        return head.split(" - ")[0].upper()[:22]
+    wk = (ev.get("week") or {}).get("number")
+    return f"WEEK {wk}" if wk else "TODAY"
+
+
+def game_day(ts):
+    """The calendar day in New York a game belongs to (a 10pm PT start is still tonight)."""
+    from datetime import datetime, timedelta, timezone
+    return (datetime.fromtimestamp(ts, timezone.utc) - timedelta(hours=4)).date() if ts else None
+
+
 # ---------------------------------------------------------------- storage
 
 class Store:
@@ -431,6 +490,11 @@ class Tape:
         self.la_latest = {}      # (device, game) -> newest queued update's sequence number
         self.la_sent_at = {}     # (device, game) -> when the card was last pushed   # (device, game) already told "past start, not under way"
         self.wake = asyncio.Event()
+        # League card. `events` is the relay's raw ESPN events and `snap_of` its snapshot(),
+        # both set by main.py; `views` is which card shows the league, and on which page.
+        self.events = {}
+        self.snap_of = None
+        self.views = {}          # (device, game) -> page shown (absent: the card shows the game)
 
     async def on_snapshot(self, ev, prev, snap, now=None, lag=0.0):
         """Called by the relay for every snapshot that changed, live or the final. `lag` is how
@@ -492,6 +556,24 @@ class Tape:
             if dev not in seen and dev in self.store.devices:
                 self._queue_la(max(arrived, now + self.store.devices[dev]["delay"]), dev, eid, la,
                               snap, bool(events))
+        # Cards showing this game's league: refresh their grid too, held to each device's delay
+        # and no more often than every LEAGUE_GAP seconds (a full slate changes constantly).
+        lg = league_uid(snap.get("uid") or ev.get("uid"))
+        for (dev, card), _page in list(self.views.items()):
+            if card == eid or dev not in self.store.devices:
+                continue
+            la = self.store.activities.get(card, {}).get(dev)
+            mine = self.events.get(card)
+            ch = self.history.get(card)
+            if not la or not mine or league_uid(mine.get("uid")) != lg:
+                continue
+            delay = self.store.devices[dev]["delay"]
+            due = max(arrived, now + delay, self.la_sent_at.get((dev, card), 0) + LEAGUE_GAP)
+            card_snap = self.delayed(card, 0, due - delay) if ch else None
+            if card_snap is None or card_snap.get("held"):
+                card_snap = self.snap_of(mine) if self.snap_of else None
+            if card_snap:
+                self._queue_la(due, dev, card, la, card_snap, False)
         if snap.get("st") == "post":
             self.marked.pop(eid, None)
 
@@ -518,7 +600,7 @@ class Tape:
             if la:
                 if late and (d["token"], eid) not in self.late_sent:
                     self.late_sent.add((d["token"], eid))
-                    cs = content_state(snap)
+                    cs = self.compose(d["token"], eid, snap)
                     cs["late"] = True
                     self.schedule(now, self._la_push, d["token"], eid, la, cs)
             elif now >= show_at - 30 and self.can_start(d, eid, now)[0]:
@@ -600,7 +682,7 @@ class Tape:
         if self.store.activities.get(eid, {}).get(dev):
             return   # the app put it up itself in the meantime
         a = dict(m["attrs"], delay=d["delay"])
-        cs = content_state(snap)
+        cs = self.compose(dev, eid, snap)
         if late:
             cs["late"] = True
         payload = {"aps": {"timestamp": int(time.time()), "event": "start",
@@ -636,14 +718,111 @@ class Tape:
                 return
         self.la_sent_at[(dev, eid)] = time.time()
         aps = {"timestamp": int(time.time()), "event": "end" if final else "update",
-               "content-state": content_state(snap)}
+               "content-state": self.compose(dev, eid, snap)}
         if final:
             aps["dismissal-date"] = int(time.time()) + 3600
+            self.views.pop((dev, eid), None)
         st = await self.apns.send(la, {"aps": aps}, env=d["env"], push_type="liveactivity",
                                   topic=TOPIC + ".push-type.liveactivity",
                                   priority=10)   # 5 lets iOS sit on it for minutes; the card is the point
         if st == 410 or final:
             self.store.set_activity(dev, eid, None)
+
+    def league_games(self, eid):
+        """The other games in this game's league on the same day, in tile order: live, then
+        upcoming, then finished."""
+        mine = self.events.get(eid) or {}
+        lg = league_uid(mine.get("uid"))
+        day = game_day(start_time(mine))
+        if not lg or day is None:
+            return []
+        out = []
+        for oid, ev in list(self.events.items()):
+            if oid == eid or league_uid(ev.get("uid")) != lg or game_day(start_time(ev)) != day:
+                continue
+            st = (((ev.get("competitions") or [{}])[0].get("status") or {}).get("type") or {}).get("state")
+            out.append(({"in": 0, "pre": 1}.get(st, 2), start_time(ev) or 0, oid))
+        out.sort(key=lambda t: (t[0], t[1] if t[0] < 2 else -t[1]))
+        return [oid for _, _, oid in out]
+
+    def tile(self, oid, snap, delay, now):
+        """One small scorebug. `snap` is the game as your stream has it (None: work it out)."""
+        ev = self.events.get(oid) or {}
+        teams = teams_of(ev)
+        sport = sport_of(ev.get("uid"))
+        if snap is None:
+            snap = self.delayed(oid, delay, now)
+            if snap is None or snap.get("held"):
+                snap = self.snap_of(ev) if self.snap_of and ev else (snap or {})
+                if snap.get("st") == "in":
+                    snap = {"st": "pre"}     # live, but not on your stream yet
+        h, a = teams.get("home", {}), teams.get("away", {})
+        t = {"id": oid, "a": a.get("abbr", ""), "h": h.get("abbr", ""),
+             "ac": a.get("color", "888888"), "hc": h.get("color", "888888"),
+             "st": snap.get("st") or "pre", "d": tile_detail(snap, sport)}
+        if t["st"] != "pre":
+            t["as"] = ((snap.get("away") or {}).get("sc")) or 0
+            t["hs"] = ((snap.get("home") or {}).get("sc")) or 0
+        else:
+            t["t"] = int(start_time(ev) or 0)
+        sit = snap.get("sit") or {}
+        if sport == "baseball" and t["st"] == "in":
+            t["b"] = (1 if sit.get("on1") else 0) | (2 if sit.get("on2") else 0) | (4 if sit.get("on3") else 0)
+            if isinstance(sit.get("o"), int):
+                t["o"] = sit["o"]
+        note = series_note(ev)
+        if note:
+            t["n"] = note
+        tv = watch(ev)
+        if tv and t["st"] != "post":
+            t["tv"] = tv[0][:10]
+        return t
+
+    def compose(self, dev, eid, snap, now=None):
+        """The whole ContentState for one card: the game, plus the league pill, plus the
+        league grid when this card is showing it. Every other game is held to this device's
+        delay, the same as the card's own game."""
+        now = time.time() if now is None else now
+        cs = content_state(snap)
+        mine = self.events.get(eid)
+        if not mine:
+            return cs
+        others = self.league_games(eid)
+        lg = league_uid(mine.get("uid"))
+        if others:
+            cs["leagueName"] = LEAGUES.get(lg, "LEAGUE")
+            cs["leagueMore"] = len(others)
+        page = self.views.get((dev, eid))
+        if page is None or not others:
+            return cs
+        d = self.store.devices.get(dev) or {}
+        delay = d.get("delay", 0)
+        pages = max(1, -(-len(others) // PER_PAGE))
+        page %= pages
+        cs.update(view="league", page=page, pages=pages, leagueTitle=league_title(mine),
+                  tiles=[self.tile(eid, snap, delay, now)] +
+                        [self.tile(o, None, delay, now) for o in others[page * PER_PAGE:(page + 1) * PER_PAGE]])
+        return cs
+
+    def set_view(self, dev, eid, league, page=0, step=0):
+        """Flip a card between its game and the league, or page through the league. Returns
+        the card's new ContentState so the phone can show it at once."""
+        key = (dev, eid)
+        if not league:
+            self.views.pop(key, None)
+        else:
+            others = self.league_games(eid)
+            pages = max(1, -(-len(others) // PER_PAGE))
+            cur = self.views.get(key, 0)
+            self.views[key] = (cur + step if step else page) % pages
+        d = self.store.devices.get(dev) or {}
+        snap = self.delayed(eid, d.get("delay", 0))
+        if snap is None or snap.get("held"):
+            ev = self.events.get(eid)
+            snap = self.snap_of(ev) if (self.snap_of and ev) else {"st": "pre"}
+            if snap.get("st") == "in":
+                snap = dict(snap, st="pre")
+        return self.compose(dev, eid, snap)
 
     def delayed(self, eid, delay, now=None):
         """The game as it stood `delay` seconds ago, or None if the relay has not seen it live."""
@@ -715,6 +894,21 @@ def routes(tape):
             tape.store.note_start(dev, game, dismissed=True)   # swiped away: don't put it back
         return web.json_response({"ok": True})
 
+    async def view(req):
+        try:
+            b = await req.json()
+        except Exception:
+            return web.json_response({"error": "json"}, status=400)
+        dev, game = str(b.get("device", "")), str(b.get("game", ""))
+        if dev not in tape.store.devices or not game:
+            return web.json_response({"error": "unknown device"}, status=404)
+        try:
+            page, step = int(b.get("page") or 0), max(-1, min(1, int(b.get("step") or 0)))
+        except (TypeError, ValueError):
+            page, step = 0, 0
+        cs = tape.set_view(dev, game, b.get("view") == "league", page, step)
+        return web.json_response({"state": cs}, headers={"Cache-Control": "no-store"})
+
     async def delayed(req):
         ids = [i for i in req.query.get("ids", "").split(",") if i][:60]
         try:
@@ -738,6 +932,7 @@ def routes(tape):
 
     app = web.Application(client_max_size=64 * 1024)
     app.add_routes([web.post("/tape/v1/device", register), web.post("/tape/v1/activity", activity),
+                    web.post("/tape/v1/view", view),
                     web.get("/tape/v1/delayed", delayed), web.get("/tape/v1/latest", latest),
                     web.get("/tape/v1/health", health)])
     return app

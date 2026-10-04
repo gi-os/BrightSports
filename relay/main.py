@@ -128,6 +128,8 @@ class Relay:
         self.hoops = fastlane.HoopsLane(self)
         # Tape Delay (iPhone): per-device held pushes. Off with TAPE=0.
         self.tape = tape.Tape() if os.environ.get("TAPE", "1") != "0" else None
+        if self.tape:
+            self.tape.events, self.tape.snap_of = self.events, snapshot
 
     async def on_document(self, topic, doc):
         # A checkpoint is the truth; publish anything that differs from what we last said,
