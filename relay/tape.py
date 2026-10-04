@@ -309,7 +309,9 @@ def series_note(ev):
     comp = (ev.get("competitions") or [{}])[0]
     ser = comp.get("series") or {}
     if ser.get("summary"):
-        return ser["summary"].replace(" leads series ", " ").replace(" leads ", " ").replace("Series tied ", "Tied ")[:14]
+        import re
+        t = re.sub(r"\s+(leads?|wins?|won)\s+(the\s+)?(series\s+)?", " ", ser["summary"])
+        return re.sub(r"^Series tied\s+", "Tied ", t)[:14]
     return ""
 
 
