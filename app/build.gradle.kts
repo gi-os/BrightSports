@@ -30,6 +30,7 @@ android {
         applicationId = "com.gios.lightsports"
         minSdk = 29
         targetSdk = 35
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // CI stamps versionCode from the workflow run number and appends it to the
         // major.minor below, so the release tag is <major>.<minor>.<run>. Bump this by
         // hand for anything Obtainium should treat as a new version.
@@ -117,4 +118,9 @@ dependencies {
 
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
+    androidTestImplementation(composeBom)
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
 }
