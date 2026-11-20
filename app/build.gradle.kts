@@ -44,36 +44,10 @@ android {
         ndk { abiFilters += "arm64-v8a" }
     }
 
-    // The release key used to sit in this repository with its password written three
-    // lines under it, so anyone at all could build an APK that Android would accept as
-    // an update to this one. It is a CI secret now: the workflow decodes it to
-    // keystore/lightsports.jks, and that path is gitignored so a local checkout cannot
-    // commit it back.
-    //
-    // A build without the secret still compiles and still produces an APK. It is simply
-    // not signed with the release key and will not install over one — which is the right
-    // failure. A build that announces it is not the real thing beats one that quietly
-    // is not.
-    val keystoreFile = rootProject.file("keystore/lightsports.jks")
-    val keystorePassword: String = System.getenv("KEYSTORE_PASSWORD") ?: ""
-    val canSignRelease = keystoreFile.exists() && keystorePassword.isNotEmpty()
-
-    signingConfigs {
-        if (canSignRelease) {
-            create("release") {
-                storeFile = keystoreFile
-                storePassword = keystorePassword
-                keyAlias = "lightsports"
-                keyPassword = keystorePassword
-            }
-        }
-    }
-
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = if (canSignRelease) signingConfigs.getByName("release") else null
         }
     }
     compileOptions {

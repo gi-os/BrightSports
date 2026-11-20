@@ -435,12 +435,94 @@ python3 scripts/generate_icon.py      # only if the launcher mark changes
 ```
 
 Every push to `main` cuts a GitHub Release — **a push is a release trigger, not a
-cosmetic action**. The release key is a CI secret (`KEYSTORE_B64` /
-`KEYSTORE_PASSWORD`), decoded to `keystore/lightsports.jks` at build time and gitignored
-so it cannot be committed back; CI fails if the certificate drifts from
-`signing-fingerprint.txt` (an Obtainium update otherwise dies with a bare
-`Failure: Invalid`). A build without the secret still compiles — the release APK is just
-unsigned and will not install over a real one.
+cosmetic action**. Release builds are unsigned until CI signs them with the new key and
+v3 rotation lineage from the restricted `release` environment. Debug uses Android's
+standard debug key and cannot update production installs. The Check workflow exercises
+rotation with disposable keys, without signing secrets or publishing.
+
+### Release signing: Giovanni's BrightSports rotation checklist
+
+1. **Disable publishing first**, before merging: disable [Build & Release APK](https://github.com/gi-os/BrightSports/actions/workflows/build.yml)
+   (`gh workflow disable build.yml --repo gi-os/BrightSports`). Keep it disabled until
+   the following steps and distribution checks are complete. Do not run a release now.
+2. For package **`com.gios.lightsports`**, the original pin in
+   `signing-lineage-root-fingerprint.txt` and BrightMarket's current catalog signer is
+   **`4ea28ba461cfa1d5d8cee38e71ce8eacfab570afee83f248c5fec8c5cca4cb5f`**.
+   In a private offline directory outside the checkout, use Android Build Tools 35.0.0
+   and the corresponding original `lightsports.jks` (alias `lightsports`). Verify that
+   key's SHA-256 with `keytool` first; do not use a different historical key. Generate
+   fresh passwords when prompted. Never upload the original key or passwords to CI:
+
+   ```sh
+   umask 077
+   export PATH="$ANDROID_HOME/build-tools/35.0.0:$PATH"
+   keytool -list -v -keystore /path/to/original/lightsports.jks -alias lightsports
+   keytool -genkeypair -storetype JKS -keystore brightsports-new.jks -alias brightsports-release \
+     -keyalg RSA -keysize 3072 -validity 10000
+   apksigner rotate --out brightsports.lineage \
+     --old-signer --ks /path/to/original/lightsports.jks --ks-key-alias lightsports \
+     --set-installed-data true --set-rollback false \
+     --new-signer --ks brightsports-new.jks --ks-key-alias brightsports-release
+   apksigner lineage --in brightsports.lineage --print-certs
+   ```
+
+3. Verify signer #1 matches the original pin above; replace `signing-fingerprint.txt`
+   with signer #2's SHA-256 and commit it on this branch. **Do not change the root pin.**
+   The identical initial pins deliberately prevent publishing until this is done.
+4. In [BrightSports environment settings](https://github.com/gi-os/BrightSports/settings/environments),
+   create `release`. Under **Deployment branches and tags**, select **Selected branches
+   and tags** and add just one **Branch** rule: `main`. Add no tag rules. Set these five
+   secrets **only in that environment** (Linux commands below stream files and prompt
+   for passwords without printing them):
+
+   ```sh
+   base64 -w 0 brightsports-new.jks | gh secret set RELEASE_KEYSTORE_BASE64 --env release --repo gi-os/BrightSports
+   base64 -w 0 brightsports.lineage | gh secret set SIGNING_LINEAGE_BASE64 --env release --repo gi-os/BrightSports
+   gh secret set KEYSTORE_PASSWORD --env release --repo gi-os/BrightSports
+   gh secret set KEY_ALIAS --env release --repo gi-os/BrightSports --body brightsports-release
+   gh secret set KEY_PASSWORD --env release --repo gi-os/BrightSports
+   ```
+
+   Delete repository-level signing secrets, including the legacy `KEYSTORE_B64`, and
+   remove access to any matching organization signing secrets. Environment secrets
+   must not fall back to repository secrets accessible by branch workflows:
+
+   ```sh
+   gh secret delete KEYSTORE_B64 --repo gi-os/BrightSports
+   for secret in RELEASE_KEYSTORE_BASE64 SIGNING_LINEAGE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+     # Delete each repository-level copy if present (not the environment secret).
+     gh secret delete "$secret" --repo gi-os/BrightSports
+   done
+   ```
+
+5. Coordinate the BrightMarket transition before publishing. In
+   [gi-os/brightmarket-index `scripts/build_index.py`](https://github.com/gi-os/brightmarket-index/blob/HEAD/scripts/build_index.py),
+   add this exact package/old/new/reason tuple to `HANDOVERS`, substituting the real
+   new digest from step 3 (not the placeholder):
+
+   ```python
+   (
+       "com.gios.lightsports",
+       "4ea28ba461cfa1d5d8cee38e71ce8eacfab570afee83f248c5fec8c5cca4cb5f",
+       "<new signer #2 SHA-256: lowercase, no colons>",
+       "Rotate exposed BrightSports release key with APK Signature Scheme v3 lineage",
+   ),
+   ```
+
+   Ensure BrightMarket's updater accepts the installed predecessor; a catalog pin
+   change alone can classify old installs as foreign. Test a greater-versionCode
+   in-place update from the last shipped APK on a disposable device, including data
+   preservation and rejection of a subsequent old-key APK.
+6. Only after all checks and the coordinated handover are ready, re-enable publishing
+   (`gh workflow enable build.yml --repo gi-os/BrightSports`) for an authorized release.
+   Pushes to `main` (except ignored Markdown paths) and manual runs on `main` retain
+   their release behavior. Other refs cannot run the release job.
+
+CI passes only the new private key to `scripts/sign-release.sh`, verifies both pins,
+and checks that the two-certificate lineage preserves installed data without allowing
+signer rollback. minSdk is 29, so all supported devices accept v3 and no v1/v2 signing
+or original private key is needed in CI. The exposed key remains exposed in Git history;
+removing its file does not protect installs still trusting it.
 
 **Only the pure-Kotlin sources are type-checked locally** — Compose files reach a
 compiler for the first time in CI, so a missing import survives a green local run. A grep
