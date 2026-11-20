@@ -56,9 +56,8 @@ jobs:
       - name: Build APKs
         run: ./gradlew :app:assembleDebug :app:assembleRelease --stacktrace
         env:
-          # Shake-to-report posts issues with this. Absent, the build still works —
-          # reports queue on the phone until a build that has the key installs over it.
-          REPORT_TOKEN: ${{ secrets.REPORT_TOKEN }}
+          # Where shake-to-report posts: a URL, not a secret. Unset, reports queue on the phone.
+          REPORT_RELAY_URL: ${{ vars.REPORT_RELAY_URL }}
           # Unlocks the keystore restored above. Without it the release build is
           # unsigned and the fingerprint check below stops the release.
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
